@@ -8,14 +8,14 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .processor import ReportBuildError, build_report
+from .runtime import assets_dir, static_dir
 
 
-BASE_DIR = Path(__file__).resolve().parent
-STATIC_DIR = BASE_DIR / "static"
-DEFAULT_TEMPLATE_PATH = BASE_DIR / "assets" / "report_template.xlsx"
+STATIC_DIR = static_dir()
+DEFAULT_TEMPLATE_PATH = assets_dir() / "report_template.xlsx"
 
 app = FastAPI(title="区域报表自动生成")
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 @app.get("/")

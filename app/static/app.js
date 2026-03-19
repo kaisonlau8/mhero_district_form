@@ -26,6 +26,22 @@ const statusGrid = document.querySelector("#statusGrid");
 const messageBox = document.querySelector("#messageBox");
 const templateHint = document.querySelector("#templateHint");
 const generateButton = document.querySelector("#generateButton");
+const query = new URLSearchParams(window.location.search);
+
+function isDesktopApp() {
+  return query.get("desktop") === "1";
+}
+
+async function waitForDesktopApi() {
+  const timeoutAt = Date.now() + 5000;
+  while (Date.now() < timeoutAt) {
+    if (window.pywebview?.api?.save_report) {
+      return window.pywebview.api;
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 100));
+  }
+  throw new Error("桌面保存能力初始化超时，请重新打开应用后再试。");
+}
 
 function normalizeName(filename) {
   return filename.replace(/\.[^.]+$/, "").replace(/\s+/g, "");
@@ -167,16 +183,32 @@ async function generateReport() {
     const match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
     const filename = match ? decodeURIComponent(match[1]) : "区域各指标情况一览_已更新.xlsx";
 
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    document.body.append(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
-
-    setMessage("Excel 已生成并开始下载。打开后，“总表”会按模板公式自动重算。", "success");
+    if (isDesktopApp()) {
+      const api = await waitForDesktopApi();
+      const arrayBuffer = await blob.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+      let binary = "";
+      const chunkSize = 0x8000;
+      for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+        binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+      }
+      const base64Content = btoa(binary);
+      const result = await api.save_report(filename, base64Content);
+      if (!result?.ok) {
+        throw new Error(result?.message || "保存文件时失败。");
+      }
+      setMessage("Excel 已生成并保存。打开后，“总表”会按模板公式自动重算。", "success");
+    } else {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setMessage("Excel 已生成并开始下载。打开后，“总表”会按模板公式自动重算。", "success");
+    }
   } catch (error) {
     setMessage(error.message || "生成失败，请检查文件是否完整。", "error");
   } finally {
