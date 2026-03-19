@@ -39,7 +39,7 @@ python build_macos_app.py
 构建完成后会得到：
 
 - `dist/区域报表自动生成.app`
-- `dist/区域报表自动生成-macos-arm64.zip`
+- `dist/mhero-district-form-macos-arm64.zip`
 
 这是未签名应用。首次打开如果 macOS 提示来源未知，可以在 Finder 中对应用执行“右键 -> 打开”。
 

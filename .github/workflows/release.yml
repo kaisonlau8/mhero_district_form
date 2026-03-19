@@ -34,4 +34,4 @@ jobs:
       - name: Upload release asset
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/区域报表自动生成-macos-arm64.zip
+          files: dist/mhero-district-form-macos-arm64.zip

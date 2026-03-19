@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from base64 import b64decode
+from collections.abc import Sequence
 import os
 from pathlib import Path
 import socket
@@ -36,7 +37,19 @@ class DesktopBridge:
         if not save_targets:
             return {"ok": False, "message": "已取消保存。"}
 
-        target_path = Path(save_targets[0])
+        if isinstance(save_targets, str):
+            raw_path = save_targets
+        elif isinstance(save_targets, Sequence):
+            raw_path = save_targets[0]
+        else:
+            return {"ok": False, "message": "保存路径格式无法识别。"}
+
+        target_path = Path(raw_path).expanduser()
+        if target_path.is_dir():
+            return {"ok": False, "message": "请选择具体的 Excel 文件名，而不是文件夹。"}
+        if target_path.suffix.lower() != ".xlsx":
+            target_path = target_path.with_suffix(".xlsx")
+
         target_path.write_bytes(b64decode(base64_content))
         return {"ok": True, "path": str(target_path)}
 

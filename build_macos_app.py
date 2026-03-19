@@ -11,7 +11,7 @@ DIST_DIR = ROOT / "dist"
 BUILD_DIR = ROOT / "build"
 APP_NAME = "区域报表自动生成"
 SPEC_PATH = ROOT / f"{APP_NAME}.spec"
-ZIP_NAME = f"{APP_NAME}-macos-arm64.zip"
+ZIP_NAME = "mhero-district-form-macos-arm64.zip"
 
 
 def run(command: list[str]) -> None:
