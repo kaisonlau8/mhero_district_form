@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>区域报表自动生成</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <div class="glow glow-a"></div>
+      <div class="glow glow-b"></div>
+
+      <main class="panel">
+        <section class="hero">
+          <p class="eyebrow">Excel 自动回填工具</p>
+          <h1>把 7 份日报拖进来，自动生成“区域各指标情况一览”</h1>
+          <p class="lead">
+            文件名后缀每天不同也没关系，系统会按前缀自动识别，并处理续保拼接、空白列补位和库存
+            M 列转数字。
+          </p>
+        </section>
+
+        <section class="workspace">
+          <div class="drop-card" id="sourceDrop">
+            <div class="drop-copy">
+              <h2>上传 7 份源报表</h2>
+              <p>直接拖进来，或点击选择多个 `.xlsx` 文件。</p>
+            </div>
+            <button class="ghost-button" id="pickSourceButton" type="button">选择文件</button>
+            <input id="sourceInput" type="file" accept=".xlsx" multiple hidden />
+          </div>
+
+          <div class="template-card">
+            <div>
+              <h2>模板</h2>
+              <p id="templateHint">默认使用内置模板，也可以额外上传新的“区域各指标情况一览xxxx”。</p>
+            </div>
+            <button class="ghost-button" id="pickTemplateButton" type="button">替换模板</button>
+            <input id="templateInput" type="file" accept=".xlsx" hidden />
+          </div>
+
+          <div class="status-grid" id="statusGrid"></div>
+
+          <div class="action-row">
+            <div class="message" id="messageBox">等待上传文件。</div>
+            <button class="primary-button" id="generateButton" type="button" disabled>生成并下载 Excel</button>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
