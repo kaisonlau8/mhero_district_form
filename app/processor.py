@@ -102,6 +102,14 @@ def parse_numeric_text(value: object) -> object:
     return float(number)
 
 
+def has_meaningful_value(value: object) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    return True
+
+
 def normalize_stock_rows(rows: Iterable[tuple]) -> list[list[object]]:
     normalized_rows: list[list[object]] = []
     for row in rows:
@@ -111,6 +119,20 @@ def normalize_stock_rows(rows: Iterable[tuple]) -> list[list[object]]:
 
         # 门店备件库存导出的 M 列需要写成数字，相关公式才会参与计算。
         current[12] = parse_numeric_text(current[12])
+        normalized_rows.append(current)
+    return normalized_rows
+
+
+def normalize_first_service_rows(rows: Iterable[tuple]) -> list[list[object]]:
+    normalized_rows: list[list[object]] = []
+    for row in rows:
+        current = list(row)
+        if len(current) < 12:
+            current.extend([None] * (12 - len(current)))
+
+        # DMS 在超期首保和二次交付场景下，H 列可能不可靠。
+        # 这里统一以 I 列“实际首保日期”是否有值作为最终判断依据。
+        current[7] = "是" if has_meaningful_value(current[8]) else "否"
         normalized_rows.append(current)
     return normalized_rows
 
@@ -203,6 +225,8 @@ def build_report(
 
             if source_key == "stock":
                 data_rows = normalize_stock_rows(data_rows)
+            elif source_key == "first_service":
+                data_rows = normalize_first_service_rows(data_rows)
 
             sheet = workbook[sheet_name]
             clear_sheet_data(sheet)
