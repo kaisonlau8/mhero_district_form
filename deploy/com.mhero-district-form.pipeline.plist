@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.mhero-district-form.pipeline</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/i/myCode/m-hero/mhero_district_form/.venv/bin/python</string>
+		<string>/Users/i/myCode/m-hero/mhero_district_form/scripts/run_pipeline.py</string>
+	</array>
+	<key>WorkingDirectory</key>
+	<string>/Users/i/myCode/m-hero/mhero_district_form</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>TZ</key>
+		<string>Asia/Shanghai</string>
+		<key>DFMC_DMS_SESSION_HOME</key>
+		<string>/Users/i/dms-shared-session</string>
+		<key>DFMC_DMS_BROWSER_EXECUTABLE</key>
+		<string>/Users/i/Library/Caches/ms-playwright/chromium-1217/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing</string>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+	</dict>
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Hour</key>
+		<integer>8</integer>
+		<key>Minute</key>
+		<integer>30</integer>
+	</dict>
+	<key>StandardOutPath</key>
+	<string>/Users/i/Library/Logs/com.mhero-district-form.pipeline.out.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/i/Library/Logs/com.mhero-district-form.pipeline.err.log</string>
+</dict>
+</plist>

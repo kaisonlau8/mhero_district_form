@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.mhero-district-form.web</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/i/myCode/m-hero/mhero_district_form/.venv/bin/python</string>
+		<string>/Users/i/myCode/m-hero/mhero_district_form/scripts/web_console.py</string>
+		<string>--host</string>
+		<string>127.0.0.1</string>
+		<string>--port</string>
+		<string>9003</string>
+	</array>
+	<key>WorkingDirectory</key>
+	<string>/Users/i/myCode/m-hero/mhero_district_form</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>TZ</key>
+		<string>Asia/Shanghai</string>
+		<key>DFMC_DMS_SESSION_HOME</key>
+		<string>/Users/i/dms-shared-session</string>
+		<key>DFMC_DMS_BROWSER_EXECUTABLE</key>
+		<string>/Users/i/Library/Caches/ms-playwright/chromium-1217/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing</string>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+	</dict>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+	<key>ThrottleInterval</key>
+	<integer>5</integer>
+	<key>StandardOutPath</key>
+	<string>/Users/i/Library/Logs/com.mhero-district-form.web.out.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/i/Library/Logs/com.mhero-district-form.web.err.log</string>
+</dict>
+</plist>

@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+{% block title %}控制台 — 区域报表自动化{% endblock %}
+{% block content %}
+<h2 style="font-size:20px; margin-bottom:16px;">DMS 爬取与报表生成</h2>
+
+<div class="grid">
+  <div class="stat">
+    <div class="num" id="browser-status" style="color:{{ 'var(--turquoise)' if browser_ok else 'var(--red)' }};">
+      {{ '在线' if browser_ok else '离线' }}
+    </div>
+    <div class="label">浏览器会话</div>
+  </div>
+  <div class="stat">
+    <div class="num" id="pipeline-status">空闲</div>
+    <div class="label">流水线</div>
+  </div>
+  <div class="stat">
+    <div class="num" id="notify-status" style="color:{{ 'var(--turquoise)' if notify_feishu else 'var(--gray)' }};">
+      {{ '开启' if notify_feishu else '关闭' }}
+    </div>
+    <div class="label">飞书推送</div>
+  </div>
+  <div class="stat">
+    <div class="num" id="period-status">{{ year }} Q{{ quarter }}</div>
+    <div class="label">服务报表周期</div>
+  </div>
+</div>
+
+<div class="card" style="border-left: 4px solid var(--orange);">
+  <h2>任务参数</h2>
+  <p class="muted" style="margin-bottom:12px;">
+    每天 08:30 按已保存配置自动跑完整流水线。服务管理报表使用下方年份/季度。
+  </p>
+  <div class="field">
+    <label for="year">年份</label>
+    <input id="year" type="number" value="{{ year }}" min="2020" max="2100" />
+  </div>
+  <div class="field">
+    <label for="quarter">季度</label>
+    <select id="quarter">
+      {% for q in [1,2,3,4] %}
+      <option value="{{ q }}" {% if q == quarter %}selected{% endif %}>Q{{ q }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="field">
+    <label>飞书推送</label>
+    <label class="check">
+      <input id="notifyFeishu" type="checkbox" {% if notify_feishu %}checked{% endif %} />
+      生成后推送到飞书群（定时任务与手动运行均生效）
+    </label>
+  </div>
+  <div class="actions">
+    <button class="btn btn-primary btn-sm" id="btn-save" onclick="saveSettings()">保存配置</button>
+    <button class="btn btn-success btn-sm" id="btn-run" onclick="runPipeline(false)">爬取并生成报表</button>
+    <button class="btn btn-outline btn-sm" id="btn-skip" onclick="runPipeline(true)">仅用已下载文件生成</button>
+    <a class="btn btn-outline btn-sm" href="/api/report/latest" id="latestReportLink" {% if not latest_report %}style="display:none"{% endif %}>下载报表</a>
+  </div>
+  <p id="task-detail" class="muted">会话：<code>{{ session_home }}</code> · 浏览器 {{ browser_label }}</p>
+  <p class="muted">导出与飞书推送均为完整公式版；用 Excel 打开后会按模板公式自动重算。</p>
+</div>
+
+<div class="card" style="border-left: 4px solid var(--blue);">
+  <h2>默认模板</h2>
+  <p class="muted" style="margin-bottom:12px;">
+    流水线使用 <code>app/assets/report_template.xlsx</code>。模板需人工更新时在此上传覆盖（会自动备份旧文件）。
+  </p>
+  <div id="templateInfo" class="muted" style="margin-bottom:12px;">加载中…</div>
+  <div class="actions">
+    <input id="templateFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+    <button class="btn btn-primary btn-sm" onclick="uploadTemplate()">上传并设为默认模板</button>
+    <a class="link" href="/api/template/download" id="downloadTemplate">下载当前默认模板</a>
+  </div>
+</div>
+
+<div class="card" style="border-left: 4px solid var(--turquoise);">
+  <h2>运行状态</h2>
+  <div id="status" class="muted">加载中…</div>
+  <pre class="log" id="log"></pre>
+</div>
+
+<script>
+function formatBytes(n) {
+  if (!n && n !== 0) return '-';
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+  return (n / 1024 / 1024).toFixed(2) + ' MB';
+}
+
+function currentSettingsPayload(extra) {
+  const payload = {
+    year: Number(document.getElementById('year').value),
+    quarter: Number(document.getElementById('quarter').value),
+    notify_feishu: !!document.getElementById('notifyFeishu').checked,
+  };
+  return Object.assign(payload, extra || {});
+}
+
+function renderTemplate(t) {
+  const el = document.getElementById('templateInfo');
+  const link = document.getElementById('downloadTemplate');
+  if (!t || !t.exists) {
+    el.innerHTML = '<span class="bad">尚未找到默认模板，请先上传。</span>';
+    link.style.display = 'none';
+    return;
+  }
+  el.innerHTML =
+    `当前文件：<code>${t.path}</code><br>` +
+    `大小：${formatBytes(t.size)}　更新时间：${t.mtime}` +
+    (t.uploaded_as ? `　上传名：${t.uploaded_as}` : '');
+  link.style.display = '';
+}
+
+function setRunning(running) {
+  ['btn-run', 'btn-skip'].forEach((id) => {
+    const btn = document.getElementById(id);
+    if (btn) btn.disabled = running;
+  });
+}
+
+async function refresh() {
+  const r = await fetch('/api/status');
+  const d = await r.json();
+  const browserOk = d.browser_ok;
+  const running = !!(d.pipeline && d.pipeline.running);
+  const settings = d.settings || {};
+
+  document.getElementById('browser-status').textContent = browserOk ? '在线' : '离线';
+  document.getElementById('browser-status').style.color = browserOk ? 'var(--turquoise)' : 'var(--red)';
+
+  const pStatus = document.getElementById('pipeline-status');
+  pStatus.textContent = running ? '运行中' : (d.pipeline.status || '空闲');
+  pStatus.style.color = running ? 'var(--orange)' : 'var(--turquoise)';
+
+  const notifyOn = !!settings.notify_feishu;
+  document.getElementById('notify-status').textContent = notifyOn ? '开启' : '关闭';
+  document.getElementById('notify-status').style.color = notifyOn ? 'var(--turquoise)' : 'var(--gray)';
+
+  const active = document.activeElement && document.activeElement.id;
+  if (active !== 'notifyFeishu') {
+    document.getElementById('notifyFeishu').checked = notifyOn;
+  }
+  if (active !== 'year' && settings.year) document.getElementById('year').value = settings.year;
+  if (active !== 'quarter' && settings.quarter) document.getElementById('quarter').value = settings.quarter;
+  document.getElementById('period-status').textContent = `${settings.year || '-'} Q${settings.quarter || '-'}`;
+
+  const latest = d.latest_report || '';
+  const latestLink = document.getElementById('latestReportLink');
+  latestLink.style.display = latest ? '' : 'none';
+
+  document.getElementById('status').innerHTML =
+    `浏览器：<span class="${browserOk ? 'ok' : 'bad'}">${browserOk ? '在线' : '离线'}</span>　` +
+    `任务：<span class="${running ? 'bad' : 'ok'}">${running ? '运行中' : '空闲'}</span>　` +
+    `最近状态：${(d.pipeline && d.pipeline.status) || '-'}　` +
+    `飞书：${notifyOn ? '推送' : '不推送'}` +
+    (latest ? `　报表：<code>${latest.split('/').pop()}</code>` : '');
+
+  document.getElementById('log').textContent = (d.pipeline && d.pipeline.log) || d.latest_manifest || '';
+  setRunning(running);
+  renderTemplate(d.template);
+}
+
+async function saveSettings() {
+  const r = await fetch('/api/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(currentSettingsPayload()),
+  });
+  const d = await r.json();
+  alert(d.message || d.error || '已保存');
+  refresh();
+}
+
+async function runPipeline(skipCrawl) {
+  const payload = currentSettingsPayload({
+    skip_crawl: !!skipCrawl,
+    save_settings: true,
+  });
+  const r = await fetch('/api/pipeline/run', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const d = await r.json();
+  if (d.error) alert(d.error);
+  refresh();
+}
+
+async function uploadTemplate() {
+  const input = document.getElementById('templateFile');
+  if (!input.files || !input.files[0]) {
+    alert('请先选择 .xlsx 模板文件');
+    return;
+  }
+  const fd = new FormData();
+  fd.append('template', input.files[0]);
+  const r = await fetch('/api/template', { method: 'POST', body: fd });
+  const d = await r.json();
+  if (!r.ok) {
+    alert(d.error || '上传失败');
+    return;
+  }
+  alert(d.message || '已更新默认模板');
+  input.value = '';
+  refresh();
+}
+
+refresh();
+setInterval(refresh, 3000);
+</script>
+{% endblock %}

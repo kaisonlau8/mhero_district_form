@@ -1,0 +1,11 @@
+# Cloudflare Tunnel 配置模板（部署到: ~/.cloudflared/config-m-hero-district-form.yml）
+# tunnel / credentials-file 在创建隧道后填写
+
+tunnel: REPLACE_TUNNEL_ID
+credentials-file: /Users/i/.cloudflared/REPLACE_TUNNEL_ID.json
+protocol: http2
+
+ingress:
+  - hostname: <your-hostname>
+    service: http://127.0.0.1:9003
+  - service: http_status:404

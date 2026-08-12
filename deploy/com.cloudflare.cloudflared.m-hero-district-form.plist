@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.cloudflare.cloudflared.m-hero-district-form</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/opt/homebrew/bin/cloudflared</string>
+		<string>tunnel</string>
+		<string>--config</string>
+		<string>/Users/i/.cloudflared/config-m-hero-district-form.yml</string>
+		<string>--edge-ip-version</string>
+		<string>4</string>
+		<string>run</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+	<key>ThrottleInterval</key>
+	<integer>5</integer>
+	<key>StandardOutPath</key>
+	<string>/Users/i/Library/Logs/com.cloudflare.cloudflared.m-hero-district-form.out.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/i/Library/Logs/com.cloudflare.cloudflared.m-hero-district-form.err.log</string>
+</dict>
+</plist>

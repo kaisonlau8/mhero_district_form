@@ -1,14 +1,22 @@
 # 区域报表自动生成
 
-一个用于处理 7 份日常 Excel 报表的本地工具。用户只需要上传或拖入源文件，系统就会自动把数据回填到“区域各指标情况一览xxxx”模板中，并导出结果文件。
+处理 7 份日常 Excel 源表，回填「区域各指标情况一览」模板并导出结果。支持：
 
-项目同时提供两种运行方式：
+- **自动化流水线**：共享 DMS 浏览器爬取源表 → 每天 08:30 出报表 → 飞书群推送（控制台 `:9003`）
+- **本地网页模式**：FastAPI 上传生成（`:8000`）
+- **macOS 桌面模式**：`pywebview` 封装
 
-- 本地网页模式：启动 FastAPI 服务，在浏览器中使用。
-- macOS 桌面模式：通过 `pywebview` 将网页封装为桌面应用窗口。
+> 工具集总览 / 文档地图 / 依赖关系：[m-hero](https://github.com/kaisonlau8/m-hero)
+
+| 项 | 值 |
+|----|-----|
+| 流水线控制台 | `http://127.0.0.1:9003` / http://127.0.0.1:9003 |
+| 黄页 | http://127.0.0.1:9004 |
+| 共享会话 | 与事故车、VIP 共用 DMS Chromium |
 
 ## 文档导航
 
+- 工具集：[m-hero](https://github.com/kaisonlau8/m-hero) · [共享浏览器](https://github.com/kaisonlau8/m-hero/blob/main/docs/SHARED_DMS_BROWSER.md)
 - [使用文档](docs/usage.md)
 - [开发文档](docs/development.md)
 - [打包与发版文档](docs/release.md)
@@ -45,7 +53,7 @@
 ### 方式一：本地网页模式
 
 ```bash
-cd /Users/i/myCode/报表项目
+cd /Users/i/myCode/m-hero/mhero_district_form
 chmod +x start.command
 ./start.command
 ```
@@ -57,7 +65,7 @@ chmod +x start.command
 ### 方式二：开发环境手动启动
 
 ```bash
-cd /Users/i/myCode/报表项目
+cd /Users/i/myCode/m-hero/mhero_district_form
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -67,7 +75,7 @@ uvicorn app.main:app --host 127.0.0.1 --port 8000
 ### 方式三：构建 macOS 桌面应用
 
 ```bash
-cd /Users/i/myCode/报表项目
+cd /Users/i/myCode/m-hero/mhero_district_form
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -97,6 +105,40 @@ desktop_app.py                macOS 桌面入口
 build_macos_app.py            本地打包脚本
 .github/workflows/release.yml GitHub Actions 打包与 Release 上传
 ```
+
+## DMS 自动爬取 + 每天 08:30 出报表
+
+依赖共享 Chromium 会话（与事故车/VIP 相同）：`DFMC_DMS_SESSION_HOME=/Users/i/dms-shared-session`。浏览器需已登录 DMS。开跑前 3 分钟至爬取登记完成期间保活不会强刷。
+
+| 项 | 值 |
+|----|-----|
+| 本地控制台 | `http://127.0.0.1:9003` |
+| 公网 | http://127.0.0.1:9003 |
+| Tunnel | `m-hero-district-form` → `:9003` |
+| 导出 | 完整公式版 Excel（`/api/report/latest`） |
+
+```bash
+# 控制台：配置年份/季度、上传默认模板、手动触发流水线
+./run.sh --console
+# http://127.0.0.1:9003 或 http://127.0.0.1:9003
+
+# 手动跑完整流水线（爬 7 份源表 → 生成区域报表）
+./run.sh --pipeline --year 2026 --quarter 3
+
+# 仅用已下载文件生成报表
+./run.sh --pipeline --skip-crawl
+```
+
+定时任务（launchd）：
+
+- `com.mhero-district-form.web` — 控制台常驻 `:9003`
+- `com.mhero-district-form.pipeline` — 每天 **08:30** 跑 `run_pipeline.py`（读取 `config/crawl_settings.json` 的年/季度）
+- `com.cloudflare.cloudflared.m-hero-district-form` — Cloudflare Tunnel 公网入口
+
+报表生成后（成功或失败）会通过飞书群机器人 Webhook 推送卡片；成功时可点「下载报表」：
+`http://127.0.0.1:9003/api/report/latest`（配置见 `.env` 的 `FEISHU_WEBHOOK_URL`）。
+
+产物目录：`download/`（源表）、`output/`（`区域各指标情况一览MMDD.xlsx`）。
 
 ## 当前发布说明
 

@@ -57,7 +57,10 @@ async def generate_report(
 
     encoded_name = quote(output_name)
     headers = {
-        "Content-Disposition": f"attachment; filename=report.xlsx; filename*=UTF-8''{encoded_name}",
+        "Content-Disposition": (
+            f'attachment; filename="district-report.xlsx"; '
+            f"filename*=UTF-8''{encoded_name}"
+        ),
     }
     return Response(
         content=report_bytes,
