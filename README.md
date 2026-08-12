@@ -108,7 +108,20 @@ build_macos_app.py            本地打包脚本
 
 ## DMS 自动爬取 + 每天 08:30 出报表
 
-依赖共享 Chromium 会话（与事故车/VIP 相同）：`DFMC_DMS_SESSION_HOME=/Users/i/dms-shared-session`。浏览器需已登录 DMS。开跑前 3 分钟至爬取登记完成期间保活不会强刷。
+依赖共享 Chromium 会话（与事故车/VIP 相同）：`DFMC_DMS_SESSION_HOME=/Users/i/dms-shared-session`。浏览器需已登录 DMS。
+
+### 时刻表与强刷保护
+
+共享时刻表：`$DFMC_DMS_SESSION_HOME/.runtime/crawl_schedule.json`  
+完整说明：[m-hero/docs/SHARED_DMS_BROWSER.md](https://github.com/kaisonlau8/m-hero/blob/main/docs/SHARED_DMS_BROWSER.md)
+
+| id | 计划时间 | owner | 说明 |
+|----|----------|--------|------|
+| `district-form` | **08:30** | `mhero_district_form` | launchd `com.mhero-district-form.pipeline` |
+
+- **08:27** 起禁强刷（`pre_minutes=3`），爬取登记结束后恢复
+- 若 08:30 后未开跑，最长禁刷约 45 分钟（`await_start_minutes`）
+- 错峰：VIP 09:00、事故车 10:00 / 17:00 — 勿并行导出
 
 | 项 | 值 |
 |----|-----|
