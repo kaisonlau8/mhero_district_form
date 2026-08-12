@@ -10,8 +10,8 @@
 
 | 项 | 值 |
 |----|-----|
-| 流水线控制台 | `http://127.0.0.1:9003` / http://127.0.0.1:9003 |
-| 黄页 | http://127.0.0.1:9004 |
+| 流水线控制台 | `http://127.0.0.1:9003` |
+| 黄页（本地） | `http://127.0.0.1:9004` |
 | 共享会话 | 与事故车、VIP 共用 DMS Chromium |
 
 ## 文档导航
@@ -113,14 +113,13 @@ build_macos_app.py            本地打包脚本
 | 项 | 值 |
 |----|-----|
 | 本地控制台 | `http://127.0.0.1:9003` |
-| 公网 | http://127.0.0.1:9003 |
-| Tunnel | `m-hero-district-form` → `:9003` |
+| Tunnel | `m-hero-district-form` → `:9003`（hostname 仅写本机） |
 | 导出 | 完整公式版 Excel（`/api/report/latest`） |
 
 ```bash
 # 控制台：配置年份/季度、上传默认模板、手动触发流水线
 ./run.sh --console
-# http://127.0.0.1:9003 或 http://127.0.0.1:9003
+# http://127.0.0.1:9003
 
 # 手动跑完整流水线（爬 7 份源表 → 生成区域报表）
 ./run.sh --pipeline --year 2026 --quarter 3
@@ -133,10 +132,10 @@ build_macos_app.py            本地打包脚本
 
 - `com.mhero-district-form.web` — 控制台常驻 `:9003`
 - `com.mhero-district-form.pipeline` — 每天 **08:30** 跑 `run_pipeline.py`（读取 `config/crawl_settings.json` 的年/季度）
-- `com.cloudflare.cloudflared.m-hero-district-form` — Cloudflare Tunnel 公网入口
+- `com.cloudflare.cloudflared.m-hero-district-form` — Cloudflare Tunnel
 
-报表生成后（成功或失败）会通过飞书群机器人 Webhook 推送卡片；成功时可点「下载报表」：
-`http://127.0.0.1:9003/api/report/latest`（配置见 `.env` 的 `FEISHU_WEBHOOK_URL`）。
+报表生成后（成功或失败）会通过飞书群机器人 Webhook 推送卡片；成功时可点「下载报表」。
+下载链接前缀由 `.env` 的 `PUBLIC_BASE_URL` 配置（勿把生产域名写进仓库示例以外的提交）。
 
 产物目录：`download/`（源表）、`output/`（`区域各指标情况一览MMDD.xlsx`）。
 
