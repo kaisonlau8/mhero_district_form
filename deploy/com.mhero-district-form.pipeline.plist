@@ -18,7 +18,7 @@
 		<key>DFMC_DMS_SESSION_HOME</key>
 		<string>/Users/i/dms-shared-session</string>
 		<key>DFMC_DMS_BROWSER_EXECUTABLE</key>
-		<string>/Users/i/Library/Caches/ms-playwright/chromium-1217/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing</string>
+		<string>/Users/i/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing</string>
 		<key>PATH</key>
 		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
 	</dict>
