@@ -34,6 +34,7 @@ from dfmc_browser_utils import (  # noqa: E402
     connect_browser_over_cdp,
     ensure_cdp_browser_running,
     find_dms_page,
+    goto_dms_route,
     get_default_state_file,
     get_export_lock_path,
     get_session_home,
@@ -122,17 +123,8 @@ def validate_logged_in(page: Page) -> None:
 
 
 def navigate_hash(page: Page, route: str) -> None:
-    if not route.startswith("/"):
-        route = "/" + route
-    try:
-        page.evaluate(f"window.location.hash = '{route}'")
-    except Error:
-        page.goto(f"https://{DMS_HOST}#{route}", wait_until="domcontentloaded", timeout=20_000)
-    try:
-        page.wait_for_selector("section.mixButton, .el-table, #datePicker", timeout=20_000)
-    except Error:
-        page.wait_for_timeout(2_000)
-    page.wait_for_timeout(800)
+    landed = goto_dms_route(page, route)
+    print(f"  Opened {route} ({landed[:100]})")
 
 
 def click_by_texts(page: Page, texts: list[str], selectors: str = "button, .el-button, a, span, li, div") -> str:
