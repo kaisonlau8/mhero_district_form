@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
@@ -27,6 +28,8 @@ from crawl_district_reports import load_settings, save_settings  # noqa: E402
 from dfmc_browser_utils import (  # noqa: E402
     get_default_state_file,
     get_session_home,
+    load_session_monitor,
+    observe_dms_session,
     process_is_running,
     read_browser_state,
 )
@@ -264,6 +267,7 @@ def api_status():
         "latest_report": _latest_report(),
         "latest_manifest": _latest_manifest_text(),
         "template": _template_info(),
+        "session_monitor": load_session_monitor(PLUGIN_ROOT),
     })
 
 
@@ -381,6 +385,15 @@ def api_pipeline_run():
     })
 
 
+def _session_monitor_loop() -> None:
+    while True:
+        try:
+            observe_dms_session(PLUGIN_ROOT, source="district-console")
+        except Exception:
+            pass
+        time.sleep(30)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default=os.getenv("CONSOLE_HOST", "127.0.0.1"))
@@ -388,6 +401,7 @@ def main() -> int:
     args = parser.parse_args()
     print(f"区域报表自动化控制台 http://{args.host}:{args.port}")
     print(f"Session home: {get_session_home(PLUGIN_ROOT)}")
+    threading.Thread(target=_session_monitor_loop, daemon=True).start()
     app.run(host=args.host, port=args.port, debug=False, use_reloader=False)
     return 0
 

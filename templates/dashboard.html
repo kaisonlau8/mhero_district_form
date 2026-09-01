@@ -27,6 +27,22 @@
 </div>
 
 <div class="card" style="border-left: 4px solid var(--orange);">
+  <h2>DMS 登录监控</h2>
+  <p class="muted" style="margin-bottom:12px;">
+    每 30 秒采样共享浏览器标签，收集「退出登录 / SSO / 会话过期」事件。不会把导航里的「退出登录」按钮当成已登出。
+  </p>
+  <p style="font-size:14px; margin-bottom:8px;">
+    当前：<strong id="session-monitor-status">—</strong>
+    　今日退出：<strong id="session-monitor-count">0</strong>
+    　最近变化：<span id="session-monitor-changed">—</span>
+  </p>
+  <table>
+    <thead><tr><th>时间</th><th>状态</th><th>来源</th><th>页面</th><th>依据</th></tr></thead>
+    <tbody id="session-monitor-events"><tr><td colspan="5" class="muted">加载中…</td></tr></tbody>
+  </table>
+</div>
+
+<div class="card" style="border-left: 4px solid var(--orange);">
   <h2>任务参数</h2>
   <p class="muted" style="margin-bottom:12px;">
     每天 08:30 按已保存配置自动跑完整流水线。服务管理报表使用下方年份/季度。
@@ -158,6 +174,27 @@ async function refresh() {
   document.getElementById('log').textContent = (d.pipeline && d.pipeline.log) || d.latest_manifest || '';
   setRunning(running);
   renderTemplate(d.template);
+  (function renderSessionMonitor(m) {
+    const statusEl = document.getElementById('session-monitor-status');
+    const countEl = document.getElementById('session-monitor-count');
+    const changedEl = document.getElementById('session-monitor-changed');
+    const table = document.getElementById('session-monitor-events');
+    if (!statusEl || !m) return;
+    const labels = {logged_in:'已登录', logged_out:'退出登录', missing:'无标签', offline:'浏览器离线', other:'其他'};
+    const status = (m.current && m.current.status) || 'other';
+    statusEl.textContent = labels[status] || status;
+    statusEl.style.color = status === 'logged_out' ? 'var(--orange)' : (status === 'logged_in' ? 'var(--turquoise)' : 'var(--gray)');
+    if (countEl) countEl.textContent = (m.today && m.today.logoutEvents) || 0;
+    if (changedEl) changedEl.textContent = m.lastChangeAt || '—';
+    if (table) {
+      const events = (m.recent || []).slice().reverse();
+      table.innerHTML = events.length ? events.map((e) => {
+        const page = (e.title || e.url || '').slice(0, 48);
+        const marks = (e.markers || []).join(', ');
+        return `<tr><td>${e.at || ''}</td><td>${labels[e.status] || e.status}</td><td>${e.source || ''}</td><td title="${e.url || ''}">${page}</td><td>${marks}</td></tr>`;
+      }).join('') : '<tr><td colspan="5" class="muted">尚无记录</td></tr>';
+    }
+  })(d.session_monitor || {});
 }
 
 async function saveSettings() {
