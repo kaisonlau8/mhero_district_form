@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block body %}
+<header class="ant-page-header">
+  <div class="ant-page-header-heading">
+    <h1>剔除规则</h1>
+    <div class="ant-page-header-sub">命中的行：分子、分母都不计算（如出口车）</div>
+    <div class="ant-page-header-meta">预览基于最新快照 {{ snap or '（无）' }}</div>
+  </div>
+  <div class="ant-page-header-actions">{% set xl_url = "/export/admin/exclusion-rules.xlsx" %}{% set xl_fixed = false %}{% include "_export_btn.html" %}</div>
+</header>
+
+{% if msg %}<div class="ant-alert ant-alert-success"><span class="ant-alert-icon"><svg class="ai" aria-hidden="true"><use href="#i-check-circle"/></svg></span><div class="ant-alert-content">{{ msg }}</div></div>{% endif %}
+{% if err %}<div class="ant-alert ant-alert-error"><span class="ant-alert-icon"><svg class="ai" aria-hidden="true"><use href="#i-close-circle"/></svg></span><div class="ant-alert-content">{{ err }}</div></div>{% endif %}
+
+<div class="ant-card">
+  <div class="ant-card-body">
+  <details class="hint"><summary>说明</summary><p class="muted">规则 = 某数据集的某一列「等于/包含」某个值（不分大小写），对所有快照生效；添加、停用、删除都会重算全部快照。剔除优先于修正结果。督导申请、管理员批准的「剔除」按整辆车（VIN）对所有指标生效（见修正结果 / 剔除审批），不在这里。预览基于最新快照 {{ snap or '（无）' }}。</p></details>
+  {% include "_region_bar.html" %}{% if region %}<p class="muted" style="margin:6px 0 0">已按区域「{{ region }}」筛选：「主要门店」只列该区域的门店（规则本身对全部区域生效）。</p>{% endif %}
+  </div>
+</div>
+
+<div class="ant-card">
+  <div class="ant-card-head"><h2 class="ant-card-head-title">规则列表</h2></div>
+  <div class="ant-card-body">
+  <div class="tw ant-table-wrap"><table><thead><tr><th class="nosort">#</th><th class="nosort">数据集</th><th class="nosort">列</th><th class="nosort">匹配</th><th class="nosort">值</th><th class="nosort num">命中行</th><th class="nosort num">其中计入范围内（实际剔除）</th><th class="nosort">主要门店</th><th class="nosort">状态 / 备注</th><th class="nosort">操作</th></tr></thead><tbody>
+  {% for r in rules %}<tr><td>{{ r.id }}</td><td>{{ rule_datasets[r.dataset_key] }}</td><td>{{ dict(cols[r.dataset_key]).get(r.column_name, r.column_name) }}</td><td>{{ match_types[r.match_type] }}</td><td>{{ r.value }}</td>
+    <td class="num">{{ r.pv.matched if r.pv.matched is not none else '-' }}</td><td class="num">{{ r.pv.effective if r.pv.matched is not none else '-' }}</td>
+    <td style="white-space:normal">{% if r.pv.matched %}{% for s in r.pv.stores[:3] %}{{ s.store }}（{{ s.rows }}{% if not s.in_scope %}，已不在门店表{% endif %}）{% if not loop.last %}、{% endif %}{% endfor %}{% endif %}</td>
+    <td>{% if r.enabled %}<span class="ant-tag ant-tag-success">启用</span>{% else %}<span class="ant-tag">停用</span>{% endif %}<br><span class="muted">{{ r.note or '' }}</span></td>
+    <td><div class="ant-flex">
+      <form method="post" action="/settings/exclusion-rules/{{ r.id }}/toggle"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="ant-btn ant-btn-sm {{ 'ant-btn-danger' if r.enabled }}">{{ '停用' if r.enabled else '启用' }}</button></form>
+      <form method="post" action="/settings/exclusion-rules/{{ r.id }}/delete" onsubmit="return confirm('删除规则并重算全部快照？')"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="ant-btn ant-btn-sm ant-btn-danger"><svg class="ai" aria-hidden="true"><use href="#i-delete"/></svg>删除</button></form></div></td></tr>
+  {% else %}<tr><td colspan="10"><div class="ant-empty"><div class="ant-empty-image"><svg class="ai" aria-hidden="true"><use href="#i-inbox"/></svg></div><div class="ant-empty-title">还没有规则</div><div class="ant-empty-desc">在下方「新增规则」先预览影响行数再添加。</div></div></td></tr>{% endfor %}</tbody></table></div>
+  <p class="muted" style="margin:8px 0 0">「命中行」包含本来就不在门店表（多维表格）内的行，这部分原本就不计入；「实际剔除」才是这条规则带来的新增变化。</p>
+  </div>
+</div>
+
+<div class="ant-card">
+  <div class="ant-card-head"><h2 class="ant-card-head-title">新增规则 <span class="ant-card-head-sub">先预览再添加</span></h2></div>
+  <div class="ant-card-body">
+  <form method="get" action="/settings/exclusion-rules" class="ant-filter-bar">
+    <div class="ant-filter-item"><label>数据集</label>
+      <select class="ant-select" name="pv_dataset" id="ds" onchange="fillCols()">{% for k, t in rule_datasets.items() %}<option value="{{ k }}" {% if pv_in.dataset==k %}selected{% endif %}>{{ t }}</option>{% endfor %}</select></div>
+    <div class="ant-filter-item"><label>列</label><select class="ant-select" name="pv_column" id="col"></select></div>
+    <div class="ant-filter-item"><label>匹配</label><select class="ant-select" name="pv_match">{% for k, t in match_types.items() %}<option value="{{ k }}" {% if pv_in.match==k %}selected{% endif %}>{{ t }}</option>{% endfor %}</select></div>
+    <div class="ant-filter-item"><label>值</label><input class="ant-input" name="pv_value" value="{{ pv_in.value }}" placeholder="匹配值，如 出口车专用" required></div>
+    <div class="ant-filter-actions"><button class="ant-btn" type="submit"><svg class="ai" aria-hidden="true"><use href="#i-search"/></svg>预览影响行数</button></div>
+  </form>
+  {% if pv %}<div class="ant-alert ant-alert-info ant-mt-2"><span class="ant-alert-icon"><svg class="ai" aria-hidden="true"><use href="#i-info-circle"/></svg></span><div class="ant-alert-content">{% if pv.matched is none %}还没有快照可预览{% else %}快照 {{ pv.snapshot_date }}：共 {{ pv.total }} 行，命中 <b>{{ pv.matched }}</b> 行，其中计入范围内（会真正被剔除）<b>{{ pv.effective }}</b> 行。
+    {% for s in pv.stores %}<br>{{ s.store }}：{{ s.rows }} 行{% if not s.in_scope %}（已不在门店表）{% endif %}{% endfor %}{% endif %}</div></div>
+  {% if pv.matched is not none %}<form method="post" action="/settings/exclusion-rules/add" class="ant-filter-bar ant-mt-2"><input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="dataset" value="{{ pv_in.dataset }}"><input type="hidden" name="column" value="{{ pv_in.column }}"><input type="hidden" name="match" value="{{ pv_in.match }}"><input type="hidden" name="value" value="{{ pv_in.value }}">
+    <div class="ant-filter-item"><label>备注（选填）</label><input class="ant-input" name="note" placeholder="备注（选填）" maxlength="200"></div>
+    <div class="ant-filter-actions"><button class="ant-btn ant-btn-primary" onclick="return confirm('确认添加并重算全部快照？')">确认添加</button></div></form>{% endif %}{% endif %}
+  </div>
+</div>
+<script>const COLS={{ cols|tojson }};const cur="{{ pv_in.column }}";
+function fillCols(){const k=document.getElementById('ds').value;const s=document.getElementById('col');s.innerHTML='';(COLS[k]||[]).forEach(([c,l])=>{const o=document.createElement('option');o.value=c;o.textContent=l;if(c===cur)o.selected=true;s.appendChild(o)})}
+fillCols();</script>
+{% endblock %}

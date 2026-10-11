@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block body %}
+<header class="ant-page-header">
+  <div class="ant-page-header-heading">
+    <h1>{{ kind_cn[r.kind] }} #{{ r.id }}</h1>
+    <div class="ant-page-header-meta"><span class="ant-tag {{ {'pending':'ant-tag-warning','approved':'ant-tag-success','rejected':'ant-tag-error'}.get(r.status,'ant-tag') }}">{{ status_cn[r.status] }}</span></div>
+  </div>
+  <div class="ant-page-header-actions">
+    {% set xl_url = "/export/admin/exemptions/" ~ r.id ~ ".xlsx" %}{% set xl_fixed = true %}{% include "_export_btn.html" %}
+    <a class="ant-btn" href="/admin/exemptions"><svg class="ai" aria-hidden="true"><use href="#i-arrow-left"/></svg>返回审批列表</a>
+  </div>
+</header>
+
+<div class="ant-card">
+  <div class="ant-card-head"><h2 class="ant-card-head-title">申请信息</h2></div>
+  <div class="ant-card-body">
+  <div class="ant-descriptions">
+    <div class="ant-descriptions-item"><span class="ant-descriptions-item-label">VIN</span><span class="ant-descriptions-item-content"><b>{{ r.vin }}</b></span></div>
+    <div class="ant-descriptions-item"><span class="ant-descriptions-item-label">指标</span><span class="ant-descriptions-item-content">{{ inds[r.indicator].title if r.indicator in inds else "全部指标（整车）" }}</span></div>
+    <div class="ant-descriptions-item"><span class="ant-descriptions-item-label">门店</span><span class="ant-descriptions-item-content">{{ r.store_name }}（{{ r.region or '-' }}）</span></div>
+    <div class="ant-descriptions-item"><span class="ant-descriptions-item-label">原因</span><span class="ant-descriptions-item-content">{{ r.reason_category }}：{{ r.reason }}{% if r.evidence %} · 证据：{{ r.evidence }}{% endif %}</span></div>
+    <div class="ant-descriptions-item"><span class="ant-descriptions-item-label">申请</span><span class="ant-descriptions-item-content">{{ r.requested_by }} {{ r.requested_at }}（快照 {{ r.request_snapshot }}）</span></div>
+    {% if r.reviewed_by %}<div class="ant-descriptions-item"><span class="ant-descriptions-item-label">审批</span><span class="ant-descriptions-item-content">{{ r.reviewed_by }} {{ r.reviewed_at }} {{ r.review_comment or '' }}</span></div>{% endif %}
+    <div class="ant-descriptions-item"><span class="ant-descriptions-item-label">生效</span><span class="ant-descriptions-item-content">{{ r.effective_from or '-' }}{% if r.expires_at %} ~ {{ r.expires_at }}{% elif r.status=='approved' %} 永久{% endif %}</span></div>
+  </div>
+  <div class="ant-alert ant-alert-info ant-mt-3"><span class="ant-alert-icon"><svg class="ai" aria-hidden="true"><use href="#i-info-circle"/></svg></span><div class="ant-alert-content">{% if r.kind=='exempt' %}{{ inds[r.indicator].meaning }}。{% else %}批准后这辆车在所有指标里都不再计入（分子分母都不计，永久生效，撤销才恢复）。{% endif %}</div></div>
+  </div>
+</div>
+
+<div class="ant-card">
+  <div class="ant-card-head"><h2 class="ant-card-head-title">状态变更记录 <span class="ant-card-head-sub">只追加</span></h2></div>
+  <div class="ant-card-body">
+  <div class="tw ant-table-wrap"><table><thead><tr><th class="nosort">时间</th><th class="nosort">操作者</th><th class="nosort">动作</th><th class="nosort">状态变化</th><th class="nosort">意见</th></tr></thead><tbody>
+  {% for l in log %}<tr><td>{{ l.at }}</td><td>{{ l.actor }}</td><td>{{ l.action }}</td><td>{{ l.from_status or '' }} → {{ l.to_status or '' }}</td><td>{{ l.comment or '' }}</td></tr>
+  {% else %}<tr><td colspan="5"><div class="ant-empty"><div class="ant-empty-image"><svg class="ai" aria-hidden="true"><use href="#i-inbox"/></svg></div><div class="ant-empty-title">暂无记录</div></div></td></tr>{% endfor %}</tbody></table></div>
+  </div>
+</div>
+{% endblock %}

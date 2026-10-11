@@ -1,0 +1,6 @@
+<form class="ant-filter-bar region-bar" method="get">
+  {% if date is defined and date %}<input type="hidden" name="date" value="{{ date }}">{% endif %}
+  <div class="ant-filter-item"><label>区域</label><select class="ant-select" name="region" onchange="this.form.submit()"><option value="">全部</option>{% for r in regions %}<option {% if r==region %}selected{% endif %}>{{ r }}</option>{% endfor %}</select></div>
+  {{ region_extra|default('')|safe }}
+  <div class="ant-filter-actions"><noscript><button class="ant-btn" type="submit">筛选</button></noscript>{% if region %}<a class="ant-btn" href="?{% if date is defined and date %}date={{ date }}{% endif %}">重置区域</a>{% endif %}</div>
+</form>

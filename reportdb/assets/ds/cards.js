@@ -14,7 +14,7 @@
 (function () {
   'use strict';
   var WRAP = '.tw,.ant-table-wrap,.sheet,.store-table-wrapper,.freeze-wrap';
-  var SKIP_TITLES = { '#': 1, '名次': 1, '排名': 1, '编号': 1 };
+  var SKIP_TITLES = { '#': 1, '名次': 1, '排名': 1, '编号': 1, '序号': 1 };
   var sigs = new WeakMap();
 
   function headCells(t) {

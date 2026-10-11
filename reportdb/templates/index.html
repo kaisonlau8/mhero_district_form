@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block body %}
+<header class="ant-page-header">
+  <div class="ant-page-header-heading">
+    <h1>区域各指标情况一览</h1>
+    <div class="ant-page-header-sub">数据更新 {{ snap.ingested_at or '-' }} · 汇总计算 {{ computed_at }}{% if exempt_total %} · 含已修正 {{ exempt_total }} 行{% endif %}</div>
+    <div class="ant-page-header-meta"><span class="ant-tag ant-tag-processing"><svg class="ai" aria-hidden="true"><use href="#i-clock-circle"/></svg>快照日期 {{ date }}</span>{% if region %}<span class="ant-tag">区域：{{ region }}</span>{% endif %}</div>
+  </div>
+  <form class="ant-page-header-actions" method="get">
+    <select class="ant-select" name="region" onchange="this.form.submit()" aria-label="区域"><option value="">全部区域</option>{% for r in regions %}<option {% if r==region %}selected{% endif %}>{{ r }}</option>{% endfor %}</select>
+    <select class="ant-select" name="date" onchange="this.form.submit()" aria-label="快照日期">{% for s in snaps %}<option value="{{ s.snapshot_date }}" {% if s.snapshot_date==date %}selected{% endif %}>{{ s.snapshot_date }}</option>{% endfor %}</select>
+    <noscript><button class="ant-btn" type="submit">切换</button></noscript>
+    <a class="ant-btn ant-btn-primary" href="/export/daily-report.xlsx?date={{ date }}"><svg class="ai" aria-hidden="true"><use href="#i-download"/></svg>下载日报 xlsx</a>
+    <a class="ant-btn" href="/export/home.xlsx?date={{ date }}{% if region %}&region={{ region|urlencode }}{% endif %}&sort={{ home.sort }}" title="导出当前首页总表（含当前区域与排序）为 Excel"><svg class="ai" aria-hidden="true"><use href="#i-export"/></svg>导出 Excel</a>
+    <a class="ant-btn" href="javascript:window.print()"><svg class="ai" aria-hidden="true"><use href="#i-printer"/></svg>打印</a>
+  </form>
+</header>
+
+{% set base_url = "/" %}{% include "_home_table.html" %}
+{% include "_home_legend.html" %}
+
+<div class="ant-card">
+  <div class="ant-card-head"><h2 class="ant-card-head-title">快捷入口 <span class="ant-card-head-sub">常用报表、明细数据与管理功能的入口</span></h2></div>
+  <div class="ant-card-body">
+    <div class="ant-chip-group-label">更多报表</div>
+    <div class="ant-chip-group">
+      <a class="ant-chip" href="/tables/region-indicators?date={{ date }}{% if region %}&region={{ region|urlencode }}{% endif %}" title="{{ table_titles['region-indicators'][1] }}"><svg class="ai" aria-hidden="true"><use href="#i-table"/></svg>{{ table_titles['region-indicators'][0] }}</a>
+      <a class="ant-chip" href="/tables/direct-stores?date={{ date }}{% if region %}&region={{ region|urlencode }}{% endif %}" title="{{ table_titles['direct-stores'][1] }}"><svg class="ai" aria-hidden="true"><use href="#i-shop"/></svg>{{ table_titles['direct-stores'][0] }}</a>
+      <a class="ant-chip" href="/tables/spare-parts?date={{ date }}{% if region %}&region={{ region|urlencode }}{% endif %}" title="{{ table_titles['spare-parts'][1] }}"><svg class="ai" aria-hidden="true"><use href="#i-appstore"/></svg>{{ table_titles['spare-parts'][0] }}</a>
+      <a class="ant-chip" href="/reports/daily?date={{ date }}"><svg class="ai" aria-hidden="true"><use href="#i-file-text"/></svg>日报导出历史</a>
+      <a class="ant-chip" href="/export/tables/all.xlsx?date={{ date }}"><svg class="ai" aria-hidden="true"><use href="#i-cloud-download"/></svg>导出全部汇总表</a>
+    </div>
+    <div class="ant-chip-group-label">明细数据{% if not authorized %}（VIN / 姓名已脱敏）{% endif %}</div>
+    <div class="ant-chip-group">
+      {% for d in datasets %}<a class="ant-chip" href="/data/{{ d.key }}?date={{ date }}{% if region %}&region={{ region|urlencode }}{% endif %}"><svg class="ai" aria-hidden="true"><use href="#i-database"/></svg>{{ d.title.split('（')[0] }}<span class="ant-chip-count">{{ counts.get(d.key, 0) }}</span></a>{% endfor %}
+    </div>
+    {% if is_admin %}
+    <div class="ant-chip-group-label" style="margin-bottom:0">管理</div>
+    <div class="ant-chip-group" style="margin-bottom:0">
+      <a class="ant-chip" href="/admin/exemptions"><svg class="ai" aria-hidden="true"><use href="#i-audit"/></svg>修正结果 / 剔除审批{% if pending_exemptions %}（待审 {{ pending_exemptions }}）{% endif %}</a>
+      <a class="ant-chip" href="/settings/exclusion-rules"><svg class="ai" aria-hidden="true"><use href="#i-filter"/></svg>剔除规则</a>
+      <a class="ant-chip" href="/settings/spare-parts"><svg class="ai" aria-hidden="true"><use href="#i-setting"/></svg>备件名单设置</a>
+      <a class="ant-chip" href="/admin/users"><svg class="ai" aria-hidden="true"><use href="#i-team"/></svg>用户管理</a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<details class="qa">
+  <summary>数据质量与透明度 <span class="muted">被剔除的明细 · 剔除 / 修正结果情况</span></summary>
+  <div class="inner">
+  <div class="ant-flex ant-mb-2"><a class="btn btn-export" href="/export/quality.xlsx?date={{ date }}"><svg class="ai" aria-hidden="true"><use href="#i-download"/></svg>导出 Excel（质量表）</a></div>
+{% set bad = [] %}
+{% for key, qd in quality.items() if qd.excluded_rows %}{% if bad.append(1) %}{% endif %}{% endfor %}
+  <h3 class="sec">被剔除的明细 {% if bad %}<span class="badge b-warn">有不在门店表内的门店</span>{% else %}<span class="badge b-ok">全部在门店表内</span>{% endif %}</h3><div class="inner">
+  <p class="muted">以多维表格「参与考核特约店清单」为准：门店不在表内（或已停用）的明细行<b>不计入任何指标</b>（区域、直营店、全国均不含）。下表列出被剔除的行数与主要门店。</p>
+  <div class="tw"><table><thead><tr><th class="nosort">数据集</th><th class="nosort num">总行数</th><th class="nosort num">计入</th><th class="nosort num">剔除</th><th class="nosort">主要被剔除门店（行数）</th></tr></thead><tbody>
+  {% for key, qd in quality.items() if qd.excluded_rows is defined %}<tr><td>{{ qd.title }}</td><td class="num">{{ qd.rows }}</td><td class="num">{{ qd.in_scope_rows }}</td><td class="num">{{ qd.excluded_rows }}</td>
+    <td>{% for t in qd.excluded_stores[:6] %}{{ t.store }}（{{ t.rows }}）{% if not loop.last %}、{% endif %}{% endfor %}{% if qd.excluded_stores|length > 6 %} 等 {{ qd.excluded_stores|length }} 家…{% endif %} <a href="/api/quality?date={{ date }}">完整清单</a></td></tr>{% endfor %}
+  </tbody></table></div></div>
+  <h3 class="sec">已剔除 / 已修正</h3><div class="inner">
+  <details class="hint"><summary>说明</summary><p class="muted">{{ ex_note }}</p></details>
+  <div class="tw"><table><thead><tr><th class="nosort">指标</th><th class="nosort num">剔除：规则命中（分子分母都不计）</th><th class="nosort num">剔除：整车申请（行 / VIN）</th><th class="nosort num">修正结果：多计入分子的行</th><th class="nosort num">修正结果涉及 VIN</th></tr></thead><tbody>
+  {% for key, v in quality.exemptions.items() %}<tr><td>{{ v.title }}</td><td class="num">{{ quality.exclusions[key].by_rule }}{% if quality.exclusions[key].no_region_rows %} <small title="{% for x in quality.exclusions[key].no_region_stores %}{{ x.store }} {{ x.rows }}；{% endfor %}">＋DMS 无区域 {{ quality.exclusions[key].no_region_rows }}</small>{% endif %}</td><td class="num">{{ quality.exclusions[key].by_vin_rows }} / {{ quality.exclusions[key].by_vin }}</td><td class="num">{{ v.rows }}</td><td class="num">{{ v.vins }}</td></tr>{% endfor %}</tbody></table></div>
+  <p class="muted">剔除规则：{% for r in quality.exclusion_rules if r.enabled %}{{ r.dataset_key }}.{{ r.column_name }}{{ '=' if r.match_type=='equals' else '含' }}「{{ r.value }}」{% if not loop.last %}；{% endif %}{% endfor %}{% if is_admin %} · <a href="/settings/exclusion-rules">管理规则</a>{% endif %}（规则命中的行若本来就不在门店表内，不计入此处的数字）。</p></div>
+  </div>
+</details>
+{% if is_admin %}<p class="ant-page-footer">JSON API：<a href="/api/tables">/api/tables</a> · <a href="/api/snapshots">/api/snapshots</a> · <a href="/api/quality">/api/quality</a> · 门店清单同步 {{ stores_synced_at or '（模板种子，未同步）' }}</p>{% endif %}
+{% endblock %}

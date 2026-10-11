@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block body %}
+<header class="ant-page-header">
+  <div class="ant-page-header-heading">
+    <h1>修改密码</h1>
+    <div class="ant-page-header-sub">用户名：<b>{{ user.username }}</b> · 角色：{{ {'admin':'管理员','supervisor':'督导'}.get(user.role,'查看者') }} · 完整明细：{{ '是' if user.full_detail else '否（VIN/姓名脱敏）' }}</div>
+  </div>
+</header>
+
+{% if msg %}<div class="ant-alert ant-alert-success"><span class="ant-alert-icon"><svg class="ai" aria-hidden="true"><use href="#i-check-circle"/></svg></span><div class="ant-alert-content">{{ msg }}</div></div>{% endif %}
+{% if err %}<div class="ant-alert ant-alert-error"><span class="ant-alert-icon"><svg class="ai" aria-hidden="true"><use href="#i-close-circle"/></svg></span><div class="ant-alert-content">{{ err }}</div></div>{% endif %}
+
+{% if can_change %}
+<div class="ant-card" style="max-width:480px">
+  <div class="ant-card-head"><h2 class="ant-card-head-title">设置新密码</h2></div>
+  <div class="ant-card-body">
+  <form method="post" action="/account/password">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="ant-form-item"><label class="ant-form-item-label" for="old">原密码</label>
+      <div class="ant-form-item-control"><input class="ant-input" id="old" type="password" name="old" autocomplete="current-password" required></div></div>
+    <div class="ant-form-item"><label class="ant-form-item-label" for="new">新密码（至少 10 位）</label>
+      <div class="ant-form-item-control"><input class="ant-input" id="new" type="password" name="new" autocomplete="new-password" required minlength="10"></div></div>
+    <div class="ant-form-item"><label class="ant-form-item-label" for="new2">再输一次</label>
+      <div class="ant-form-item-control"><input class="ant-input" id="new2" type="password" name="new2" autocomplete="new-password" required minlength="10"></div></div>
+    <button class="ant-btn ant-btn-primary" type="submit">修改密码（修改后需重新登录）</button>
+  </form>
+  </div>
+</div>
+{% else %}<div class="ant-alert ant-alert-info"><span class="ant-alert-icon"><svg class="ai" aria-hidden="true"><use href="#i-info-circle"/></svg></span><div class="ant-alert-content">密码由单点登录系统管理。</div></div>{% endif %}
+{% endblock %}

@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} · 区域报表{% endblock %}
+{% block body %}
+<header class="ant-page-header">
+  <div class="ant-page-header-heading">
+    <h1>{{ title }}</h1>
+    <div class="ant-page-header-sub">{{ desc }}</div>
+    <div class="ant-page-header-meta">快照 {{ date }} · 计算于 {{ computed_at }}</div>
+  </div>
+  <div class="ant-page-header-actions">
+    <a class="ant-btn" href="/export/home.xlsx?date={{ date }}{% if region %}&region={{ region|urlencode }}{% endif %}&sort={{ home.sort }}" title="导出当前总表（含当前区域与排序）为 Excel"><svg class="ai" aria-hidden="true"><use href="#i-export"/></svg>导出 Excel</a>
+    <a class="ant-btn" href="{{ export_url }}">完整总表</a>
+  </div>
+</header>
+{% include "_region_bar.html" %}
+{% set base_url = "/tables/summary" %}
+{% include "_home_table.html" %}
+{% include "_home_legend.html" %}
+{% endblock %}

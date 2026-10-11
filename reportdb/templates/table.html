@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} · 区域报表{% endblock %}
+{% block body %}
+<header class="ant-page-header">
+  <div class="ant-page-header-heading">
+    <h1>{{ title }}</h1>
+    <div class="ant-page-header-sub">{{ desc }}</div>
+    <div class="ant-page-header-meta">计算于 {{ computed_at }} · 点击表头可排序；合计行始终在最下方。</div>
+  </div>
+  <div class="ant-page-header-actions">{% set xl_url = export_url %}{% set xl_fixed = true %}{% include "_export_btn.html" %}</div>
+</header>
+
+<div class="ant-card">
+  <div class="ant-card-body">
+  {% set show_region = true %}{% set q_label = '门店/区域' %}{% include "_filters.html" %}
+  </div>
+</div>
+
+{% for b in blocks %}
+<div class="ant-card">
+  <div class="ant-card-head"><h2 class="ant-card-head-title">{{ b.title }}</h2></div>
+  <div class="ant-card-body">
+  <div class="tw ant-table-wrap"><table class="sortable sticky1"><thead><tr>{% for h in b.headers %}<th class="{{ 'num' if loop.index>1 else '' }}">{{ h }}</th>{% endfor %}</tr></thead>
+  <tbody>{% for r in b.rows %}<tr>{% for c in r %}<td class="{{ c.cls }}" data-v="{{ c.v }}">{% if c.t=='是' %}<span class="ok">是</span>{% elif c.t=='否' %}<span class="bad">否</span>{% else %}{{ c.t }}{% endif %}</td>{% endfor %}</tr>
+  {% else %}<tr><td colspan="{{ b.headers|length }}"><div class="ant-empty"><div class="ant-empty-image"><svg class="ai" aria-hidden="true"><use href="#i-inbox"/></svg></div><div class="ant-empty-title">{% if region or q %}筛选无结果{% else %}暂无数据{% endif %}</div><div class="ant-empty-desc">{% if region or q %}当前筛选条件下没有匹配的行。{% else %}该快照还没有这张表的数据。{% endif %}</div></div></td></tr>{% endfor %}</tbody>
+  {% if b.total %}<tfoot><tr>{% for c in b.total %}<td class="{{ c.cls }}">{{ c.t if c.v!='' or c.cls else '' }}</td>{% endfor %}</tr></tfoot>{% endif %}
+  </table></div></div>
+</div>
+{% endfor %}
+{% endblock %}

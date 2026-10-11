@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block body %}
+<header class="ant-page-header">
+  <div class="ant-page-header-heading">
+    <h1>日报导出</h1>
+    <div class="ant-page-header-sub">取代 Excel 日报：由系统统一计算并导出</div>
+    <div class="ant-page-header-meta">当前报表引擎：<b>{{ '系统统一计算（reportdb）' if engine=='reportdb' else 'Excel（旧路径，尚未切换）' }}</b></div>
+  </div>
+  <div class="ant-page-header-actions">
+    <a class="ant-btn ant-btn-primary" href="/export/daily-report.xlsx?date={{ date }}"><svg class="ai" aria-hidden="true"><use href="#i-download"/></svg>下载 {{ date }} 日报</a>
+    <a class="ant-btn" href="/export/daily-report.xlsx?date={{ date }}&detail=1"><svg class="ai" aria-hidden="true"><use href="#i-file-excel"/></svg>含明细 sheet{% if not authorized_detail %}（VIN/姓名按权限脱敏）{% endif %}</a>
+  </div>
+</header>
+
+<div class="ant-card">
+  <div class="ant-card-body">
+  <p>文件名 <b>区域各指标情况一览MMDD.xlsx</b>，含 5 张汇总表（直营店指标 / 区域指标排序 / 直营店指标排序 / 总表 / 常备件备库率），版式与旧日报一致，数值为系统计算结果（不含公式）。口径：门店以多维表格为准、已含督导修正结果、已剔除出口车等。</p>
+  {% if engine!='reportdb' %}<div class="ant-alert ant-alert-info"><span class="ant-alert-icon"><svg class="ai" aria-hidden="true"><use href="#i-info-circle"/></svg></span><div class="ant-alert-content">定时任务设置 MHERO_REPORT_ENGINE=reportdb 后，每天 08:30 抓取完成会自动入库、导出这份日报并按原样推送飞书。</div></div>{% endif %}
+  </div>
+</div>
+
+<div class="ant-card">
+  <div class="ant-card-head"><h2 class="ant-card-head-title">历史日报 <span class="ant-card-head-sub">可重新导出任意一天</span></h2>
+    <div class="ant-card-extra">{% set xl_url = "/export/daily-history.xlsx" %}{% set xl_fixed = true %}{% include "_export_btn.html" %}</div></div>
+  <div class="ant-card-body">
+  {% include "_region_bar.html" %}
+  <div class="tw ant-table-wrap"><table><thead><tr><th class="nosort">快照日期</th><th class="nosort">入库时间</th><th class="nosort">文件名</th><th class="nosort">下载</th></tr></thead><tbody>
+  {% for h in hist %}<tr><td>{{ h.date }}</td><td>{{ h.ingested_at or '' }}</td><td>{{ h.name }}</td><td><a href="/export/daily-report.xlsx?date={{ h.date }}">下载</a> · <a href="/tables/summary?date={{ h.date }}{% if region %}&region={{ region|urlencode }}{% endif %}">在线查看</a></td></tr>
+  {% else %}<tr><td colspan="4"><div class="ant-empty"><div class="ant-empty-image"><svg class="ai" aria-hidden="true"><use href="#i-inbox"/></svg></div><div class="ant-empty-title">暂无历史日报</div><div class="ant-empty-desc">还没有入库的快照；快照入库后可在这里重新导出任意一天的日报。</div></div></td></tr>{% endfor %}</tbody></table></div></div>
+</div>
+{% endblock %}

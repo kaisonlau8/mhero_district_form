@@ -1,0 +1,34 @@
+
+<style>
+  table.freeze-vin thead th { position: sticky; top: 0; z-index: 5; background: var(--ant-table-header-bg); }
+  table.freeze-vin .fz { position: sticky; z-index: 4; background: var(--ant-color-bg-container); }
+  table.freeze-vin thead th.fz { z-index: 7; background: var(--ant-table-header-bg); }
+  .tw.freeze-wrap { max-height: 75vh; overflow: auto; }
+</style>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  if (window.matchMedia('(max-width: 768px)').matches) return;  // 手机端表格已卡片化，无需冻结 VIN 列
+  document.querySelectorAll('table[data-freeze-vin]').forEach(function (t) {
+    var ths = t.querySelectorAll('thead th'), vi = -1;
+    ths.forEach(function (h, i) { var s = h.textContent.trim(); if (vi < 0 && (s === 'VIN' || s === '车架号')) vi = i; });
+    if (vi < 0) return;
+    t.classList.add('freeze-vin');
+    if (t.parentElement && t.parentElement.classList.contains('tw')) t.parentElement.classList.add('freeze-wrap');
+    var left = 0, lefts = [];
+    for (var i = 0; i <= vi; i++) { lefts.push(left); left += ths[i].getBoundingClientRect().width; }
+    t.querySelectorAll('tr').forEach(function (tr) {
+      for (var i = 0; i <= vi && i < tr.children.length; i++) { var c = tr.children[i]; c.classList.add('fz'); c.style.left = lefts[i] + 'px'; }
+    });
+  });
+});
+</script>
+<div class="ant-card" id="my-requests">
+  <div class="ant-card-head"><h2 class="ant-card-head-title">我的申请明细（{{ kind_cn[req_kind] }}） <span class="ant-card-head-sub">{% if ind_title is defined and ind_title %}{{ ind_title }} · {% endif %}共 {{ my_rows|length }} 条{% if region %} · 区域 {{ region }}{% endif %}</span></h2>
+    <div class="ant-card-extra"><a class="btn btn-export" href="/export/exemptions/mine.xlsx?kind={{ 'exempt' if req_kind=='exempt' else 'exclude' }}{% if region %}&region={{ region|urlencode }}{% endif %}{% if ind is defined and ind and req_kind=='exempt' %}&indicator={{ ind.key }}{% endif %}"><svg class="ai" aria-hidden="true"><use href="#i-download"/></svg>导出 Excel</a>
+      <a class="ant-btn ant-btn-sm" href="/exemptions/mine?kind={{ req_kind }}">查看全部 / 撤回</a></div></div>
+  <div class="ant-card-body">
+  <div class="tw ant-table-wrap"><table data-freeze-vin><thead><tr><th class="nosort">编号</th><th class="nosort">类型</th><th class="nosort" data-card-title>VIN</th>{% if req_kind=='exempt' %}<th class="nosort">指标</th>{% endif %}<th class="nosort">门店</th><th class="nosort">区域</th><th class="nosort">理由</th><th class="nosort">申请时间</th><th class="nosort">状态</th><th class="nosort">审批意见</th></tr></thead><tbody>
+  {% for r in my_rows %}<tr><td>{{ r.id }}</td><td>{{ kind_cn[r.kind] }}</td><td>{{ r.vin }}</td>{% if req_kind=='exempt' %}<td>{{ inds[r.indicator].title if r.indicator in inds else r.indicator }}</td>{% endif %}<td>{{ r.store_name }}</td><td>{{ r.region or '' }}</td><td style="white-space:normal;min-width:180px">{{ r.reason }}</td><td>{{ r.requested_at }}</td>
+    <td><span class="ant-tag {{ {'pending':'ant-tag-warning','approved':'ant-tag-success','rejected':'ant-tag-error'}.get(r.status,'ant-tag') }}">{{ status_cn[r.status] }}</span></td><td>{{ r.review_comment or '' }}</td></tr>
+  {% else %}<tr><td colspan="{{ 10 if req_kind=='exempt' else 9 }}"><div class="ant-empty"><div class="ant-empty-image"><svg class="ai" aria-hidden="true"><use href="#i-inbox"/></svg></div><div class="ant-empty-title">还没有申请记录</div><div class="ant-empty-desc">提交后可在这里跟踪审批进度，待审批期间可撤回。</div></div></td></tr>{% endfor %}</tbody></table></div></div>
+</div>

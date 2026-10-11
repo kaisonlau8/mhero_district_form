@@ -1,0 +1,12 @@
+<form class="ant-filter-bar" method="get">
+  <div class="ant-filter-item"><label>快照日期</label>
+    <select class="ant-select" name="date" onchange="this.form.submit()">{% for s in snaps %}<option value="{{ s.snapshot_date }}" {% if s.snapshot_date==date %}selected{% endif %}>{{ s.snapshot_date }}</option>{% endfor %}</select></div>
+  {% if show_region %}<div class="ant-filter-item"><label>区域</label>
+    <select class="ant-select" name="region" onchange="this.form.submit()"><option value="">全部</option>{% for r in regions %}<option {% if r==region %}selected{% endif %}>{{ r }}</option>{% endfor %}</select></div>{% endif %}
+  <div class="ant-filter-item"><label>{{ q_label|default('门店') }}</label><input class="ant-input" name="q" value="{{ q }}" placeholder="{{ q_hint|default('名称包含…') }}"></div>
+  {{ extra|default('')|safe }}
+  <div class="ant-filter-actions">
+    <button class="ant-btn ant-btn-primary" type="submit">筛选</button>
+    <a class="ant-btn" href="?date={{ date }}">重置</a>
+  </div>
+</form>
