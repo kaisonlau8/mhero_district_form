@@ -802,7 +802,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
     font-size: var(--ant-font-size-sm); color: var(--ant-color-text-secondary); line-height: 1.65;
   }
   .ant-table-cards td[data-cards-full] > * { flex: 1 1 160px; min-width: 0; }
-  .ant-table-cards td[data-cards-full] > .ant-check-hit { flex: 0 0 auto; }
+  .ant-table-cards td[data-cards-full] > .ant-check-hit { flex: 0 0 auto; min-width: var(--ant-control-height-mobile); }
   .ant-table-cards td[data-cards-full] a:not(.ant-tag):not(.ant-chip) {
     display: inline-flex; align-items: center; min-height: var(--ant-control-height-mobile);
   }
