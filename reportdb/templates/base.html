@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}区域报表{% endblock %}</title>
+  {# 统一设计系统（Ant Design v5 视觉语言，纯 CSS）：tokens + 组件 + 旧 class 兼容层 #}
+  <style>{{ ds_css|safe }}</style>
+  {# reportdb 站点专属样式（仅此处；通用样式一律进 design-system/antd-lite.css）：
+     ① 首页/门店「Excel 式」大表 table.xl（原 _home_css.html 迁入并 token 化）
+     ② 备件矩阵 cell0/cell1 语义色  ③ 数据质量折叠 details.qa（外观对齐 ant-collapse） #}
+  <style>
+    /* ---- ① table.xl 大表：表头/首二列粘性、合计行、名次角标、相对高低 ---- */
+    .sheet {
+      background: var(--ant-color-bg-container);
+      border: 1px solid var(--ant-color-split);
+      border-radius: var(--ant-radius-lg);
+      box-shadow: var(--ant-shadow-card);
+      overflow: auto;
+      max-height: 80vh;
+      -webkit-overflow-scrolling: touch;
+    }
+    table.xl { width: 100%; border-collapse: separate; border-spacing: 0; font-size: var(--ant-font-size-table); }
+    table.xl th, table.xl td { padding: 8px 14px; text-align: right; border-bottom: 1px solid var(--ant-color-split); white-space: nowrap; }
+    table.xl thead th { position:sticky; top: 0; z-index: 3; background: var(--ant-table-header-bg); color: var(--ant-color-text); border-bottom: 1px solid var(--ant-color-border); cursor: default; vertical-align: bottom; }
+    table.xl thead th small { display: block; font-weight: 400; font-size: var(--ant-font-size-sm); color: var(--ant-color-text-secondary); }
+    table.xl th:nth-child(2), table.xl td:nth-child(2) { position:sticky; left: 48px; z-index: 2; text-align: left; background: var(--ant-color-bg-container); font-weight: 600; min-width: 84px; border-right: 1px solid var(--ant-color-split); }
+    table.xl th:first-child, table.xl td:first-child { position:sticky; left: 0; z-index: 2; background: var(--ant-color-bg-container); }
+    table.xl thead th:first-child, table.xl thead th:nth-child(2) { z-index: 4; background: var(--ant-table-header-bg); }
+    table.xl tbody tr:nth-child(even) td { background: var(--ant-table-stripe-bg); }
+    table.xl tbody tr:hover td { background: var(--ant-table-row-hover); }
+    table.xl tr.tot td { background: var(--ant-primary-bg) !important; font-weight: 600; }
+    table.xl td .v { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; display: inline-block; }
+    table.xl td .s { display: block; font-size: var(--ant-font-size-sm); color: var(--ant-color-text-secondary); font-variant-numeric: tabular-nums; }
+    table.xl td .rk { font-size: var(--ant-font-size-sm); color: var(--ant-color-text-tertiary); margin-left: 4px; }
+    table.xl td.hi .v { color: var(--ant-success-text); }
+    table.xl td.lo .v { color: var(--ant-warning-text); }
+    table.xl tbody tr td.hi, table.xl tbody tr:nth-child(even) td.hi { background: var(--ant-success-bg); }
+    table.xl tbody tr td.lo, table.xl tbody tr:nth-child(even) td.lo { background: var(--ant-warning-bg); }
+    table.xl th.sortable a { color: inherit; display: flex; align-items: baseline; gap: 2px; }
+    table.xl th.sortable a:hover { color: var(--ant-primary); text-decoration: none; }
+    table.xl th.sortable a small { flex: none; }
+    table.xl th.act { background: var(--ant-primary-bg); color: var(--ant-primary-active); }
+    table.xl td.pos, table.xl th.pos { text-align: center; width: 48px; color: var(--ant-color-text-secondary); font-weight: 600; padding-left: 8px; padding-right: 8px; }
+    /* 门店详情的紧凑变体：短表，取消粘性列，数值右对齐 */
+    #dt th:nth-child(2), #dt td:nth-child(2), #dt th:first-child, #dt td:first-child { position: static; }
+    #dt th:nth-child(2), #dt td:nth-child(2) { text-align: right; font-weight: 400; min-width: 0; border-right: 0; background: inherit; }
+    #dt td:first-child { text-align: left; }
+    /* 图例（折叠面板内的口径说明） */
+    .legend { margin: var(--ant-space-2) 0 0; font-size: var(--ant-font-size-sm); color: var(--ant-color-text-secondary); }
+    .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; vertical-align: -1px; margin: 0 3px 0 8px; }
+    /* 筛选卡合并后的行内标题（修正结果 / 剔除申请页的「筛选车辆」） */
+    .filter-title { font-size: var(--ant-font-size-table); font-weight: 600; color: var(--ant-color-text); white-space: nowrap; }
+
+    /* ---- ② 备件矩阵单元格（未备=辅助灰、已备=success 弱底） ---- */
+    .cell0 { color: var(--ant-color-text-tertiary); }
+    .cell1 { color: var(--ant-color-text); background: var(--ant-success-bg); }
+
+    /* ---- ③ 数据质量折叠 details.qa：外观对齐 ant-collapse（class 名为测试与既有锚点保留） ---- */
+    details.qa {
+      background: var(--ant-color-bg-container);
+      border: 1px solid var(--ant-color-split);
+      border-radius: var(--ant-radius-lg);
+      margin-bottom: var(--ant-space-4);
+    }
+    details.qa > summary {
+      display: flex;
+      align-items: center;
+      gap: var(--ant-space-2);
+      padding: var(--ant-space-3) var(--ant-space-4);
+      min-height: 46px;
+      cursor: pointer;
+      font-size: var(--ant-font-size-table);
+      font-weight: 600;
+      color: var(--ant-color-text);
+      list-style: none;
+    }
+    details.qa > summary::-webkit-details-marker { display: none; }
+    details.qa > summary::after {
+      content: '';
+      margin-left: auto;
+      width: 12px;
+      height: 12px;
+      flex: none;
+      background: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='64 64 896 896'%3E%3Cpath fill='%238c8c8c' d='M840.4 300H183.6c-19.7 0-30.7 20.8-18.5 35l328.4 380.8c9.4 10.9 27.5 10.9 37 0L858.9 335c12.2-14.2 1.2-35-18.5-35z'/%3E%3C/svg%3E") no-repeat center / contain;
+      transition: transform .2s;
+    }
+    details.qa[open] > summary { border-bottom: 1px solid var(--ant-color-split); }
+    details.qa[open] > summary::after { transform: rotate(180deg); }
+    details.qa .inner { padding: var(--ant-space-2) var(--ant-space-4) var(--ant-space-3); font-size: var(--ant-font-size-table); }
+    details.qa h3.sec { font-size: var(--ant-font-size-base); margin: var(--ant-space-3) 0 6px; color: var(--ant-color-text); }
+
+    @media (max-width: 640px) {
+      table.xl th, table.xl td { padding: 6px 9px; }
+      .sheet { max-height: none; }
+    }
+    /* 手机（<=768px）：只保留第 2 列（门店/区域名）粘性在左缘（left:0），
+       首列（#/名次）不再粘性、随内容横滑；门店表的 # 列直接隐藏省出宽度。
+       粘性列限宽 + 裁省略号，避免长店名把可横滑区挤没；背景保持不透明。 */
+    @media (max-width: 768px) {
+      table.xl th:first-child, table.xl td:first-child { position: static; }
+      table.xl th:nth-child(2), table.xl td:nth-child(2) {
+        left: 0; min-width: 0; max-width: 46vw;
+        overflow: hidden; text-overflow: ellipsis;
+      }
+      #storetbl th:first-child, #storetbl td:first-child { display: none; }
+    }
+    @media print {
+      .sheet { max-height: none; overflow: visible; box-shadow: none; border: 0; }
+      table.xl th, table.xl td { padding: 4px 8px; }
+      table.xl th:first-child, table.xl td:first-child,
+      table.xl th:nth-child(2), table.xl td:nth-child(2) { position: static; }
+      table.xl thead th { position: static; }
+    }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  {# 本地图标 sprite（阿里 Ant Design Icons，MIT）：<svg class="ai"><use href="#i-xxx"/></svg> #}
+  {{ ds_sprite|safe }}
+  {% set P = request.url.path %}
+  {% macro item(href, label) %}<a href="{{ href }}{% if date and '?' not in href %}?date={{ date }}{% endif %}" class="{{ 'cur' if P == href }}" {% if P == href %}aria-current="page"{% endif %}>{{ label }}</a>{% endmacro %}
+  {# 顶栏：ant-header / ant-menu 规格（历史 hook .topbar/.menu/.mi/.dd 由 antd-lite.css 与 ant-* 共享规则承接） #}
+  <header class="topbar" id="topbar"><div class="in">
+    <a class="brand" href="/{% if date %}?date={{ date }}{% endif %}"><svg class="ai" aria-hidden="true"><use href="#i-bar-chart"/></svg>区域报表</a>
+    <button class="burger" id="burger" type="button" aria-label="菜单" aria-expanded="false" aria-controls="mainmenu"><svg class="ai" aria-hidden="true"><use href="#i-menu"/></svg></button>
+    <nav class="menu ant-menu" id="mainmenu" aria-label="主导航">
+      <div class="mi {{ 'on' if P == '/' }}"><a href="/{% if date %}?date={{ date }}{% endif %}">首页</a></div>
+      <div class="mi {{ 'on' if P.startswith('/tables') or P.startswith('/reports') or P.startswith('/stores') }}"><button type="button" aria-haspopup="true" aria-expanded="false"><svg class="ai dd-caret" aria-hidden="true"><use href="#i-caret-down"/></svg>报表</button>
+        <div class="dd ant-dropdown" role="menu">
+          {% for slug, t in table_titles.items() %}{{ item('/tables/' ~ slug, t[0]) }}{% endfor %}
+          <a href="/stores{% if date %}?date={{ date }}{% endif %}" class="{{ 'cur' if P.startswith('/stores') }}">门店指标</a>
+          <hr>{{ item('/reports/daily', '日报下载') }}</div></div>
+      <div class="mi {{ 'on' if P.startswith('/data') }}"><button type="button" aria-haspopup="true" aria-expanded="false"><svg class="ai dd-caret" aria-hidden="true"><use href="#i-caret-down"/></svg>明细数据</button>
+        <div class="dd ant-dropdown" role="menu">{% for d in datasets %}{{ item('/data/' ~ d.key, d.title.split('（')[0]) }}{% endfor %}</div></div>
+      {% if can_request_nav %}<div class="mi {{ 'on' if P.startswith('/exemptions') or P.startswith('/exclusions') }}"><button type="button" aria-haspopup="true" aria-expanded="false"><svg class="ai dd-caret" aria-hidden="true"><use href="#i-caret-down"/></svg>督导申请</button>
+        <div class="dd ant-dropdown" role="menu"><a href="/exemptions/new" class="{{ 'cur' if P=='/exemptions/new' }}">申请修正结果</a><a href="/exclusions/new" class="{{ 'cur' if P=='/exclusions/new' }}">申请剔除</a><a href="/exemptions/mine" class="{{ 'cur' if P=='/exemptions/mine' }}">我的申请</a></div></div>{% endif %}
+      {% if is_admin %}<div class="mi {{ 'on' if P.startswith('/admin') or P.startswith('/settings') }}"><button type="button" aria-haspopup="true" aria-expanded="false"><svg class="ai dd-caret" aria-hidden="true"><use href="#i-caret-down"/></svg>管理{% if pending_exemptions %}<span class="badge-n">{{ pending_exemptions }}</span>{% endif %}</button>
+        <div class="dd ant-dropdown" role="menu">
+          <a href="/admin/exemptions" class="{{ 'cur' if P.startswith('/admin/exemptions') }}">修正结果 / 剔除审批{% if pending_exemptions %}<span class="badge-n">{{ pending_exemptions }}</span>{% endif %}</a>
+          <a href="/admin/users" class="{{ 'cur' if P.startswith('/admin/users') }}">用户管理</a><a href="https://oa-m-hero.41box.com/admin/accounts" id="hub-accounts-link">账号管理（新增账号 / 开通系统）</a><hr>
+          <a href="/settings/spare-parts" class="{{ 'cur' if P.startswith('/settings/spare') }}">备件名单设置</a>
+          <a href="/settings/exclusion-rules" class="{{ 'cur' if P.startswith('/settings/excl') }}">剔除规则</a></div></div>{% endif %}
+      <span class="sp"></span>
+      {% if user %}<div class="mi right {{ 'on' if P.startswith('/account') }}"><button type="button" aria-haspopup="true" aria-expanded="false"><svg class="ai" aria-hidden="true"><use href="#i-user"/></svg>{{ user.display_name }}<svg class="ai dd-caret" aria-hidden="true"><use href="#i-caret-down"/></svg></button>
+        <div class="dd ant-dropdown" role="menu"><div class="who">{{ {'admin':'管理员','supervisor':'督导'}.get(user.role,'查看者') }}{% if user.auth_source and user.auth_source != 'local' %} · 单点登录{% endif %}</div>
+          {% if can_change_password %}<a href="/account/password" class="{{ 'cur' if P.startswith('/account') }}">修改密码</a><hr>{% endif %}
+          {% if account_url %}<a id="sso-account-link" href="{{ account_url }}" target="_blank" rel="noopener">账号设置</a>{% endif %}
+          {% if is_admin %}<a id="user-menu-accounts" href="https://oa-m-hero.41box.com/admin/accounts">账号管理（管理员）</a><a href="/admin/users" class="{{ 'cur' if P.startswith('/admin/users') }}">用户管理</a>{% endif %}<hr>
+          <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="lnk" type="submit"><svg class="ai" aria-hidden="true"><use href="#i-logout"/></svg>退出登录</button></form></div></div>{% endif %}
+    </nav></div></header>
+  <script>
+  (function(){
+    var bar=document.getElementById('topbar'), burger=document.getElementById('burger');
+    var items=[].slice.call(document.querySelectorAll('.mi'));
+    function closeAll(except){items.forEach(function(m){if(m!==except){m.classList.remove('open');var b=m.querySelector('button');if(b)b.setAttribute('aria-expanded','false');}});}
+    items.forEach(function(m){var b=m.querySelector(':scope > button'); if(!b) return;
+      b.addEventListener('click',function(e){e.stopPropagation();var o=!m.classList.contains('open');closeAll(m);m.classList.toggle('open',o);b.setAttribute('aria-expanded',o);});
+      b.addEventListener('keydown',function(e){if(e.key==='ArrowDown'){e.preventDefault();m.classList.add('open');b.setAttribute('aria-expanded','true');var a=m.querySelector('.dd a,.dd button');if(a)a.focus();}});
+      m.querySelector('.dd').addEventListener('keydown',function(e){var l=[].slice.call(m.querySelectorAll('.dd a,.dd button.lnk')),i=l.indexOf(document.activeElement);
+        if(e.key==='ArrowDown'){e.preventDefault();l[(i+1)%l.length].focus();}else if(e.key==='ArrowUp'){e.preventDefault();l[(i-1+l.length)%l.length].focus();}
+        else if(e.key==='Escape'){m.classList.remove('open');b.setAttribute('aria-expanded','false');b.focus();}});});
+    // 鼠标悬停自动展开（仅桌面鼠标）；离开后延迟 220ms 才收起，鼠标从菜单项移到子菜单时不闪烁；点击/键盘/触屏仍可用
+    var mq=window.matchMedia('(hover:hover) and (min-width:861px)');
+    items.forEach(function(m){var b=m.querySelector(':scope > button'); if(!b) return; var t=null;
+      m.addEventListener('mouseenter',function(){if(!mq.matches) return; clearTimeout(t); closeAll(m); m.classList.add('open'); b.setAttribute('aria-expanded','true');});
+      m.addEventListener('mouseleave',function(){if(!mq.matches) return; clearTimeout(t); t=setTimeout(function(){m.classList.remove('open'); b.setAttribute('aria-expanded','false');},220);});
+      b.addEventListener('click',function(e){if(mq.matches&&e.detail>0){e.stopImmediatePropagation(); closeAll(m); m.classList.add('open'); b.setAttribute('aria-expanded','true');}},true);
+    });
+    document.addEventListener('click',function(){closeAll();});
+    document.addEventListener('keydown',function(e){if(e.key==='Escape'){closeAll();bar.classList.remove('open');burger.setAttribute('aria-expanded','false');}});
+    burger.addEventListener('click',function(e){e.stopPropagation();var o=!bar.classList.contains('open');bar.classList.toggle('open',o);burger.setAttribute('aria-expanded',o);});
+  })();
+  </script>
+  {% if user and user.preview_admin %}<div id="preview-banner">
+    <span><svg class="ai" aria-hidden="true"><use href="#i-eye"/></svg>只读预览：你（{{ user.preview_admin }}）正在以督导「{{ user.display_name }}」的身份查看，所有提交已禁用。</span>
+    <form method="post" action="/admin/preview/exit"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-sm" id="preview-exit">退出预览</button></form></div>{% endif %}
+  <div class="container">
+    {% block body %}{% endblock %}
+    <footer class="ant-page-footer">
+      {% if date %}快照 {{ date }}{% endif %}{% if snap.ingested_at %} · 数据载入 {{ snap.ingested_at }}{% endif %}{% if stores_synced_at %} · 门店清单同步 {{ stores_synced_at }}{% endif %}
+      · 区域口径：{{ '按门店表（多维表格），不在表内的门店不计入' if mode=='store' else '【诊断模式】沿用 DMS 大区列' }}
+    </footer>
+  </div>
+<script>
+// 点击表头排序（客户端）；tfoot 合计行不参与
+document.querySelectorAll('table.sortable').forEach(function(t){
+  var ths=t.querySelectorAll('thead th');
+  ths.forEach(function(th,i){
+    if(th.classList.contains('nosort')) return;
+    th.addEventListener('click',function(){
+      var asc = th.dataset.dir !== 'asc'; ths.forEach(function(x){x.dataset.dir='';var a=x.querySelector('.arr'); if(a)a.remove();});
+      th.dataset.dir = asc ? 'asc':'desc'; th.insertAdjacentHTML('beforeend',' <span class="arr"><svg class="ai" aria-hidden="true"><use href="#i-caret-'+(asc?'up':'down')+'"/></svg></span>');
+      var tb=t.tBodies[0]; var rows=Array.prototype.slice.call(tb.rows);
+      rows.sort(function(a,b){
+        var x=a.cells[i].dataset.v, y=b.cells[i].dataset.v;
+        var nx=parseFloat(x), ny=parseFloat(y), r;
+        if(x===''||x===undefined) return 1; if(y===''||y===undefined) return -1;
+        if(!isNaN(nx)&&!isNaN(ny)) r=nx-ny; else r=String(x).localeCompare(String(y),'zh');
+        return asc? r : -r;
+      });
+      rows.forEach(function(r){tb.appendChild(r);});
+    });
+  });
+});
+</script>
+{# 移动端表格卡片化（<=768px，桌面端零影响）：自动补 data-label/data-card-title/data-cards-full #}
+<script>{{ ds_cards|safe }}</script>
+</body>
+</html>
