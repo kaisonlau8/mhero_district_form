@@ -40,7 +40,7 @@
   - `区域指标排序` — 各区域指标排名
   - `直营店指标排序` — 直营门店指标排名
   - `总表` — 区域级指标汇总
-  - `常备件备库率` — 经销商备库率明细（123 家经销商）
+  - `常备件备库率` — 经销商备库率明细（113 家经销商，7 个区域）
 - 自动处理三条业务特殊规则：
   - “去年同期交付未新保车辆”会在 `E/F` 之间补 1 列空白后再写入 `续保`
   - “门店备件库存导出”的 `M` 列会转成数字格式
@@ -148,8 +148,8 @@ build_macos_app.py            本地打包脚本
 - `com.mhero-district-form.pipeline` — 每天 **08:30** 跑 `run_pipeline.py`（读取 `config/crawl_settings.json` 的年/季度）
 - `com.cloudflare.cloudflared.m-hero-district-form` — Cloudflare Tunnel
 
-报表生成后（成功或失败）会通过飞书群机器人 Webhook 推送卡片；成功时可点「下载报表」。
-下载链接前缀由 `.env` 的 `PUBLIC_BASE_URL` 配置（勿把生产域名写进仓库示例以外的提交）。
+报表生成后（成功或失败）会通过飞书群机器人 Webhook 推送卡片；成功时可点「下载报表」。不发给门店。控制台「联系人」页只维护全国收件人，成功或失败时私聊同一张卡片，有 Excel 时附上文件。
+下载链接前缀由 `.env` 的 `PUBLIC_BASE_URL` 配置（勿把生产域名写进仓库示例以外的提交）。私聊使用 HeroClaw 的 `APP_ID` / `APP_SECRET`，只放本地 `.env`。
 
 产物目录：`download/`（源表）、`output/`（`区域各指标情况一览MMDD.xlsx`）。
 
@@ -175,3 +175,19 @@ build_macos_app.py            本地打包脚本
 
 - [开发文档](docs/development.md)
 - [打包与发版文档](docs/release.md)
+
+
+## 区域报表（reportdb，系统计算；Excel 为默认旧路径）
+
+`reportdb/` 把「区域各指标情况一览」的 5 张汇总表从 Excel 模板公式改为 SQLite 计算，并给每张表、每份明细一个独立网页（FastAPI）。
+默认 Excel 流程不受影响。设 `MHERO_REPORT_ENGINE=reportdb` 后，日报改由系统入库、计算并导出（取代 Excel 模板公式，下线模板管理，飞书推送格式不变，详见 docs/REPORTDB.md 第 7c 节）；出口车等可按规则/督导申请从分子分母剔除。`MHERO_REPORTDB=1`（默认关闭）时，每天抓取、出 Excel、飞书推送都照旧做完后，会多一步：同步门店并把当天 7 张表存进区域报表、重算汇总，网页显示当天数据；失败只记日志。门店以多维表格为准，不在表内的门店不计入任何指标；网页需登录。
+
+```
+python -m reportdb.migrate                                   # 建库 + 从模板种子初始化门店/区域/备件清单
+python -m reportdb.ingest --dir download --date 2026-10-09   # 7 份源报表入库并重算
+python -m reportdb.users create-admin --username admin        # 创建首个管理员（交互输入密码）
+python -m reportdb.webapp --port 9013                        # 网页 + /api（全站需登录）
+python -m pytest                                             # 测试（对账测试约 40 秒/项，REPORTDB_SKIP_PARITY=1 可跳过）
+```
+
+口径、表结构、访问保护、对账方法见 [docs/REPORTDB.md](docs/REPORTDB.md)。

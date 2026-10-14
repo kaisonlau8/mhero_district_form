@@ -18,3 +18,10 @@ app/assets/template_backups/
 app/assets/report_template.xlsx.meta.json
 output/*_公式版.xlsx
 output/_flatten_test*.xlsx
+data/store_directory.json
+config/national_recipients.json
+config/phone_open_ids.json
+.runtime/
+
+# reportdb（自建库）：SQLite 数据文件
+data/reportdb/

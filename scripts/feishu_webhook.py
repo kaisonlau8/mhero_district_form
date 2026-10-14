@@ -119,8 +119,42 @@ def build_pipeline_card(result: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def notify_national_im(result: dict[str, Any]) -> dict[str, Any]:
+    """群通知之外，给本系统全国收件人私聊同一张卡片，成功时附 Excel。"""
+    from directory_sync import load_national_recipients
+    from feishu_im import resolve_phone_to_open_id, send_card_message, send_file_message
+
+    people = load_national_recipients()
+    if not people:
+        return {"ok": True, "skipped": "no_national"}
+    card = build_pipeline_card(result)["card"]
+    report = str(result.get("report") or "")
+    report_path = Path(report) if report else None
+    sent: list[str] = []
+    failed: list[dict[str, str]] = []
+    for person in people:
+        name = str(person.get("name") or person.get("phone") or "")
+        open_id = str(person.get("open_id") or "").strip()
+        phone = str(person.get("phone") or "").strip()
+        try:
+            if not open_id and phone:
+                open_id = resolve_phone_to_open_id(phone)
+            if not open_id:
+                failed.append({"name": name, "error": "未解析"})
+                continue
+            send_card_message(open_id, card)
+            if report_path and report_path.is_file():
+                send_file_message(open_id, str(report_path))
+            sent.append(name or open_id)
+            print(f"[feishu] 全国收件人已私聊: {name or open_id}")
+        except Exception as exc:
+            failed.append({"name": name, "error": str(exc)})
+            print(f"[feishu] 全国收件人私聊失败 {name}: {exc}")
+    return {"ok": bool(sent) and not failed, "sent": sent, "failed": failed}
+
+
 def notify_pipeline_result(result: dict[str, Any]) -> dict[str, Any]:
-    """Notify Feishu group after pipeline finishes (success or failure)."""
+    """Notify Feishu group after pipeline finishes, then DM national recipients."""
     if result.get("status") == "dry_run":
         return {"ok": True, "skipped": "dry_run"}
     payload = build_pipeline_card(result)
@@ -129,7 +163,12 @@ def notify_pipeline_result(result: dict[str, Any]) -> dict[str, Any]:
         print(f"[feishu] webhook ok: {resp.get('response')}")
     else:
         print(f"[feishu] webhook failed: {resp}")
-    return resp
+    try:
+        im = notify_national_im(result)
+    except Exception as exc:
+        im = {"ok": False, "error": str(exc)}
+        print(f"[feishu] 全国收件人私聊失败: {exc}")
+    return {"ok": bool(resp.get("ok")), "webhook": resp, "im": im}
 
 
 if __name__ == "__main__":

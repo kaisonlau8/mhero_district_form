@@ -26,17 +26,13 @@
   </div>
 </div>
 
-<form method="post" action="/exclusions/request" class="ant-card">
-  <div class="ant-card-head"><h2 class="ant-card-head-title">车辆 <span class="ant-card-head-sub">所有指标明细合并、按 VIN 去重，最多显示 200 条 —— 勾选「是否申请」并逐辆填写理由</span></h2></div>
+<div class="ant-card">
+  <div class="ant-card-head"><h2 class="ant-card-head-title">车辆 <span class="ant-card-head-sub">所有指标明细合并、按 VIN 去重，最多显示 200 条 —— 逐辆填写理由，点该行的「提交申请」</span></h2></div>
   <div class="ant-card-body">
-  <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="date" value="{{ date }}"><input type="hidden" name="back" value="/exclusions/new">
-  <p class="muted">不支持批量粘贴 VIN：只能在下面的车辆列表里逐辆勾选、逐辆填写理由；勾选了但没填理由的不会提交。</p>
-  <div class="tw ant-table-wrap"><table class="sticky1" data-freeze-vin><thead><tr><th class="nosort">是否申请</th><th class="nosort num">#</th><th class="nosort" data-card-title>VIN</th><th class="nosort">门店编码</th><th class="nosort">门店名称</th><th class="nosort">归属区域</th><th class="nosort">涉及指标</th><th class="nosort">已有申请</th><th class="nosort">申请剔除理由（必填）</th></tr></thead><tbody>
-  {% for c in cands %}<tr><td style="text-align:center"><label class="ant-check-hit"><input type="checkbox" class="pick" name="xpick_{{ c.vin_key }}" value="1" aria-label="是否申请 {{ c.vin_key }}"></label></td><td class="num">{{ loop.index }}</td><td>{{ c.vin_show }}</td><td>{{ c.store_code or '' }}</td><td>{{ c.store_name or '' }}</td><td>{{ c.region or '' }}</td><td>{{ c.inds|join('、') }}</td><td>{% if c.req %}<span class="ant-tag {{ {'pending':'ant-tag-warning','approved':'ant-tag-success','rejected':'ant-tag-error'}.get(c.req.status,'ant-tag') }}">{{ kind_cn[c.req.kind] }}{{ status_cn[c.req.status] }}</span>{% else %}<span class="muted">—</span>{% endif %}</td><td><input class="ant-input" style="width:100%;min-width:220px" name="xreason_{{ c.vin_key }}" maxlength="500" placeholder="例如：出口车，DMS 没标出口" oninput="this.closest('tr').querySelector('.pick').checked = this.value.trim() !== ''"></td></tr>
+  <p class="muted">只能逐辆提交，不支持批量：每一行（手机上每张卡片）有自己的「提交申请」，一次只提交这一辆，理由必填。</p>
+  <div class="tw ant-table-wrap"><table class="sticky1" data-freeze-vin><thead><tr><th class="nosort num">#</th><th class="nosort" data-card-title>VIN</th><th class="nosort">门店编码</th><th class="nosort">门店名称</th><th class="nosort">归属区域</th><th class="nosort">涉及指标</th><th class="nosort">已有申请</th><th class="nosort row-reason-h">申请剔除理由（必填）</th><th class="nosort row-action-h">操作</th></tr></thead><tbody>
+  {% for c in cands %}{% set fid = 'x' ~ loop.index %}<tr id="r-{{ c.vin_key }}"><td class="num">{{ loop.index }}</td><td>{{ c.vin_show }}</td><td>{{ c.store_code or '' }}</td><td>{{ c.store_name or '' }}</td><td>{{ c.region or '' }}</td><td>{{ c.inds|join('、') }}</td><td>{% if c.req %}<span class="ant-tag {{ {'pending':'ant-tag-warning','approved':'ant-tag-success','rejected':'ant-tag-error'}.get(c.req.status,'ant-tag') }}">{{ kind_cn[c.req.kind] }}{{ status_cn[c.req.status] }}</span>{% else %}<span class="muted">—</span>{% endif %}</td><td class="row-reason"><input class="ant-input" form="{{ fid }}" style="width:100%;min-width:220px" name="xreason_{{ c.vin_key }}" maxlength="500" required placeholder="例如：出口车，DMS 没标出口" aria-label="理由 {{ c.vin_key }}" oninput="this.setCustomValidity('')" oninvalid="this.setCustomValidity('请填写申请理由（必填）')">{% if row == c.vin_key and (err or msg) %}<div class="row-msg {{ 'row-msg-ok' if ok else 'row-msg-err' }}" role="alert">{{ msg or err }}</div>{% endif %}</td><td class="row-action"><form id="{{ fid }}" method="post" action="/exclusions/request" class="row-form" onsubmit="return confirm('确认提交这一辆车的剔除申请？批准后这辆车在所有指标里都不再计入（分子分母都不计），永久生效')"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="date" value="{{ date }}"><input type="hidden" name="back" value="{{ back_url }}"><button class="ant-btn ant-btn-primary" type="submit">提交申请</button></form></td></tr>
   {% else %}<tr><td colspan="9"><div class="ant-empty"><div class="ant-empty-image"><svg class="ai" aria-hidden="true"><use href="#i-inbox"/></svg></div><div class="ant-empty-title">没有符合条件的车辆</div><div class="ant-empty-desc">（已被剔除，或不在你的门店范围内）</div></div></td></tr>{% endfor %}</tbody></table></div>
-  <div class="ant-flex ant-mt-3 apply-submit">
-    <button class="ant-btn ant-btn-primary" onclick="return confirm('确认提交已勾选车辆的剔除申请？批准后这辆车在所有指标里都不再计入（分子分母都不计），永久生效')">申请剔除（整车）</button>
   </div>
-  </div>
-</form>
+</div>
 {% set req_kind = "exclude" %}{% set ind_title = "整车" %}{% include "_my_requests.html" %}{% endblock %}

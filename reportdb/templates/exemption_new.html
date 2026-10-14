@@ -28,17 +28,13 @@
   </div>
 </div>
 
-<form method="post" action="/exemptions/request" class="ant-card">
-  <div class="ant-card-head"><h2 class="ant-card-head-title">结果为「否」的车辆 <span class="ant-card-head-sub">{{ ind.title }}，最多显示 200 条 —— 勾选「是否申请」并逐辆填写理由</span></h2></div>
+<div class="ant-card">
+  <div class="ant-card-head"><h2 class="ant-card-head-title">结果为「否」的车辆 <span class="ant-card-head-sub">{{ ind.title }}，最多显示 200 条 —— 逐辆填写理由，点该行的「提交申请」</span></h2></div>
   <div class="ant-card-body">
-  <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="indicator" value="{{ indicator }}"><input type="hidden" name="date" value="{{ date }}"><input type="hidden" name="back" value="/exemptions/new?indicator={{ indicator }}">
-  <p class="muted">不支持批量粘贴 VIN：只能在下面的车辆列表里逐辆勾选、逐辆填写理由；勾选了但没填理由的不会提交。</p>
-  <div class="tw ant-table-wrap"><table class="sticky1" data-freeze-vin><thead><tr><th class="nosort">是否申请</th><th class="nosort num">#</th>{% set NS = namespace(t=false) %}{% for c, l in cols %}{% if not NS.t and (c == 'vin' or c == 'store_name') %}{% set NS.t = true %}<th class="nosort" data-card-title>{{ l }}</th>{% else %}<th class="nosort">{{ l }}</th>{% endif %}{% endfor %}<th class="nosort">已有申请</th><th class="nosort">申请修正结果理由（必填）</th></tr></thead><tbody>
-  {% for c in cands %}<tr><td style="text-align:center"><label class="ant-check-hit"><input type="checkbox" class="pick" name="pick_{{ c.row_no }}" value="1" aria-label="是否申请 {{ c.vin }}"></label></td><td class="num">{{ c.row_no }}</td>{% for k, l in cols %}<td>{{ c.full[k] if c.full[k] is not none else '' }}</td>{% endfor %}<td>{% if c.req %}<span class="ant-tag {{ {'pending':'ant-tag-warning','approved':'ant-tag-success','rejected':'ant-tag-error'}.get(c.req.status,'ant-tag') }}">{{ kind_cn[c.req.kind] }}{{ status_cn[c.req.status] }}</span>{% else %}<span class="muted">—</span>{% endif %}</td><td><input class="ant-input" style="width:100%;min-width:220px" name="reason_{{ c.row_no }}" maxlength="500" placeholder="例如：出口车，挂靠本店" oninput="this.closest('tr').querySelector('.pick').checked = this.value.trim() !== ''"></td></tr>
+  <p class="muted">只能逐辆提交，不支持批量：每一行（手机上每张卡片）有自己的「提交申请」，一次只提交这一辆，理由必填。</p>
+  <div class="tw ant-table-wrap"><table class="sticky1" data-freeze-vin><thead><tr><th class="nosort num">#</th>{% set NS = namespace(t=false) %}{% for c, l in cols %}{% if not NS.t and (c == 'vin' or c == 'store_name') %}{% set NS.t = true %}<th class="nosort" data-card-title>{{ l }}</th>{% else %}<th class="nosort">{{ l }}</th>{% endif %}{% endfor %}<th class="nosort">已有申请</th><th class="nosort row-reason-h">申请修正结果理由（必填）</th><th class="nosort row-action-h">操作</th></tr></thead><tbody>
+  {% for c in cands %}{% set fid = 'f' ~ c.row_no %}<tr id="r-{{ c.row_no }}"><td class="num">{{ c.row_no }}</td>{% for k, l in cols %}<td>{{ c.full[k] if c.full[k] is not none else '' }}</td>{% endfor %}<td>{% if c.req %}<span class="ant-tag {{ {'pending':'ant-tag-warning','approved':'ant-tag-success','rejected':'ant-tag-error'}.get(c.req.status,'ant-tag') }}">{{ kind_cn[c.req.kind] }}{{ status_cn[c.req.status] }}</span>{% else %}<span class="muted">—</span>{% endif %}</td><td class="row-reason"><input class="ant-input" form="{{ fid }}" style="width:100%;min-width:220px" name="reason_{{ c.row_no }}" maxlength="500" required placeholder="例如：出口车，挂靠本店" aria-label="理由 {{ c.vin }}" oninput="this.setCustomValidity('')" oninvalid="this.setCustomValidity('请填写申请理由（必填）')">{% if row == c.row_no|string and (err or msg) %}<div class="row-msg {{ 'row-msg-ok' if ok else 'row-msg-err' }}" role="alert">{{ msg or err }}</div>{% endif %}</td><td class="row-action"><form id="{{ fid }}" method="post" action="/exemptions/request" class="row-form" onsubmit="return confirm('确认提交这一辆车的修正结果申请？批准后该车在本指标上长期按「是」计算（分母不变）')"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="indicator" value="{{ indicator }}"><input type="hidden" name="date" value="{{ date }}"><input type="hidden" name="back" value="{{ back_url }}"><button class="ant-btn ant-btn-primary" type="submit">提交申请</button></form></td></tr>
   {% else %}<tr><td colspan="{{ cols|length+4 }}"><div class="ant-empty"><div class="ant-empty-image"><svg class="ai" aria-hidden="true"><use href="#i-inbox"/></svg></div><div class="ant-empty-title">没有结果为「否」的车辆</div><div class="ant-empty-desc">（或已被剔除、不在你的门店范围内）</div></div></td></tr>{% endfor %}</tbody></table></div>
-  <div class="ant-flex ant-mt-3 apply-submit">
-    <button class="ant-btn ant-btn-primary" name="kind" value="exempt" onclick="return confirm('确认提交已勾选的修正结果申请？批准后该车在本指标上长期按「是」计算（分母不变）')">申请修正结果（否→是）</button>
   </div>
-  </div>
-</form>
+</div>
 {% set ind_title = ind.title %}{% set req_kind = "exempt" %}{% include "_my_requests.html" %}{% endblock %}

@@ -1,0 +1,966 @@
+{
+ "source": "app/assets/report_template.xlsx",
+ "regions": [
+  "华北",
+  "华中1",
+  "华南",
+  "西南",
+  "华东",
+  "西北",
+  "华中2"
+ ],
+ "direct_stores": [
+  "猛士汽车南宁江南用户中心",
+  "猛士汽车天津北辰用户中心",
+  "猛士汽车郑州经开用户中心",
+  "猛士汽车001武汉旗舰店"
+ ],
+ "spare_parts": [
+  {
+   "sort_order": 1,
+   "code": "22806000",
+   "name": "放油螺塞垫圈",
+   "std_qty": 10,
+   "group_label": "保养件",
+   "counted": 1
+  },
+  {
+   "sort_order": 2,
+   "code": "22802001",
+   "name": "机油滤清器",
+   "std_qty": 12,
+   "group_label": null,
+   "counted": 1
+  },
+  {
+   "sort_order": 3,
+   "code": "91401000",
+   "name": "增程器机油",
+   "std_qty": 12,
+   "group_label": null,
+   "counted": 1
+  },
+  {
+   "sort_order": 4,
+   "code": "82003000",
+   "name": "空调滤芯",
+   "std_qty": 3,
+   "group_label": null,
+   "counted": 1
+  },
+  {
+   "sort_order": 5,
+   "code": "24804000",
+   "name": "空气滤清器滤芯",
+   "std_qty": 1,
+   "group_label": null,
+   "counted": 1
+  },
+  {
+   "sort_order": 6,
+   "code": "24804001",
+   "name": "空气滤清器滤芯",
+   "std_qty": 1,
+   "group_label": null,
+   "counted": 1
+  },
+  {
+   "sort_order": 7,
+   "code": "91410001",
+   "name": "齿轮油",
+   "std_qty": 2,
+   "group_label": null,
+   "counted": 1
+  },
+  {
+   "sort_order": 8,
+   "code": "91411000",
+   "name": "混动变速箱油",
+   "std_qty": 6,
+   "group_label": null,
+   "counted": 1
+  },
+  {
+   "sort_order": 9,
+   "code": "91403000",
+   "name": "制动液",
+   "std_qty": 12,
+   "group_label": "常用件",
+   "counted": 1
+  },
+  {
+   "sort_order": 10,
+   "code": "91402000",
+   "name": "冷却液",
+   "std_qty": 10,
+   "group_label": null,
+   "counted": 1
+  },
+  {
+   "sort_order": 11,
+   "code": "32403000",
+   "name": "胎压监测传感器",
+   "std_qty": 1,
+   "group_label": null,
+   "counted": 1
+  },
+  {
+   "sort_order": 12,
+   "code": "91404000",
+   "name": "减速器油",
+   "std_qty": 6,
+   "group_label": null,
+   "counted": 1
+  },
+  {
+   "sort_order": 13,
+   "code": "91406000",
+   "name": "制冷剂",
+   "std_qty": 6,
+   "group_label": null,
+   "counted": 1
+  },
+  {
+   "sort_order": 14,
+   "code": "91405000",
+   "name": "风窗玻璃洗涤液",
+   "std_qty": 6,
+   "group_label": null,
+   "counted": 1
+  },
+  {
+   "sort_order": 15,
+   "code": "32401005",
+   "name": "轮胎(马牌)",
+   "std_qty": 2,
+   "group_label": null,
+   "counted": 1
+  },
+  {
+   "sort_order": 16,
+   "code": "51201000",
+   "name": "后保险杠下蒙皮总成",
+   "std_qty": 1,
+   "group_label": null,
+   "counted": 1
+  },
+  {
+   "sort_order": 17,
+   "code": "51001000",
+   "name": "前保险杠蒙皮总成",
+   "std_qty": 1,
+   "group_label": null,
+   "counted": 1
+  },
+  {
+   "sort_order": 18,
+   "code": "51001006",
+   "name": "前保险杠蒙皮",
+   "std_qty": 1,
+   "group_label": null,
+   "counted": 1
+  },
+  {
+   "sort_order": 19,
+   "code": "51001007",
+   "name": "前保险杠蒙皮总成",
+   "std_qty": 1,
+   "group_label": null,
+   "counted": 1
+  },
+  {
+   "sort_order": 20,
+   "code": "51225009",
+   "name": "后保险杠蒙皮",
+   "std_qty": 1,
+   "group_label": null,
+   "counted": 1
+  },
+  {
+   "sort_order": 21,
+   "code": "55003002",
+   "name": "右前轮眉总成",
+   "std_qty": 1,
+   "group_label": null,
+   "counted": 1
+  },
+  {
+   "sort_order": 22,
+   "code": "55002002",
+   "name": "左前轮眉总成",
+   "std_qty": 1,
+   "group_label": null,
+   "counted": 1
+  },
+  {
+   "sort_order": 23,
+   "code": "55003001WC",
+   "name": "右前轮眉总成",
+   "std_qty": 1,
+   "group_label": null,
+   "counted": 1
+  },
+  {
+   "sort_order": 24,
+   "code": "55002001WC",
+   "name": "左前轮眉总成",
+   "std_qty": 1,
+   "group_label": null,
+   "counted": 1
+  },
+  {
+   "sort_order": 25,
+   "code": "51806001",
+   "name": "左刮片",
+   "std_qty": 1,
+   "group_label": null,
+   "counted": 1
+  },
+  {
+   "sort_order": 26,
+   "code": "51805001",
+   "name": "右刮片",
+   "std_qty": 1,
+   "group_label": null,
+   "counted": 1
+  },
+  {
+   "sort_order": 27,
+   "code": "93000001",
+   "name": "M18-2专用工具合件",
+   "std_qty": 1,
+   "group_label": null,
+   "counted": 1
+  },
+  {
+   "sort_order": 28,
+   "code": "93001003",
+   "name": "M18-2防爆阀密封连接器",
+   "std_qty": 1,
+   "group_label": null,
+   "counted": 1
+  },
+  {
+   "sort_order": 29,
+   "code": "514060001",
+   "name": "前格栅",
+   "std_qty": 1,
+   "group_label": null,
+   "counted": 1
+  },
+  {
+   "sort_order": 30,
+   "code": "51411000",
+   "name": "前格栅上装饰件",
+   "std_qty": 1,
+   "group_label": null,
+   "counted": 1
+  },
+  {
+   "sort_order": 31,
+   "code": "72602003",
+   "name": "右前照灯",
+   "std_qty": 1,
+   "group_label": null,
+   "counted": 1
+  },
+  {
+   "sort_order": 32,
+   "code": "72601003",
+   "name": "左前照灯",
+   "std_qty": 1,
+   "group_label": null,
+   "counted": 1
+  },
+  {
+   "sort_order": 33,
+   "code": "93009003",
+   "name": "猛士817售后维修保护套件",
+   "std_qty": 1,
+   "group_label": null,
+   "counted": 0
+  }
+ ],
+ "stores": [
+  {
+   "seq": 1,
+   "code": "MSCSDS001",
+   "name": "猛士汽车青岛市北零售中心",
+   "region": "华北"
+  },
+  {
+   "seq": 2,
+   "code": "MSCHUB002",
+   "name": "猛士汽车武汉光谷用户中心",
+   "region": "华中1"
+  },
+  {
+   "seq": 3,
+   "code": "MSCFJS001",
+   "name": "猛士汽车厦门翔安零售中心",
+   "region": "华南"
+  },
+  {
+   "seq": 4,
+   "code": "MSDCQS003",
+   "name": "猛士重庆海峡路交付服务中心",
+   "region": "西南"
+  },
+  {
+   "seq": 5,
+   "code": "MSCGDS002",
+   "name": "猛士汽车深圳宝安用户中心",
+   "region": "华南"
+  },
+  {
+   "seq": 6,
+   "code": "MSSTJS004",
+   "name": "猛士汽车天津北辰用户中心",
+   "region": "华北"
+  },
+  {
+   "seq": 7,
+   "code": "MSCZJS004",
+   "name": "猛士汽车台州路桥交付服务中心",
+   "region": "华东"
+  },
+  {
+   "seq": 8,
+   "code": "MSDBJS005",
+   "name": "猛士北京亮马交付服务中心",
+   "region": "华北"
+  },
+  {
+   "seq": 9,
+   "code": "MSCGDS001",
+   "name": "猛士汽车佛山禅城用户中心",
+   "region": "华南"
+  },
+  {
+   "seq": 10,
+   "code": "MSDHEN006",
+   "name": "猛士郑州交付服务中心-北汽贸店",
+   "region": "华中1"
+  },
+  {
+   "seq": 11,
+   "code": "MSCHAN001",
+   "name": "猛士汽车海口美兰零售中心",
+   "region": "华南"
+  },
+  {
+   "seq": 12,
+   "code": "MSCSXS001",
+   "name": "猛士汽车西安未央用户中心",
+   "region": "西北"
+  },
+  {
+   "seq": 13,
+   "code": "MSCZJS001",
+   "name": "猛士汽车杭州余杭用户中心",
+   "region": "华东"
+  },
+  {
+   "seq": 14,
+   "code": "MSCYNS001",
+   "name": "猛士汽车昆明西山零售中心",
+   "region": "西南"
+  },
+  {
+   "seq": 15,
+   "code": "MSSGXZ004",
+   "name": "猛士汽车南宁江南用户中心",
+   "region": "华南"
+  },
+  {
+   "seq": 16,
+   "code": "MSCZJS006",
+   "name": "猛士宁波海曙交付服务中心",
+   "region": "华东"
+  },
+  {
+   "seq": 17,
+   "code": "MSCGDS050",
+   "name": "猛士汽车广州番禺零售中心",
+   "region": "华南"
+  },
+  {
+   "seq": 18,
+   "code": "MSCHUN001",
+   "name": "猛士汽车长沙中南用户中心",
+   "region": "华中1"
+  },
+  {
+   "seq": 19,
+   "code": "MSCJSS003",
+   "name": "猛士汽车南通崇川用户中心",
+   "region": "华东"
+  },
+  {
+   "seq": 20,
+   "code": "MSCJLS001",
+   "name": "猛士长春经开体验中心（变更前）",
+   "region": "华北"
+  },
+  {
+   "seq": 21,
+   "code": "MSCJSS004",
+   "name": "猛士汽车苏州凯马用户中心",
+   "region": "华东"
+  },
+  {
+   "seq": 22,
+   "code": "MSCNXZ001",
+   "name": "猛士汽车银川德胜零售中心",
+   "region": "西南"
+  },
+  {
+   "seq": 23,
+   "code": "MSCZJS022",
+   "name": "猛士汽车温州龙湾零售中心",
+   "region": "华东"
+  },
+  {
+   "seq": 24,
+   "code": "MSCNMG001",
+   "name": "猛士汽车鄂尔多斯东胜零售中心",
+   "region": "西北"
+  },
+  {
+   "seq": 25,
+   "code": "MSCGSS001",
+   "name": "猛士汽车兰州安宁交付服务中心",
+   "region": "西南"
+  },
+  {
+   "seq": 26,
+   "code": "MSDXJZ002",
+   "name": "猛士乌鲁木齐交付服务中心",
+   "region": "西南"
+  },
+  {
+   "seq": 27,
+   "code": "MSCGDS008",
+   "name": "猛士汽车东莞寮步零售中心",
+   "region": "华南"
+  },
+  {
+   "seq": 28,
+   "code": "MSDSHS011",
+   "name": "猛士上海闵行交付服务中心",
+   "region": "华东"
+  },
+  {
+   "seq": 29,
+   "code": "MSCJSS010",
+   "name": "猛士汽车南京江宁交付服务中心",
+   "region": "华东"
+  },
+  {
+   "seq": 30,
+   "code": "MSCGDS019",
+   "name": "猛士汽车惠州惠城零售中心",
+   "region": "华南"
+  },
+  {
+   "seq": 31,
+   "code": "MSCHEB003",
+   "name": "猛士汽车沧州运河零售中心",
+   "region": "西北"
+  },
+  {
+   "seq": 32,
+   "code": "MSCSCS008",
+   "name": "猛士汽车西昌安宁零售中心",
+   "region": "西南"
+  },
+  {
+   "seq": 33,
+   "code": "MSCHUB008",
+   "name": "猛士汽车十堰张湾零售中心",
+   "region": "华中1"
+  },
+  {
+   "seq": 34,
+   "code": "MSSHEN007",
+   "name": "猛士汽车郑州经开用户中心",
+   "region": "华中1"
+  },
+  {
+   "seq": 35,
+   "code": "MSDJSS018",
+   "name": "猛士无锡东方交付服务中心",
+   "region": "华东"
+  },
+  {
+   "seq": 36,
+   "code": "MSDFJS005",
+   "name": "猛士福州仓山授权服务中心",
+   "region": "华南"
+  },
+  {
+   "seq": 37,
+   "code": "MSCHLJ003",
+   "name": "猛士汽车哈尔滨香坊零售中心",
+   "region": "华北"
+  },
+  {
+   "seq": 38,
+   "code": "MSCFJS004",
+   "name": "猛士汽车泉州鲤城零售中心",
+   "region": "华南"
+  },
+  {
+   "seq": 39,
+   "code": "MSDGZS005",
+   "name": "猛士贵阳观山湖交付服务中心",
+   "region": "西南"
+  },
+  {
+   "seq": 40,
+   "code": "MSDSCS010",
+   "name": "猛士宜宾临港交付服务中心",
+   "region": "西南"
+  },
+  {
+   "seq": 41,
+   "code": "MSCSHS012",
+   "name": "猛士汽车上海浦东零售中心",
+   "region": "华东"
+  },
+  {
+   "seq": 42,
+   "code": "MSCHUN006",
+   "name": "猛士汽车怀化鹤城零售中心",
+   "region": "华中2"
+  },
+  {
+   "seq": 43,
+   "code": "MSCAHS002",
+   "name": "猛士汽车安庆宜秀零售中心",
+   "region": "华中2"
+  },
+  {
+   "seq": 44,
+   "code": "MSCSDS012",
+   "name": "猛士汽车菏泽牡丹零售中心",
+   "region": "华北"
+  },
+  {
+   "seq": 45,
+   "code": "MSCGDS009",
+   "name": "猛士汽车广州龙洞零售中心",
+   "region": "华南"
+  },
+  {
+   "seq": 46,
+   "code": "MSCHEN002",
+   "name": "猛士汽车新乡零售中心",
+   "region": "华中1"
+  },
+  {
+   "seq": 47,
+   "code": "MSDAHS006",
+   "name": "猛士阜阳颍州交付服务中心",
+   "region": "华中2"
+  },
+  {
+   "seq": 48,
+   "code": "MSDAHS007",
+   "name": "猛士合肥庐阳交付服务中心",
+   "region": "华中2"
+  },
+  {
+   "seq": 49,
+   "code": "MSDSHX005",
+   "name": "猛士大同经开交付服务中心",
+   "region": "西北"
+  },
+  {
+   "seq": 50,
+   "code": "MSDHEN007",
+   "name": "猛士洛阳威佳国润交付服务中心",
+   "region": "华中1"
+  },
+  {
+   "seq": 51,
+   "code": "MSCSHX003",
+   "name": "猛士汽车太原龙城零售中心",
+   "region": "西北"
+  },
+  {
+   "seq": 52,
+   "code": "MSCGDS024",
+   "name": "猛士汽车东莞塘厦零售中心",
+   "region": "华南"
+  },
+  {
+   "seq": 53,
+   "code": "MSCSXS005",
+   "name": "猛士西安经开交付服务中心",
+   "region": "西北"
+  },
+  {
+   "seq": 54,
+   "code": "MSCGDS026",
+   "name": "猛士汽车佛山海八路零售中心",
+   "region": "华南"
+  },
+  {
+   "seq": 55,
+   "code": "MSCSDS019",
+   "name": "猛士汽车德州德城零售中心",
+   "region": "华北"
+  },
+  {
+   "seq": 56,
+   "code": "MSDANS004",
+   "name": "猛士六安金安交付服务中心",
+   "region": "华中2"
+  },
+  {
+   "seq": 57,
+   "code": "MSDJSS012",
+   "name": "猛士徐州泉山交付服务中心",
+   "region": "华东"
+  },
+  {
+   "seq": 58,
+   "code": "MSCSDS017",
+   "name": "猛士汽车潍坊奎文零售中心",
+   "region": "华北"
+  },
+  {
+   "seq": 59,
+   "code": "MSCHEB008",
+   "name": "猛士汽车邯郸经开零售中心",
+   "region": "西北"
+  },
+  {
+   "seq": 60,
+   "code": "MSCSDS018",
+   "name": "猛士汽车淄博经开零售中心",
+   "region": "华北"
+  },
+  {
+   "seq": 61,
+   "code": "MSDQHS002",
+   "name": "猛士西宁城东交付服务中心",
+   "region": "西南"
+  },
+  {
+   "seq": 62,
+   "code": "MSCJSS014",
+   "name": "猛士汽车常州新北交付服务中心",
+   "region": "华东"
+  },
+  {
+   "seq": 63,
+   "code": "MSCJXS001",
+   "name": "猛士汽车上饶月亮湾零售中心",
+   "region": "华中2"
+  },
+  {
+   "seq": 64,
+   "code": "MSDNMG003",
+   "name": "猛士赤峰红山交付服务中心",
+   "region": "西北"
+  },
+  {
+   "seq": 65,
+   "code": "MSDSDS011",
+   "name": "猛士临沂河东交付服务中心",
+   "region": "华北"
+  },
+  {
+   "seq": 66,
+   "code": "MSCNMG005",
+   "name": "猛士汽车呼和浩特海西路零售中心",
+   "region": "西北"
+  },
+  {
+   "seq": 67,
+   "code": "MSCNMG004",
+   "name": "猛士汽车包头九原零售中心",
+   "region": "西北"
+  },
+  {
+   "seq": 68,
+   "code": "MSCGDS021",
+   "name": "猛士汽车中山小榄零售中心",
+   "region": "华南"
+  },
+  {
+   "seq": 69,
+   "code": "MSDHEB005",
+   "name": "猛士汽车石家庄桥西用户中心",
+   "region": "西北"
+  },
+  {
+   "seq": 70,
+   "code": "MSDSDS016",
+   "name": "猛士聊城东昌府交付服务中心",
+   "region": "华北"
+  },
+  {
+   "seq": 71,
+   "code": "MSDSCS015",
+   "name": "猛士成都天府新区交付服务中心",
+   "region": "西南"
+  },
+  {
+   "seq": 72,
+   "code": "MSCSCS013",
+   "name": "猛士汽车泸州龙马潭零售中心",
+   "region": "西南"
+  },
+  {
+   "seq": 73,
+   "code": "MSDSCS018",
+   "name": "猛士攀枝花天骏交付服务中心",
+   "region": "西南"
+  },
+  {
+   "seq": 74,
+   "code": "MSCSCS012",
+   "name": "猛士汽车绵阳涪城零售中心",
+   "region": "西南"
+  },
+  {
+   "seq": 75,
+   "code": "MSCSCS011",
+   "name": "猛士汽车南充高坪零售中心",
+   "region": "西南"
+  },
+  {
+   "seq": 76,
+   "code": "MSDHUB016",
+   "name": "猛士宜昌伍家岗交付服务中心",
+   "region": "华中1"
+  },
+  {
+   "seq": 77,
+   "code": "MSDBJS009",
+   "name": "猛士北京五方桥服务中心",
+   "region": "华北"
+  },
+  {
+   "seq": 78,
+   "code": "MSCGZS006",
+   "name": "猛士汽车贵阳花溪零售中心",
+   "region": "西南"
+  },
+  {
+   "seq": 79,
+   "code": "MSCHUB009",
+   "name": "猛士汽车襄阳襄州零售中心",
+   "region": "华中1"
+  },
+  {
+   "seq": 80,
+   "code": "MSCSHX006",
+   "name": "猛士汽车长治潞州零售中心",
+   "region": "西北"
+  },
+  {
+   "seq": 81,
+   "code": "MSCHEB007",
+   "name": "猛士汽车保定北三环零售中心",
+   "region": "西北"
+  },
+  {
+   "seq": 82,
+   "code": "MSCZJS009",
+   "name": "猛士汽车金华金东零售中心",
+   "region": "华东"
+  },
+  {
+   "seq": 83,
+   "code": "MSCZJS008",
+   "name": "猛士汽车宁波江北零售中心",
+   "region": "华东"
+  },
+  {
+   "seq": 84,
+   "code": "MSCHEN035",
+   "name": "猛士汽车郑州郑东用户中心",
+   "region": "华中1"
+  },
+  {
+   "seq": 85,
+   "code": "MSCSDS025",
+   "name": "猛士汽车烟台机场路零售中心",
+   "region": "华北"
+  },
+  {
+   "seq": 86,
+   "code": "MSCZJS012",
+   "name": "猛士汽车湖州南太湖交付服务中心",
+   "region": "华东"
+  },
+  {
+   "seq": 87,
+   "code": "MSCSDS022",
+   "name": "猛士汽车青岛长沙路零售中心",
+   "region": "华北"
+  },
+  {
+   "seq": 88,
+   "code": "MSDHEB011",
+   "name": "猛士石家庄新华交付服务中心",
+   "region": "西北"
+  },
+  {
+   "seq": 89,
+   "code": "MSCSDS020",
+   "name": "猛士汽车威海经区零售中心",
+   "region": "华北"
+  },
+  {
+   "seq": 90,
+   "code": "MSCSXS006",
+   "name": "猛士汽车宝鸡平安路零售中心",
+   "region": "西北"
+  },
+  {
+   "seq": 91,
+   "code": "MSDGDS023",
+   "name": "猛士梅州梅江交付服务中心",
+   "region": "华南"
+  },
+  {
+   "seq": 92,
+   "code": "MSCNMG006",
+   "name": "猛士汽车呼伦贝尔汽车城零售中心",
+   "region": "西北"
+  },
+  {
+   "seq": 93,
+   "code": "MSCSDS036",
+   "name": "猛士汽车济南槐荫零售中心",
+   "region": "华北"
+  },
+  {
+   "seq": 94,
+   "code": "MSCSHX007",
+   "name": "猛士汽车晋城路宝零售中心",
+   "region": "西北"
+  },
+  {
+   "seq": 95,
+   "code": "MSDSXS008",
+   "name": "猛士榆林草海则交付服务中心",
+   "region": "西北"
+  },
+  {
+   "seq": 96,
+   "code": "MSCNMG012",
+   "name": "猛士汽车通辽万林零售中心",
+   "region": "西北"
+  },
+  {
+   "seq": 97,
+   "code": "MSCXJZ005",
+   "name": "猛士汽车乌鲁木齐喀什西路零售中心",
+   "region": "西南"
+  },
+  {
+   "seq": 98,
+   "code": "MSCHEB009",
+   "name": "猛士汽车廊坊安次零售中心",
+   "region": "西北"
+  },
+  {
+   "seq": 99,
+   "code": "MSCCQS009",
+   "name": "猛士汽车重庆九龙坡零售中心",
+   "region": "西南"
+  },
+  {
+   "seq": 100,
+   "code": "MSCLNS006",
+   "name": "猛士汽车沈阳沈河零售中心",
+   "region": "华北"
+  },
+  {
+   "seq": 101,
+   "code": "MSDSXS016",
+   "name": "猛士西安浐灞交付服务中心",
+   "region": "西北"
+  },
+  {
+   "seq": 102,
+   "code": "MSDGDS030",
+   "name": "猛士汕头高新交付服务中心",
+   "region": "华南"
+  },
+  {
+   "seq": 103,
+   "code": "MSCHUB023",
+   "name": "猛士汽车001武汉旗舰店",
+   "region": "华中1"
+  },
+  {
+   "seq": 104,
+   "code": "MSPHUB021",
+   "name": "猛士汽车武汉龙阳大道用户中心",
+   "region": "华中1"
+  },
+  {
+   "seq": 105,
+   "code": "MSCJXS005",
+   "name": "猛士汽车南昌恒望用户中心",
+   "region": "华中2"
+  },
+  {
+   "seq": 106,
+   "code": "MSDZJS011",
+   "name": "猛士杭州西溪交付服务中心",
+   "region": "华东"
+  },
+  {
+   "seq": 107,
+   "code": "MSSHUN016",
+   "name": "猛士汽车长沙麓谷用户中心",
+   "region": "华中1"
+  },
+  {
+   "seq": 108,
+   "code": "MSSAHS001",
+   "name": "猛士汽车合肥包河汽车城用户中心",
+   "region": "华中2"
+  },
+  {
+   "seq": 109,
+   "code": "MSSZJS033",
+   "name": "猛士汽车义乌后宅汽车城用户中心",
+   "region": "华东"
+  },
+  {
+   "seq": 110,
+   "code": "MSCSCS027",
+   "name": "猛士汽车成都机场路用户中心",
+   "region": "西南"
+  },
+  {
+   "seq": 111,
+   "code": "MSSSCS016",
+   "name": "猛士汽车成都金牛用户中心",
+   "region": "西南"
+  },
+  {
+   "seq": 112,
+   "code": "MCQKJD025",
+   "name": "猛士汽车重庆汽博零售中心",
+   "region": "西南"
+  },
+  {
+   "seq": 113,
+   "code": "MSCJLS005",
+   "name": "猛士汽车长春时代车城体验展厅",
+   "region": "华北"
+  }
+ ],
+ "spare_threshold": 0.8,
+ "spare_denominator_note": "COUNTIF(F:AK,\">0\")/32"
+}

@@ -63,7 +63,7 @@
     <label>飞书推送</label>
     <label class="check">
       <input id="notifyFeishu" type="checkbox" {% if notify_feishu %}checked{% endif %} />
-      生成后推送到飞书群（定时任务与手动运行均生效）
+      生成后推送到飞书群，并私聊本系统全国收件人（定时任务与手动运行均生效）
     </label>
   </div>
   <div class="actions">
@@ -73,10 +73,11 @@
     <a class="btn btn-outline btn-sm" href="/api/report/latest" id="latestReportLink" {% if not latest_report %}style="display:none"{% endif %}>下载报表</a>
   </div>
   <p id="task-detail" class="muted">会话：<code>{{ session_home }}</code> · 浏览器 {{ browser_label }}</p>
-  <p class="muted">导出与飞书推送均为完整公式版；用 Excel 打开后会按模板公式自动重算。</p>
+  {% if engine_reportdb %}<p class="muted">报表引擎：<b>系统统一计算（reportdb）</b>——日报由系统入库、计算并导出（无公式、不依赖 Excel 模板），飞书推送格式不变。在线查看与下载：reportdb 网页的「日报导出」。</p>
+  {% else %}<p class="muted">导出与飞书推送均为完整公式版；用 Excel 打开后会按模板公式自动重算。</p>{% endif %}
 </div>
 
-<div class="card" style="border-left: 4px solid var(--blue);">
+{% if not engine_reportdb %}<div class="card" style="border-left: 4px solid var(--blue);">
   <h2>默认模板</h2>
   <p class="muted" style="margin-bottom:12px;">
     流水线使用 <code>app/assets/report_template.xlsx</code>。模板需人工更新时在此上传覆盖（会自动备份旧文件）。
@@ -87,7 +88,7 @@
     <button class="btn btn-primary btn-sm" onclick="uploadTemplate()">上传并设为默认模板</button>
     <a class="link" href="/api/template/download" id="downloadTemplate">下载当前默认模板</a>
   </div>
-</div>
+</div>{% endif %}
 
 <div class="card" style="border-left: 4px solid var(--turquoise);">
   <h2>运行状态</h2>
@@ -173,7 +174,7 @@ async function refresh() {
 
   document.getElementById('log').textContent = (d.pipeline && d.pipeline.log) || d.latest_manifest || '';
   setRunning(running);
-  renderTemplate(d.template);
+  if (document.getElementById('templateInfo')) renderTemplate(d.template);
   (function renderSessionMonitor(m) {
     const statusEl = document.getElementById('session-monitor-status');
     const countEl = document.getElementById('session-monitor-count');

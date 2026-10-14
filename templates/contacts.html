@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}联系人 — 区域报表自动化{% endblock %}
+{% block content %}
+<style>
+  .form-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; margin-bottom: 12px; }
+  .form-group { display: flex; flex-direction: column; gap: 4px; }
+  .form-group label { font-size: 13px; color: var(--gray); }
+  .form-group input { padding: 8px 10px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; }
+</style>
+<h2 style="font-size:20px; margin-bottom:16px;">全国收件人</h2>
+<div class="card">
+  <h2>全国收件人</h2>
+  <p class="muted">区域报表不发给门店。群机器人通知保持不变，报表成功或失败时再私聊这里的人；有 Excel 时一并发送文件。</p>
+  <form method="post" action="/contacts/national/add">
+    <div class="form-row">
+      <div class="form-group"><label>姓名</label><input name="name" required placeholder="姓名"></div>
+      <div class="form-group"><label>手机号</label><input name="phone" required placeholder="飞书手机号"></div>
+      <button type="submit" class="btn btn-primary">新增/更新</button>
+    </div>
+  </form>
+  <table>
+    <thead><tr><th>姓名</th><th>手机号</th><th>解析</th><th>操作</th></tr></thead>
+    <tbody>
+    {% for item in national_list %}
+    <tr>
+      <td>{{ item.name }}</td>
+      <td>{{ item.phone }}</td>
+      <td>{% if item.resolved %}已解析{% else %}<span class="bad">未解析</span>{% endif %}</td>
+      <td>
+        <form method="post" action="/contacts/national/delete" onsubmit="return confirm('确认删除全国收件人：{{ item.name }}？');">
+          <input type="hidden" name="name" value="{{ item.name }}">
+          <input type="hidden" name="phone" value="{{ item.phone }}">
+          <button type="submit" class="btn btn-danger btn-sm">删除</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" class="muted">暂无全国收件人</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

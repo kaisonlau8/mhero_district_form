@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .processor import ReportBuildError, build_report
@@ -18,8 +19,22 @@ app = FastAPI(title="区域报表自动生成")
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
+def _engine_reportdb() -> bool:
+    """MHERO_REPORT_ENGINE=reportdb：Excel 模板上传/处理入口下线（代码保留，默认 excel 引擎下仍可用）。"""
+    return os.getenv("MHERO_REPORT_ENGINE", "excel").strip().lower() == "reportdb"
+
+
+_RETIRED_HTML = (
+    "<!doctype html><meta charset='utf-8'><title>已下线</title>"
+    "<p>Excel 自动回填工具已下线：区域各指标情况一览现在由系统（reportdb）统一计算并导出，"
+    "请使用 reportdb 网页的「日报导出」。</p>"
+)
+
+
 @app.get("/")
-async def index() -> FileResponse:
+async def index():
+    if _engine_reportdb():
+        return HTMLResponse(_RETIRED_HTML, status_code=410)
     return FileResponse(STATIC_DIR / "index.html")
 
 
@@ -33,6 +48,8 @@ async def generate_report(
     files: list[UploadFile] = File(default=[]),
     template: UploadFile | None = File(default=None),
 ) -> Response:
+    if _engine_reportdb():
+        raise HTTPException(status_code=410, detail="Excel 处理入口已下线：报表由系统（reportdb）统一计算并导出。")
     if not files and template is None:
         raise HTTPException(status_code=400, detail="请至少上传 7 份源报表。")
 
