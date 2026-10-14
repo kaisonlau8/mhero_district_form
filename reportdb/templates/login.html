@@ -1,10 +1,16 @@
 <!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>登录 · 区域报表</title>
+  <link rel="icon" href="/ds/brand/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="16x16" href="/ds/brand/icon-16.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/ds/brand/icon-32.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/ds/brand/icon-180.png">
+  <meta name="theme-color" content="#1677ff">
 <style>{{ ds_css|safe }}</style>
 </head><body class="ant-login-page">
 {{ ds_sprite|safe }}
 <form class="ant-card ant-login-card" method="post" action="/login" autocomplete="on">
-  <h1><svg class="ai" aria-hidden="true"><use href="#i-bar-chart"/></svg>区域报表</h1>
+  <img class="ant-login-logo" src="/ds/brand/logo-blue.png" srcset="/ds/brand/logo-blue@2x.png 2x" alt="猛士" height="28">
+  <h1>区域报表</h1>
   <p class="ant-login-sub">请登录后查看</p>
   {% if error %}<div class="ant-alert ant-alert-error" style="margin-bottom:12px"><span class="ant-alert-icon"><svg class="ai" aria-hidden="true"><use href="#i-close-circle"/></svg></span><div class="ant-alert-content">{{ error }}</div></div>{% endif %}
   {% if password_login %}

@@ -4,6 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}区域报表{% endblock %}</title>
+  <link rel="icon" href="/ds/brand/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="16x16" href="/ds/brand/icon-16.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/ds/brand/icon-32.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/ds/brand/icon-180.png">
+  <meta name="theme-color" content="#1677ff">
   {# 统一设计系统（Ant Design v5 视觉语言，纯 CSS）：tokens + 组件 + 旧 class 兼容层 #}
   <style>{{ ds_css|safe }}</style>
   {# reportdb 站点专属样式（仅此处；通用样式一律进 design-system/antd-lite.css）：
@@ -122,7 +127,7 @@
   {% macro item(href, label) %}<a href="{{ href }}{% if date and '?' not in href %}?date={{ date }}{% endif %}" class="{{ 'cur' if P == href }}" {% if P == href %}aria-current="page"{% endif %}>{{ label }}</a>{% endmacro %}
   {# 顶栏：ant-header / ant-menu 规格（历史 hook .topbar/.menu/.mi/.dd 由 antd-lite.css 与 ant-* 共享规则承接） #}
   <header class="topbar" id="topbar"><div class="in">
-    <a class="brand" href="/{% if date %}?date={{ date }}{% endif %}"><svg class="ai" aria-hidden="true"><use href="#i-bar-chart"/></svg>区域报表</a>
+    <a class="brand" href="/{% if date %}?date={{ date }}{% endif %}"><img class="brand-logo" src="/ds/brand/logo-blue.png" srcset="/ds/brand/logo-blue@2x.png 2x" alt="猛士" height="28">区域报表</a>
     <button class="burger" id="burger" type="button" aria-label="菜单" aria-expanded="false" aria-controls="mainmenu"><svg class="ai" aria-hidden="true"><use href="#i-menu"/></svg></button>
     <nav class="menu ant-menu" id="mainmenu" aria-label="主导航">
       <div class="mi {{ 'on' if P == '/' }}"><a href="/{% if date %}?date={{ date }}{% endif %}">首页</a></div>

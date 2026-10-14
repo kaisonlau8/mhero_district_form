@@ -30,6 +30,7 @@ from . import exclusions as excl_mod
 from . import exemptions as ex_mod
 from . import spare as spare_mod
 from .auth import AuthError, get_backend, service
+from .forbidden_page import DEFAULT_HUB_URL, render_no_access
 from .auth.oidc import STATE_COOKIE
 from .masking import mask_row, mask_vin
 from . import store_indicators as si_mod
@@ -66,9 +67,13 @@ _TPL.env.globals["ds_css"] = _ds_asset("antd-lite.css")
 _TPL.env.globals["ds_sprite"] = _ds_asset("sprite.svg")
 _TPL.env.globals["ds_cards"] = _ds_asset("cards.js")
 
+# 品牌静态资源（logo / favicon；无鉴权挂载，登录页 favicon 也要能用）
+from starlette.staticfiles import StaticFiles as _StaticFiles
+
 
 def create_app(db_path: str | Path | None = None) -> FastAPI:
     app = FastAPI(title="区域报表", docs_url=None, redoc_url=None, openapi_url=None)
+    app.mount("/ds/brand", _StaticFiles(directory=str(_DS_DIR / "brand")), name="mhero-brand")
     path = Path(db_path) if db_path else config.db_path()
     boot = connect(path)
     migrate(boot)
@@ -688,6 +693,13 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             resp.set_cookie(k, v, httponly=True, samesite="lax", secure=secure_cookie(request), max_age=600, path="/")
         return resp
 
+    @app.get("/auth/oidc/logout")
+    def oidc_logout_link(request: Request):
+        """403 友好页的「退出登录」：结束统一登录会话后回到登录页（不需要本系统会话）。"""
+        resp = RedirectResponse(backend.logout_redirect(request) or "/login", status_code=303)
+        resp.delete_cookie(service.SESSION_COOKIE, path="/")
+        return resp
+
     @app.get("/auth/oidc/callback")
     def oidc_callback(request: Request, conn=Depends(get_conn)):
         if not request.query_params.get("code") and not request.query_params.get("error") and not request.query_params.get("state"):
@@ -696,6 +708,9 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             ident, nxt = backend.complete_login(conn, request)
             row = service.provision_external(conn, ident)
         except AuthError as exc:
+            if exc.status == 403:       # 账号已通过统一登录但没有开通本系统：友好页（返回黄页 / 退出登录），状态码仍为 403
+                return HTMLResponse(render_no_access(exc.display_name, "区域报表", os.getenv("MHERO_AUTH_HUB_URL", "").strip() or DEFAULT_HUB_URL,
+                                                     "/auth/oidc/logout", ds_dir=_DS_DIR), status_code=403, headers={"Cache-Control": "no-store"})
             return HTMLResponse(f"<meta charset=utf-8><p>登录失败：{str(exc)[:200]}</p><p><a href='/login'>重新登录</a></p>", status_code=401)
         resp = RedirectResponse(safe_next(nxt), status_code=303)
         resp.delete_cookie(STATE_COOKIE, path="/")
@@ -931,7 +946,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
 
     @app.get("/exemptions/new", response_class=HTMLResponse)
     def exemption_new(request: Request, indicator: str = "first_service", kind: str = "exempt", date: str | None = None,
-                      q: str = "", store: str = "", region: str = "", msg: str = "", err: str = "", conn=Depends(get_conn), user=Depends(requester_required)):
+                      q: str = "", store: str = "", region: str = "", msg: str = "", err: str = "", row: str = "", ok: str = "", conn=Depends(get_conn), user=Depends(requester_required)):
         if indicator not in ex_mod.INDICATORS:
             raise HTTPException(404)
         ctx = common(conn, request, date, user)
@@ -952,10 +967,12 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         return _TPL.TemplateResponse(request, "exemption_new.html", {
             **ctx, "region": region, "regions": regions(conn), "stores_list": stores_of(conn, region), "my_rows": mine, "req_kind": "exempt", "status_cn": ex_mod.STATUS_CN, "indicator": indicator, "kind": "exempt", "kind_cn": ex_mod.KIND_CN, "inds": ex_mod.INDICATORS, "ind": ex_mod.INDICATORS[indicator], "cands": cands, "q": q,
             "store": store, "categories": ex_mod.CATEGORIES, "msg": msg, "err": err, "scoped": scope is not None,
-            "scope_n": len(scope["names"]) if scope is not None else None, "ex_note": ex_mod.EXEMPTION_NOTE, "EXPLAIN": ex_mod.EXPLAIN, "cols": cols})
+            "scope_n": len(scope["names"]) if scope is not None else None, "ex_note": ex_mod.EXEMPTION_NOTE, "EXPLAIN": ex_mod.EXPLAIN, "cols": cols,
+            "back_url": "/exemptions/new?" + urlencode({k: v for k, v in dict(indicator=indicator, date=ctx["date"], region=region, store=store, q=q).items() if v}),
+            "row": row, "ok": ok})
 
     @app.get("/exclusions/new", response_class=HTMLResponse)
-    def exclusion_new(request: Request, date: str | None = None, q: str = "", store: str = "", region: str = "", msg: str = "", err: str = "",
+    def exclusion_new(request: Request, date: str | None = None, q: str = "", store: str = "", region: str = "", msg: str = "", err: str = "", row: str = "", ok: str = "",
                       conn=Depends(get_conn), user=Depends(requester_required)):
         ctx = common(conn, request, date, user)
         scope = ex_mod.scope_for(conn, user)
@@ -967,51 +984,55 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             **ctx, "region": region, "regions": regions(conn), "stores_list": stores_of(conn, region), "my_rows": mine, "req_kind": "exclude",
             "status_cn": ex_mod.STATUS_CN, "kind_cn": ex_mod.KIND_CN, "inds": ex_mod.INDICATORS, "cands": cands, "q": q, "store": store,
             "msg": msg, "err": err, "scoped": scope is not None, "scope_n": len(scope["names"]) if scope is not None else None,
-            "EXPLAIN_EXCLUDE": ex_mod.EXPLAIN_EXCLUDE})
+            "EXPLAIN_EXCLUDE": ex_mod.EXPLAIN_EXCLUDE,
+            "back_url": "/exclusions/new?" + urlencode({k: v for k, v in dict(date=ctx["date"], region=region, store=store, q=q).items() if v}),
+            "row": row, "ok": ok})
+
+    ONE_ONLY = "每次只能提交 1 辆车的申请，不支持批量提交；请在对应车辆那一行点「提交申请」"
+
+    def _safe_back(f, default):
+        b = f.get("back") or ""
+        return b if b.startswith("/") and not b.startswith("//") else default
+
+    def _row_back(back, anchor, **q):
+        base, _, frag = back.partition("#")
+        return _back(base, **q) if not anchor else RedirectResponse(
+            base + ("&" if "?" in base else "?") + urlencode(q) + "#" + anchor, status_code=303)
 
     @app.post("/exclusions/request")
     async def exclusion_request(request: Request, user=Depends(requester_required)):
-        """整车剔除：表单字段 xpick_<VIN>（是否申请）+ xreason_<VIN>（该车理由）。不支持批量粘贴。"""
+        """整车剔除，单条提交：表单字段 xreason_<VIN>（该车理由，必填）。一次请求只允许 1 辆车，多于 1 辆整体拒绝。"""
         f = await request.form()
         check_csrf(user, f.get("csrf", ""))
-        back = f.get("back") if (f.get("back") or "").startswith("/") else "/exclusions/new"
+        back = _safe_back(f, "/exclusions/new")
+        keys = {k[8:] for k in f.keys() if k.startswith("xreason_")} | {k[6:] for k in f.keys() if k.startswith("xpick_")}
         conn = connect(path)
         try:
-            items, empty, unticked = [], 0, 0
-            for k in f.keys():
-                if k.startswith("xreason_"):
-                    v, why = k[8:], (f.get(k) or "").strip()
-                    ticked = f.get("xpick_" + v) is not None
-                    if ticked and why:
-                        items.append((v, why))
-                    elif ticked:
-                        empty += 1
-                    elif why:
-                        unticked += 1
             try:
+                if len(keys) > 1:
+                    raise ex_mod.ExemptionError(ONE_ONLY)
+                if not keys:
+                    raise ex_mod.ExemptionError("没有可提交的车辆：请在要申请的车辆那一行填写理由并点「提交申请」")
+                v = next(iter(keys))
+                why = (f.get("xreason_" + v) or "").strip()
+                if not why:
+                    raise ex_mod.ExemptionError("请填写申请理由（必填）")
                 snap = pick_date(conn, f.get("date"))
-                if not items:
-                    raise ex_mod.ExemptionError("没有可提交的车辆：请先勾选要剔除的车辆（是否申请），并为每辆车填写理由")
-                res = ex_mod.request_exclusions(conn, user, snap, items=items)
+                res = ex_mod.request_exclusions(conn, user, snap, items=[(v, why)])
             except (ex_mod.ExemptionError, HTTPException) as exc:
-                return _back(back, err=str(getattr(exc, "detail", exc)))
-            msg = f"已提交 {len(res['created'])} 条剔除申请（整车），等待管理员审批；批准前不生效"
-            notes = [f"{v}（{why}）" for v, why in res["skipped"][:5]] + res["problems"][:5]
-            if empty:
-                notes.append(f"{empty} 辆已勾选但没填理由，已跳过")
-            if unticked:
-                notes.append(f"{unticked} 行填了理由但没勾选「是否申请」，已跳过")
-            if notes:
-                msg += "；跳过：" + "；".join(notes)
-            return _back("/exemptions/mine?kind=exclude", msg=msg)
+                return _row_back(back, "r-" + (next(iter(keys)) if len(keys) == 1 else ""), err=str(getattr(exc, "detail", exc)),
+                                 row=next(iter(keys)) if len(keys) == 1 else "")
+            if not res["created"]:
+                notes = [f"{v}（{w}）" for v, w in res["skipped"][:1]] + res["problems"][:1]
+                return _row_back(back, "r-" + v, err="未提交：" + "；".join(notes), row=v)
+            return _row_back(back, "r-" + v, msg="已提交 1 条剔除申请（整车），等待管理员审批；批准前不生效", row=v, ok="1")
         finally:
             conn.close()
 
     @app.post("/exemptions/request")
     async def exemption_request(request: Request, user=Depends(requester_required)):
-        """每辆车各填各的理由：表单字段 pick_<行号>（是否申请 勾选）+ reason_<行号>（该车自己的理由）。
-        不支持批量粘贴 VIN；只能从明细/申请页的车辆列表里勾选。
-        （旧用法 row_nos/vins + 共用 reason 仍可用，供脚本/测试。）"""
+        """修正结果，单条提交：表单字段 reason_<行号>（该车理由，必填）。一次请求只允许 1 辆车，多于 1 辆整体拒绝。
+        （脚本用的 row_nos/vins + 共用 reason 也只接受 1 辆。）"""
         f = await request.form()
         check_csrf(user, f.get("csrf", ""))
         conn = connect(path)   # async 路由里自己开连接（依赖注入的连接属于线程池线程）
@@ -1021,46 +1042,36 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             conn.close()
 
     def _do_exemption_request(f, conn, user):
-        indicator, kind, back = f.get("indicator", ""), "exempt", f.get("back") or "/exemptions/mine"
+        indicator, kind = f.get("indicator", ""), "exempt"
+        back = _safe_back(f, "/exemptions/new")
+        row = ""
         try:
             snap = pick_date(conn, f.get("date"))
-            items, empty, unticked = [], 0, 0
-            has_pick = any(k.startswith("pick_") for k in f.keys())   # 页面表单带勾选框；没有勾选框的调用（脚本）按「填了理由就提交」
-            for k in f.keys():
-                if k.startswith("reason_") and k[7:].isdigit():
-                    why = (f.get(k) or "").strip()
-                    ticked = (not has_pick) or f.get("pick_" + k[7:]) is not None
-                    if ticked and why:
-                        items.append((int(k[7:]), why))
-                    elif ticked:
-                        empty += 1
-                    elif why:
-                        unticked += 1
-            if has_pick:   # 勾了但页面上没有理由输入框的行 → 同样算没填理由
-                for k in f.keys():
-                    if k.startswith("pick_") and k[5:].isdigit() and ("reason_" + k[5:]) not in f.keys():
-                        empty += 1
-            legacy = f.getlist("row_nos") or (f.get("vins") or "").strip()
-            if items:
-                res = ex_mod.request_exemptions(conn, user, indicator, snap, items=items, kind=kind)
-            elif legacy and (f.get("reason") or "").strip():
+            rows = {k[7:] for k in f.keys() if k.startswith("reason_") and k[7:].isdigit()} | \
+                   {k[5:] for k in f.keys() if k.startswith("pick_") and k[5:].isdigit()}
+            legacy_rows = [x for x in f.getlist("row_nos") if str(x).strip()]
+            legacy_vins = [x for x in re.split(r"[\s,;，；]+", (f.get("vins") or "").strip()) if x]
+            if len(rows) + len(legacy_rows) + len(legacy_vins) > 1:
+                raise ex_mod.ExemptionError(ONE_ONLY)
+            if rows:
+                row = next(iter(rows))
+                why = (f.get("reason_" + row) or "").strip()
+                if not why:
+                    raise ex_mod.ExemptionError("请填写申请理由（必填）")
+                res = ex_mod.request_exemptions(conn, user, indicator, snap, items=[(int(row), why)], kind=kind)
+            elif legacy_rows or legacy_vins:
+                row = legacy_rows[0] if legacy_rows else ""
                 res = ex_mod.request_exemptions(
-                    conn, user, indicator, snap, row_nos=[int(x) for x in f.getlist("row_nos")],
-                    vins=re.split(r"[\s,;，；]+", f.get("vins", "").strip()) if f.get("vins", "").strip() else [],
+                    conn, user, indicator, snap, row_nos=[int(x) for x in legacy_rows], vins=legacy_vins,
                     category=f.get("category", ""), reason=f.get("reason", ""), kind=kind)
             else:
-                raise ex_mod.ExemptionError("没有可提交的车辆：请先勾选要申请的车辆（是否申请），并为每辆车填写理由")
+                raise ex_mod.ExemptionError("没有可提交的车辆：请在要申请的车辆那一行填写理由并点「提交申请」")
+            if not res["created"]:
+                notes = [f"{v}（{w}）" for v, w in res["skipped"][:1]] + res["problems"][:1]
+                raise ex_mod.ExemptionError("未提交：" + "；".join(notes))
         except (ex_mod.ExemptionError, HTTPException) as exc:
-            return _back(back if back.startswith("/") else "/exemptions/mine", err=str(getattr(exc, "detail", exc)))
-        msg = f"已提交 {len(res['created'])} 条修正结果申请，等待管理员审批"
-        notes = [f"{v}（{why}）" for v, why in res["skipped"][:5]] + res["problems"][:5]
-        if empty:
-            notes.append(f"{empty} 辆已勾选但没填理由，已跳过")
-        if unticked:
-            notes.append(f"{unticked} 行填了理由但没勾选「是否申请」，已跳过")
-        if notes:
-            msg += "；跳过：" + "；".join(notes)
-        return _back("/exemptions/mine", msg=msg)
+            return _row_back(back, ("r-" + row) if row else "", err=str(getattr(exc, "detail", exc)), row=row)
+        return _row_back(back, ("r-" + row) if row else "", msg="已提交 1 条修正结果申请，等待管理员审批", row=row, ok="1")
 
     @app.get("/exemptions/mine", response_class=HTMLResponse)
     def exemption_mine(request: Request, msg: str = "", err: str = "", status: str = "", indicator: str = "", kind: str = "",

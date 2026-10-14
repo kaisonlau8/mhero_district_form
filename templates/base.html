@@ -4,6 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}区域报表自动化{% endblock %}</title>
+  <link rel="icon" href="/static/brand/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/brand/icon-16.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/brand/icon-32.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/brand/icon-180.png">
+  <meta name="theme-color" content="#1677ff">
   <style>
     :root {
       --blue: #3370ff;
@@ -19,7 +24,11 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
     .nav { background: var(--card-bg); border-bottom: 1px solid var(--border); padding: 12px 24px; display: flex; align-items: center; gap: 24px; }
-    .nav h1 { font-size: 18px; font-weight: 600; color: var(--orange); }
+    .nav h1 { font-size: 18px; font-weight: 600; color: var(--orange); display: inline-flex; align-items: center; gap: 10px; }
+    .nav .brand-logo { height: 28px; width: auto; display: block; }
+    .nav a { color: var(--text); text-decoration: none; font-size: 14px; padding: 6px 12px; border-radius: 4px; }
+    .nav a:hover { background: var(--bg); color: var(--blue); }
+    @media (max-width: 768px) { .nav { flex-wrap: wrap; padding: 10px 14px; } .nav .brand-logo { height: 22px; } }
     .container { max-width: 960px; margin: 24px auto; padding: 0 16px; }
     .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 16px; }
     .card h2 { font-size: 16px; font-weight: 600; margin-bottom: 12px; }
@@ -65,8 +74,9 @@
 </head>
 <body>
   <nav class="nav">
-    <h1>区域报表自动化</h1>
-    <a href="/" style="color:var(--text); text-decoration:none; font-size:14px;">控制台</a>
+    <h1><img class="brand-logo" src="/static/brand/logo-blue.png" srcset="/static/brand/logo-blue@2x.png 2x" alt="猛士" height="28">区域报表自动化</h1>
+    <a href="/">控制台</a>
+    <a href="/contacts">联系人</a>
     <span style="margin-left:auto; color:var(--gray); font-size:13px;">端口 9003 · 每天 08:30</span>
   </nav>
   <div class="container">

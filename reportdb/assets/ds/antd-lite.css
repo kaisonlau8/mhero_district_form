@@ -219,6 +219,8 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
 }
 .brand .ai { color: var(--ant-brand); font-size: 18px; }
 .brand:hover { text-decoration: none; color: var(--ant-color-text); }
+/* 品牌 logo 图形（猛士白底顶栏用 logo-blue.png，深/蓝底用 logo-white.png） */
+.brand-logo { height: 28px; width: auto; display: block; }
 
 /* ---- 4.3 水平菜单 ---- */
 .ant-menu, .menu {
@@ -781,11 +783,11 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
   .ant-table-cards td[data-label]:not([data-card-title]):not([data-cards-full]):not([colspan]) {
     display: grid !important;
     grid-template-columns: minmax(4.5em, 38%) 1fr;
-    column-gap: var(--ant-space-3); row-gap: 1px; align-items: baseline;
+    column-gap: var(--ant-space-3); row-gap: 0; align-items: baseline;
   }
   .ant-table-cards td[data-label]:not([data-card-title]):not([colspan])::before {
     content: attr(data-label);
-    grid-column: 1; grid-row: 1 / span 999;
+    grid-column: 1; grid-row: 1;
     font-size: var(--ant-font-size-sm); color: var(--ant-color-text-secondary);
     align-self: start; line-height: 1.65; min-width: 0;
   }
@@ -838,6 +840,12 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
     box-shadow: 0 -2px 8px rgba(0, 0, 0, .05);
   }
   .apply-submit .ant-btn, .apply-submit .btn { flex: 1 1 auto; min-height: 48px; }
+
+  /* 逐条提交：卡片内整行宽「提交申请」按钮，触控 >=44px */
+  .ant-table-cards td.row-action { display: block !important; }
+  .ant-table-cards td.row-action::before { content: none !important; }
+  .ant-table-cards .row-form, .ant-table-cards .row-form .ant-btn { display: block; width: 100%; }
+  .ant-table-cards .row-form .ant-btn { min-height: 44px; }
 }
 
 /* ---- 9.7 吸顶筛选容器（列表页滚动时筛选保持在顶栏下方） ---- */
@@ -1123,9 +1131,10 @@ details.ant-tooltip-hint > summary::-webkit-details-marker { display: none; }
 .ant-page-footer a { color: #0958d9; display: inline-block; padding: 4px 2px; }
 .ant-page-footer a:hover { color: var(--ant-primary-active); }
 
-/* ---- 18.3 登录页（独立页面复用同一套 tokens / 组件） ---- */
+/* ---- 18.3 登录页（独立页面复用同一套 tokens / 组件；白卡片上用蓝色 logo） ---- */
 .ant-login-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: var(--ant-space-4); }
 .ant-login-card { width: 100%; max-width: 360px; padding: var(--ant-space-6) var(--ant-space-5); margin-bottom: 0; }
+.ant-login-logo { height: 28px; width: auto; display: block; margin: 0 auto var(--ant-space-4); }
 .ant-login-card h1 {
   font-size: var(--ant-font-size-page-title);
   font-weight: 600;
@@ -1145,6 +1154,9 @@ details.ant-tooltip-hint > summary::-webkit-details-marker { display: none; }
    覆盖 360 / 390 / 414 常见宽度；导航汉堡在 4.6 节（<=860px）单独处理。
    ========================================================================== */
 @media (max-width: 768px) {
+  /* 品牌-logo 在窄屏收紧到 22px 高 */
+  .brand-logo { height: 22px; }
+
   /* 可点击控件最小高度 44px（热区；视觉字号不变） */
   .ant-btn, .btn,
   button:not(.burger),
@@ -1496,4 +1508,19 @@ input[type="text"], input[type="password"], input[type="search"], input[type="da
   .container { padding: var(--ant-space-4) var(--ant-space-3) 0; }
   .ant-header > .in, .topbar > .in { padding: 0 var(--ant-space-3); }
   .ant-page-header-actions .ant-btn, .ant-page-header-actions .btn { flex: 1 1 100%; }
+}
+
+/* ---- 逐条提交（申请页每行自己的提交按钮 + 行内提示） ---- */
+.row-form { margin: 0; }
+.row-form .ant-btn { white-space: nowrap; }
+td.row-action { text-align: right; white-space: nowrap; }
+.row-msg { margin-top: var(--ant-space-1); font-size: var(--ant-font-size-sm, 12px); line-height: 1.5; }
+.row-msg-ok { color: var(--ant-success-text, #389e0d); }
+.row-msg-err { color: var(--ant-error-text, #cf1322); }
+
+/* 桌面：理由 + 操作两列固定在最右，宽表横向滚动时输入框和「提交申请」始终可见 */
+@media (min-width: 769px) {
+  table.sticky1 td.row-action, table.sticky1 th.row-action-h { position: sticky; right: 0; width: 112px; min-width: 112px; z-index: 3; background: var(--ant-color-bg-container, #fff); box-shadow: -1px 0 0 var(--ant-color-split, #f0f0f0); }
+  table.sticky1 td.row-reason, table.sticky1 th.row-reason-h { position: sticky; right: 112px; z-index: 3; background: var(--ant-color-bg-container, #fff); box-shadow: -1px 0 0 var(--ant-color-split, #f0f0f0); }
+  table.sticky1 th.row-action-h, table.sticky1 th.row-reason-h { z-index: 6; }
 }
