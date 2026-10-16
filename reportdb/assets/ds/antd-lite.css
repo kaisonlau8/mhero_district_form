@@ -27,6 +27,7 @@
        19 移动端全局适配（<=768px：44px 触控 / filter-bar 纵向堆叠 / actions 换行）
        20 打印
        21 兼容层：reportdb 旧模板 class（.card/.btn/.filters/.tw/.sticky1/... ）映射
+       22 交互反馈：Button loading / Spin / message / Upload 进度（配 feedback.js）
    · 移动端断点：导航 <=860px 变汉堡（与顶栏 JS 的 matchMedia 861px 对齐）；
      其余 <=768px（覆盖 360 / 390 / 414 宽），可点击控件最小高度 44px。
    ========================================================================== */
@@ -1231,7 +1232,8 @@ details.ant-tooltip-hint > summary::-webkit-details-marker { display: none; }
    ========================================================================== */
 @media print {
   .topbar, .ant-header, .burger, .pager, .ant-pagination,
-  #preview-banner form, .btn-export { display: none !important; }
+  #preview-banner form, .btn-export,
+  .ant-spin-fullscreen, .ant-message { display: none !important; }
   body { background: #fff; font-size: 12px; }
   .container { max-width: none; margin: 0; padding: 0; }
   .card, .ant-card { box-shadow: none; border-color: #ccc; }
@@ -1523,4 +1525,191 @@ td.row-action { text-align: right; white-space: nowrap; }
   table.sticky1 td.row-action, table.sticky1 th.row-action-h { position: sticky; right: 0; width: 112px; min-width: 112px; z-index: 3; background: var(--ant-color-bg-container, #fff); box-shadow: -1px 0 0 var(--ant-color-split, #f0f0f0); }
   table.sticky1 td.row-reason, table.sticky1 th.row-reason-h { position: sticky; right: 112px; z-index: 3; background: var(--ant-color-bg-container, #fff); box-shadow: -1px 0 0 var(--ant-color-split, #f0f0f0); }
   table.sticky1 th.row-action-h, table.sticky1 th.row-reason-h { z-index: 6; }
+}
+
+/* ==========================================================================
+   22. 交互反馈（Ant Design v5：Button loading / Spin / message / Upload 进度）
+   配 assets/ds/feedback.js。颜色只用现有 token（主色 #1677ff），不引入动画库。
+   ========================================================================== */
+
+/* ---- 22.1 Button loading：保留原按钮颜色，只降低透明度并转圈 ---- */
+.ant-btn-loading-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1em;
+  height: 1em;
+  font-size: 14px;
+}
+.ant-btn-sm .ant-btn-loading-icon { font-size: 12px; }
+.anticon-spin { display: block; animation: ant-btn-spin 1s linear infinite; transform-origin: center; }
+@keyframes ant-btn-spin { to { transform: rotate(360deg); } }
+
+.ant-btn.ant-btn-loading,
+a.ant-btn.ant-btn-loading,
+.btn.ant-btn-loading,
+button.lnk.ant-btn-loading {
+  cursor: default;
+  pointer-events: none;
+  opacity: 0.65;
+}
+/* 覆盖 .ant-btn[disabled] 的灰底，loading 时仍是蓝/白/危险色 */
+.ant-btn.ant-btn-loading[disabled] {
+  cursor: default;
+  pointer-events: none;
+  opacity: 0.65;
+  color: var(--ant-color-text);
+  background: var(--ant-color-bg-container);
+  border-color: var(--ant-color-border);
+}
+.ant-btn-primary.ant-btn-loading[disabled] {
+  color: #fff;
+  background: var(--ant-primary);
+  border-color: var(--ant-primary);
+}
+.ant-btn-danger.ant-btn-loading[disabled] {
+  color: #cf1322;
+  background: var(--ant-color-bg-container);
+  border-color: var(--ant-error);
+}
+
+/* ---- 22.2 Spin（页面级遮罩，四圆点） ---- */
+.ant-spin-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, .65);
+}
+.ant-spin-fullscreen .ant-spin {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--ant-space-2);
+}
+.ant-spin-dot {
+  position: relative;
+  display: inline-block;
+  width: 32px;
+  height: 32px;
+  font-size: 32px;
+}
+.ant-spin-dot-item {
+  position: absolute;
+  display: block;
+  width: 14px;
+  height: 14px;
+  background: var(--ant-primary);
+  border-radius: 100%;
+  transform: scale(0.75);
+  transform-origin: 50% 50%;
+  opacity: 0.3;
+  animation: ant-spin-move 1s infinite linear alternate;
+}
+.ant-spin-dot-item:nth-child(1) { top: 0; left: 0; }
+.ant-spin-dot-item:nth-child(2) { top: 0; right: 0; animation-delay: 0.4s; }
+.ant-spin-dot-item:nth-child(3) { right: 0; bottom: 0; animation-delay: 0.8s; }
+.ant-spin-dot-item:nth-child(4) { bottom: 0; left: 0; animation-delay: 1.2s; }
+@keyframes ant-spin-move { to { opacity: 1; } }
+.ant-spin-text {
+  color: var(--ant-primary);
+  font-size: var(--ant-font-size-base);
+  line-height: var(--ant-line-height-base);
+}
+
+/* ---- 22.3 message 轻提示（白底、顶部居中） ---- */
+.ant-message {
+  position: fixed;
+  top: 8px;
+  left: 0;
+  right: 0;
+  z-index: 1010;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+}
+.ant-message-notice {
+  pointer-events: auto;
+  max-width: min(520px, calc(100vw - 32px));
+  margin-bottom: 8px;
+  padding: 9px 12px;
+  background: var(--ant-color-bg-container);
+  border-radius: var(--ant-radius-lg);
+  box-shadow: var(--ant-shadow-dropdown);
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: var(--ant-font-size-base);
+  line-height: var(--ant-line-height-base);
+  color: var(--ant-color-text);
+  animation: ant-message-in .2s ease;
+}
+.ant-message-notice .ai { margin-top: 3px; font-size: 16px; }
+.ant-message-success .ai { color: var(--ant-success); }
+.ant-message-error .ai { color: var(--ant-error); }
+.ant-message-info .ai { color: var(--ant-primary); }
+.ant-message-warning .ai { color: var(--ant-warning); }
+.ant-message-notice-content { min-width: 0; word-break: break-word; }
+@keyframes ant-message-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ---- 22.4 Upload 进度（名单上传） ---- */
+.ant-upload-list { flex: 1 1 100%; min-width: 0; margin-top: 4px; }
+.ant-upload-list-item-name {
+  display: block;
+  margin-bottom: 4px;
+  font-size: var(--ant-font-size-base);
+  color: var(--ant-color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ant-progress { display: flex; align-items: center; gap: 8px; }
+.ant-progress-outer { flex: 1 1 auto; min-width: 0; }
+.ant-progress-inner {
+  height: 8px;
+  background: rgba(0, 0, 0, .06);
+  border-radius: 100px;
+  overflow: hidden;
+}
+.ant-progress-bg {
+  height: 100%;
+  width: 0;
+  background: var(--ant-primary);
+  border-radius: 100px;
+  transition: width .2s linear;
+}
+.ant-progress-text {
+  flex: none;
+  min-width: 3em;
+  font-size: var(--ant-font-size-sm);
+  color: var(--ant-color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.ant-progress-status-exception .ant-progress-bg { background: var(--ant-error); }
+.ant-progress-status-success .ant-progress-bg { background: var(--ant-success); }
+.ant-progress-status-active .ant-progress-bg { position: relative; }
+.ant-progress-status-active .ant-progress-bg::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .35), transparent);
+  animation: ant-progress-active 2s cubic-bezier(.23, 1, .32, 1) infinite;
+}
+@keyframes ant-progress-active {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anticon-spin,
+  .ant-spin-dot-item,
+  .ant-message-notice,
+  .ant-progress-status-active .ant-progress-bg::after { animation: none; }
+  .ant-spin-dot-item { opacity: 1; }
 }

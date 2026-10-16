@@ -61,6 +61,10 @@ background:#fff;color:rgba(0,0,0,.88);font-size:15px;text-decoration:none;cursor
 .btn.p{background:#1677ff;border-color:#1677ff;color:#fff;box-shadow:0 2px 0 rgba(5,145,255,.1)}
 .btn.p:hover{background:#4096ff;border-color:#4096ff;color:#fff}
 .btn:focus-visible{outline:4px solid rgba(5,145,255,.3);outline-offset:1px}
+.btn.is-loading{opacity:.65;pointer-events:none;cursor:default}
+.btn.is-loading::before{content:"";width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:fbspin 1s linear infinite;flex:none}
+@keyframes fbspin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.btn.is-loading::before{animation:none;border-right-color:currentColor}}
 @media (max-width:480px){.card{padding:32px 20px 24px}h1{font-size:20px}.act{flex-direction:column}.btn{width:100%;height:44px}}
 """
 
@@ -89,4 +93,8 @@ def render_no_access(name: str, system_label: str, hub_url: str, logout_url: str
         '<div class="act">'
         f'<a class="btn p" id="back-hub" href="{escape(hub_url, quote=True)}"><svg class="ai" aria-hidden="true"><use href="#i-home"/></svg>返回黄页</a>'
         f'<a class="btn" id="logout-link" href="{escape(logout_url, quote=True)}"><svg class="ai" aria-hidden="true"><use href="#i-logout"/></svg>退出登录</a>'
-        '</div></main></body></html>')
+        '</div></main>'
+        '<script>document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest("a.btn");'
+        'if(!a||e.button||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;'
+        'a.classList.add("is-loading");a.setAttribute("aria-busy","true");});</script>'
+        '</body></html>')
