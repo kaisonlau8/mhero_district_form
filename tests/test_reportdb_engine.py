@@ -421,6 +421,20 @@ def test_nav_hierarchy_by_role(web):
     assert "督导申请" in a and "用户管理" in a and "备件名单设置" in a and "剔除规则" in a and "修正结果 / 剔除审批" in a and "申请修正结果" in a and "申请剔除" in a
 
 
+def test_mobile_nav_drawer_hooks(web):
+    """移动端抽屉：汉堡图标、遮罩、240ms 过渡都在页面里；文案与退出入口保留。"""
+    html = web["admin"].get("/").text
+    nav = _nav(html)
+    assert 'id="burger"' in nav and 'aria-controls="mainmenu"' in nav and 'aria-label="菜单"' in nav
+    assert 'href="#i-menu"' in nav and 'href="#i-close"' in nav
+    assert 'id="nav-backdrop"' in html and 'aria-label="关闭菜单"' in html
+    assert "setDrawer" in html and "max-width:860px" in html
+    assert "--nav-drawer-duration: 240ms" in html
+    assert "translateY(-12px)" in html and "body.nav-open .nav-backdrop" in html
+    for label in ("首页", "报表", "明细数据", "退出登录", "修改密码", "用户管理"):
+        assert label in nav
+
+
 def test_nav_user_menu_adapts_to_sso(web):
     app = web["admin"].app
     assert "修改密码" in _nav(web["admin"].get("/").text)
