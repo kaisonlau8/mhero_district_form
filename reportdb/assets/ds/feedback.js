@@ -114,6 +114,80 @@
     return el.hasAttribute("disabled") || el.getAttribute("aria-disabled") === "true";
   }
 
+  // 兼容控制台的显式反馈接口，避免同步资源后打断页面初始化。
+  function createSpin(size) {
+    var spin = document.createElement('span');
+    spin.className = 'ant-spin ant-spin-spinning' + (size ? ' ant-spin-' + size : '');
+    spin.setAttribute('role', 'status');
+    spin.setAttribute('aria-label', '加载中');
+    var dot = document.createElement('span');
+    dot.className = 'ant-spin-dot ant-spin-dot-spin';
+    for (var i = 0; i < 4; i++) {
+      var item = document.createElement('i');
+      item.className = 'ant-spin-dot-item';
+      dot.appendChild(item);
+    }
+    spin.appendChild(dot);
+    return spin;
+  }
+
+  function setNestedSpin(host, on) {
+    if (!host) return;
+    host.classList.toggle('is-spinning', !!on);
+    host.setAttribute('aria-busy', on ? 'true' : 'false');
+    var spin = host.querySelector(':scope > .ant-spin');
+    if (on && !spin) host.insertBefore(createSpin(), host.firstChild);
+    if (!on && spin) spin.remove();
+  }
+
+  function mount(scope) {
+    (scope || document).querySelectorAll('[data-af-placeholder-spin]').forEach(function (el) {
+      if (el.getAttribute('data-af-spin-done') !== '1' && !el.querySelector('.ant-spin')) {
+        el.insertBefore(createSpin(el.getAttribute('data-af-placeholder-spin') || 'sm'), el.firstChild);
+      }
+    });
+    (scope || document).querySelectorAll('.ant-spin-nested-loading.is-spinning').forEach(function (el) {
+      setNestedSpin(el, true);
+    });
+  }
+
+  function notification(type, opts) {
+    opts = opts || {};
+    var holder = document.querySelector('.ant-notification');
+    if (!holder) {
+      holder = document.createElement('div');
+      holder.className = 'ant-notification';
+      document.body.appendChild(holder);
+    }
+    var notice = document.createElement('div');
+    notice.className = 'ant-notification-notice ant-notification-notice-' + type;
+    notice.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    ['message', 'description'].forEach(function (part) {
+      var text = document.createElement('div');
+      text.className = 'ant-notification-notice-' + part;
+      text.textContent = (part === 'message' ? opts.title : opts.description) || '';
+      notice.appendChild(text);
+    });
+    var close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'ant-notification-notice-close';
+    close.setAttribute('aria-label', '关闭通知');
+    var closeIcon = loadingSvg();
+    closeIcon.setAttribute('class', 'ai');
+    closeIcon.querySelector('use').setAttribute('href', '#i-close');
+    close.appendChild(closeIcon);
+    close.addEventListener('click', function () { notice.remove(); });
+    notice.appendChild(close);
+    holder.appendChild(notice);
+    if (opts.duration !== 0) setTimeout(function () { notice.remove(); }, opts.duration || 4500);
+    return { close: function () { notice.remove(); } };
+  }
+
+  function flash(type, text) {
+    try { sessionStorage.setItem('ant-feedback-flash', JSON.stringify({type: type, text: text})); }
+    catch (_) { /* 隐私模式不影响后续操作 */ }
+  }
+
   document.addEventListener("submit", function (e) {
     var form = e.target;
     if (!form || form.nodeName !== "FORM" || form.hasAttribute("data-feedback-off")) return;
@@ -175,11 +249,38 @@
   }
   function bootPage() {
     pageReady();
+    mount(document);
+    try {
+      var pending = sessionStorage.getItem('ant-feedback-flash');
+      sessionStorage.removeItem('ant-feedback-flash');
+      if (pending) {
+        pending = JSON.parse(pending);
+        toast(pending.type || 'success', pending.text);
+      }
+    } catch (_) { /* 忽略损坏的跨页提示 */ }
+    document.querySelectorAll('[data-af-toast]').forEach(function (el) {
+      var type = el.getAttribute('data-af-toast') || 'info';
+      var text = el.getAttribute('data-af-toast-text');
+      if (el.getAttribute('data-af-toast-mode') === 'notification') {
+        notification(type, {title: el.getAttribute('data-af-toast-title'), description: text});
+      } else if (text) toast(type, text);
+    });
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", bootPage);
   else bootPage();
 
   window.AntFeedback = window.AntFeedback || {
+    mount: mount,
+    createSpin: createSpin,
+    setNestedSpin: setNestedSpin,
+    setButtonLoading: function (el, on) { if (on) setLoading(el); else clearLoading(el); },
+    flash: flash,
+    notification: {
+      success: function (opts) { return notification('success', opts); },
+      error: function (opts) { return notification('error', opts); },
+      info: function (opts) { return notification('info', opts); },
+      warning: function (opts) { return notification('warning', opts); }
+    },
     message: {
       success: function (t, _ms, _k) { return toast("success", t); },
       error: function (t, _ms, _k) { return toast("error", t); },

@@ -139,7 +139,7 @@
     .stat { padding: 16px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; text-align: center; }
     .stat .num { font-size: 22px; font-weight: 700; color: var(--blue); }
     .stat .label { font-size: 13px; color: var(--gray); }
-    .btn { display: inline-block; padding: 8px 16px; border: none; border-radius: 4px; font-size: 14px; cursor: pointer; text-decoration: none; text-align: center; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; padding: 8px 16px; border: none; border-radius: 4px; font-family: inherit; font-size: 14px; line-height: 1.5; vertical-align: middle; cursor: pointer; text-decoration: none; text-align: center; }
     .btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .btn-primary { background: var(--blue); color: #fff; }
     .btn-primary:hover { background: #2860e0; }
@@ -169,7 +169,14 @@
       background: #0b1020; color: #d1e7ff; padding: 12px; border-radius: 8px;
       overflow: auto; max-height: 360px; font-size: 12px; margin-top: 12px;
     }
-    code { font-size: 12px; background: #f0f1f2; padding: 1px 5px; border-radius: 3px; }
+    code { font-size: 12px; background: #f0f1f2; padding: 1px 5px; border-radius: 3px; overflow-wrap: anywhere; }
+    input, select { max-width: 100%; min-width: 0; }
+    .field .check { flex: 1 1 220px; min-width: 0; }
+    .check input { flex: none; }
+    @media (max-width: 768px) {
+      .btn, .field input:not([type="checkbox"]), .field select { min-height: 44px; }
+      .actions > input[type="file"] { width: 100%; }
+    }
     footer { text-align: center; padding: 16px; color: var(--gray); font-size: 13px; }
     a.link { color: var(--blue); text-decoration: none; font-size: 13px; }
     a.link:hover { text-decoration: underline; }

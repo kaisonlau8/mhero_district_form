@@ -811,7 +811,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
   gap: var(--ant-space-3);
   flex-wrap: wrap;
   min-height: 56px;
-  padding: 0 var(--ant-space-5);
+  padding: var(--ant-space-3) var(--ant-space-5);
   border-bottom: 1px solid var(--ant-color-split);
   font-size: var(--ant-font-size-card-title);
   font-weight: 600;
@@ -852,6 +852,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
   font-size: var(--ant-font-size-base);
   font-family: inherit;
   line-height: 1.5714;
+  vertical-align: middle;
   white-space: nowrap;
   text-decoration: none;
   background: var(--ant-color-bg-container);
@@ -1042,6 +1043,7 @@ a.ant-btn-loading.is-locked { pointer-events: none; }
    9. ant-table（表头 #fafafa/600 · 行悬停 · 外层 radius 8 · 表头粘性 · 首列粘性）
    ========================================================================== */
 .ant-table-wrap {
+  min-width: 0;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   border: 1px solid var(--ant-color-split);
@@ -1158,7 +1160,7 @@ a.ant-btn-loading.is-locked { pointer-events: none; }
      单元格里的其余内容（元素与匿名文本）自动落进第 2 列堆叠 */
   .ant-table-cards td[data-label]:not([data-card-title]):not([data-cards-full]):not([colspan]) {
     display: grid !important;
-    grid-template-columns: minmax(4.5em, 38%) 1fr;
+    grid-template-columns: minmax(4.5em, 38%) minmax(0, 1fr);
     column-gap: var(--ant-space-3); row-gap: 0; align-items: baseline;
   }
   .ant-table-cards td[data-label]:not([data-card-title]):not([colspan])::before {
@@ -1220,7 +1222,8 @@ a.ant-btn-loading.is-locked { pointer-events: none; }
   /* 逐条提交：卡片内整行宽「提交申请」按钮，触控 >=44px */
   .ant-table-cards td.row-action { display: block !important; }
   .ant-table-cards td.row-action::before { content: none !important; }
-  .ant-table-cards .row-form, .ant-table-cards .row-form .ant-btn { display: block; width: 100%; }
+  .ant-table-cards .row-form { display: block; width: 100%; }
+  .ant-table-cards .row-form .ant-btn { display: flex; width: 100%; align-items: center; justify-content: center; }
   .ant-table-cards .row-form .ant-btn { min-height: 44px; }
 }
 
@@ -1575,7 +1578,7 @@ details.ant-tooltip-hint > summary::-webkit-details-marker { display: none; }
 
   /* 卡片收紧 */
   .ant-card .ant-card-body { padding: var(--ant-space-3); }
-  .ant-card-head { padding: 0 var(--ant-space-3); }
+  .ant-card-head { padding: var(--ant-space-3); }
 
   /* 链接胶囊 / 复选框触控热区 >=44px（checkbox 本体 16px，热区由 label 撑开） */
   .ant-chip { min-height: var(--ant-control-height-mobile); height: auto; }
@@ -1687,6 +1690,8 @@ details.ant-tooltip-hint > summary::-webkit-details-marker { display: none; }
   font-size: var(--ant-font-size-table);
   font-family: inherit;
   cursor: pointer;
+  line-height: var(--ant-line-height-base);
+  vertical-align: middle;
   white-space: nowrap;
   text-decoration: none;
   user-select: none;
@@ -1724,7 +1729,7 @@ form.filters .btn-primary { padding: 6px 18px; }
 form.filters input[type="checkbox"] { min-height: 0; width: 16px; height: 16px; accent-color: var(--ant-primary); }
 
 /* ---- 21.7 表格（旧全局裸 table 样式；th 粘性、斑马、悬停均在此单层定义） ---- */
-.tw { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: var(--ant-radius-md); max-width: 100%; }
+.tw { min-width: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: var(--ant-radius-md); max-width: 100%; }
 .tw.freeze-wrap { max-height: 75vh; overflow: auto; }
 table { width: 100%; border-collapse: collapse; font-size: var(--ant-font-size-table); white-space: nowrap; }
 th {
