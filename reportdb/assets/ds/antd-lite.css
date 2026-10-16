@@ -28,7 +28,9 @@
        20 打印
        21 兼容层：reportdb 旧模板 class（.card/.btn/.filters/.tw/.sticky1/... ）映射
        22 交互反馈：Button loading / Spin / message / Upload 进度（配 feedback.js）
-   · 移动端断点：导航 <=860px 变汉堡（与顶栏 JS 的 matchMedia 861px 对齐）；
+   · 移动端断点：导航 <=860px 变汉堡（与顶栏 JS 的 max-width:860px /
+     桌面悬停 min-width:861px 对齐）。展开为顶栏下方全宽抽屉：遮罩淡入，
+     菜单 240ms 淡入并下滑；再次点汉堡、点遮罩或按 Esc 关闭（同速退场）。
      其余 <=768px（覆盖 360 / 390 / 414 宽），可点击控件最小高度 44px。
    ========================================================================== */
 
@@ -112,6 +114,9 @@
 
   /* ---- 顶栏 ---- */
   --ant-header-height: 46px;   /* antd 水平导航高度 + 底部 1px 分割 */
+  /* 移动端抽屉：antd 缓动，进出同为 240ms（处于 200–300ms） */
+  --nav-drawer-duration: 240ms;
+  --nav-drawer-ease: cubic-bezier(0.645, 0.045, 0.355, 1);
 
   /* ---- 旧系统变量别名（_home_css.html / 少量内联样式仍引用，逐页迁移后移除） ---- */
   --blue: var(--ant-primary);
@@ -354,6 +359,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
 /* ---- 4.5 汉堡按钮（<=860px 出现，与顶栏 JS 断点一致） ---- */
 .burger {
   display: none;
+  position: relative;
   margin-left: auto;
   width: 40px;
   height: 36px;
@@ -365,7 +371,30 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
   align-items: center;
   justify-content: center;
 }
-.burger .ai { font-size: 16px; }
+.burger .burger-ico {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  font-size: 16px;
+  transition: opacity var(--nav-drawer-duration) var(--nav-drawer-ease),
+              transform var(--nav-drawer-duration) var(--nav-drawer-ease);
+}
+.burger-ico-menu { opacity: 1; transform: translate(-50%, -50%) rotate(0deg); }
+.burger-ico-close { opacity: 0; transform: translate(-50%, -50%) rotate(-90deg); }
+.topbar.open .burger,
+.ant-header.open .burger {
+  color: var(--ant-primary);
+  border-color: var(--ant-primary);
+}
+.topbar.open .burger-ico-menu,
+.ant-header.open .burger-ico-menu { opacity: 0; transform: translate(-50%, -50%) rotate(90deg); }
+.topbar.open .burger-ico-close,
+.ant-header.open .burger-ico-close { opacity: 1; transform: translate(-50%, -50%) rotate(0deg); }
+/* 桌面不占位；<=860px 的规则再把它变成遮罩 */
+.nav-backdrop { display: none; }
 
 /* 中等宽度先收紧内边距，避免顶栏自身溢出 */
 @media (max-width: 1080px) {
@@ -373,13 +402,14 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
   .brand { margin-right: 8px; font-size: 15px; }
 }
 
-/* ---- 4.6 移动端导航（<=860px 汉堡展开；点击展开由顶栏 JS 控制 .topbar.open） ---- */
+/* ---- 4.6 移动端导航（<=860px 汉堡抽屉；.topbar.open / body.nav-open 由顶栏 JS 切换） ----
+   不用 display:none：关着时用透明度 + 上移 + visibility 延迟，进出都能过渡。 */
 @media (max-width: 860px) {
   .burger { display: inline-flex; width: 44px; height: 44px; }
   /* 顶栏品牌与汉堡按钮的触控热区 >=44px */
   .brand { min-height: var(--ant-control-height-mobile); }
   .menu, .ant-menu {
-    display: none;
+    display: flex;
     position: absolute;
     left: 0; right: 0;
     top: var(--ant-header-height);
@@ -388,13 +418,32 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
     box-shadow: var(--ant-shadow-dropdown);
     flex-direction: column;
     align-items: stretch;
-    padding: 8px 10px 10px;
+    padding: 8px 10px calc(10px + env(safe-area-inset-bottom, 0px));
     gap: 0;
     max-height: calc(100vh - var(--ant-header-height));
+    max-height: calc(100dvh - var(--ant-header-height));
     overflow: auto;
+    overscroll-behavior: contain;
+    z-index: 1;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateY(-12px);
+    transition: opacity var(--nav-drawer-duration) var(--nav-drawer-ease),
+                transform var(--nav-drawer-duration) var(--nav-drawer-ease),
+                visibility 0s linear var(--nav-drawer-duration);
   }
-  .topbar.open .menu, .ant-header.open .ant-menu { display: flex; }
+  .topbar.open .menu, .ant-header.open .ant-menu {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: translateY(0);
+    transition: opacity var(--nav-drawer-duration) var(--nav-drawer-ease),
+                transform var(--nav-drawer-duration) var(--nav-drawer-ease),
+                visibility 0s linear 0s;
+  }
   .menu .sp { display: none; }
+  body.nav-open { overflow: hidden; }
   .mi > a, .mi > button {
     width: 100%;
     min-height: var(--ant-control-height-mobile);
@@ -421,6 +470,36 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
     font-size: 14px;
   }
   .mi.right { border-top: 1px solid var(--ant-color-split); margin-top: 6px; padding-top: 6px; }
+
+  /* 遮罩：盖住顶栏以下的页面；顶栏 z-index 更高，汉堡仍可再点关闭 */
+  .nav-backdrop {
+    display: block;
+    position: fixed;
+    top: var(--ant-header-height);
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: calc(var(--ant-z-topbar) - 1);
+    margin: 0;
+    padding: 0;
+    border: 0;
+    min-height: 0;
+    height: auto;
+    background: rgba(0, 0, 0, .45);
+    cursor: pointer;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity var(--nav-drawer-duration) var(--nav-drawer-ease),
+                visibility 0s linear var(--nav-drawer-duration);
+  }
+  body.nav-open .nav-backdrop {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transition: opacity var(--nav-drawer-duration) var(--nav-drawer-ease),
+                visibility 0s linear 0s;
+  }
 }
 
 /* ==========================================================================
@@ -1160,7 +1239,7 @@ details.ant-tooltip-hint > summary::-webkit-details-marker { display: none; }
 
   /* 可点击控件最小高度 44px（热区；视觉字号不变） */
   .ant-btn, .btn,
-  button:not(.burger),
+  button:not(.burger):not(.nav-backdrop),
   .ant-input, input[type="text"], input[type="password"], input[type="search"],
   input[type="date"], input[type="number"],
   .ant-select, select {
@@ -1231,7 +1310,7 @@ details.ant-tooltip-hint > summary::-webkit-details-marker { display: none; }
    20. 打印
    ========================================================================== */
 @media print {
-  .topbar, .ant-header, .burger, .pager, .ant-pagination,
+  .topbar, .ant-header, .burger, .nav-backdrop, .pager, .ant-pagination,
   #preview-banner form, .btn-export,
   .ant-spin-fullscreen, .ant-message { display: none !important; }
   body { background: #fff; font-size: 12px; }
@@ -1487,7 +1566,7 @@ input[type="text"], input[type="password"], input[type="search"], input[type="da
 /* ---- 21.14 移动端触控兜底（必须放在兼容层之后：旧 class 的 32px 定义会被
           前面的规则按“后者优先”覆盖，这里统一收口到 44px 最小触控高度） ---- */
 @media (max-width: 768px) {
-  .ant-btn, .ant-btn-sm, .btn, .btn-sm, button:not(.burger),
+  .ant-btn, .ant-btn-sm, .btn, .btn-sm, button:not(.burger):not(.nav-backdrop),
   .ant-input, .ant-select,
   form.filters select, form.filters input,
   input[type="text"], input[type="password"], input[type="search"],
@@ -1712,4 +1791,8 @@ button.lnk.ant-btn-loading {
   .ant-message-notice,
   .ant-progress-status-active .ant-progress-bg::after { animation: none; }
   .ant-spin-dot-item { opacity: 1; }
+  .menu, .ant-menu, .topbar.open .menu, .ant-header.open .ant-menu,
+  .nav-backdrop, body.nav-open .nav-backdrop,
+  .burger .burger-ico, .topbar.open .burger-ico-menu, .topbar.open .burger-ico-close,
+  .ant-header.open .burger-ico-menu, .ant-header.open .burger-ico-close { transition: none; }
 }

@@ -128,7 +128,7 @@
   {# 顶栏：ant-header / ant-menu 规格（历史 hook .topbar/.menu/.mi/.dd 由 antd-lite.css 与 ant-* 共享规则承接） #}
   <header class="topbar" id="topbar"><div class="in">
     <a class="brand" href="/{% if date %}?date={{ date }}{% endif %}"><img class="brand-logo" src="/ds/brand/logo-blue.png" srcset="/ds/brand/logo-blue@2x.png 2x" alt="猛士" height="28">区域报表</a>
-    <button class="burger" id="burger" type="button" aria-label="菜单" aria-expanded="false" aria-controls="mainmenu"><svg class="ai" aria-hidden="true"><use href="#i-menu"/></svg></button>
+    <button class="burger" id="burger" type="button" aria-label="菜单" aria-expanded="false" aria-controls="mainmenu"><svg class="ai burger-ico burger-ico-menu" aria-hidden="true"><use href="#i-menu"/></svg><svg class="ai burger-ico burger-ico-close" aria-hidden="true"><use href="#i-close"/></svg></button>
     <nav class="menu ant-menu" id="mainmenu" aria-label="主导航">
       <div class="mi {{ 'on' if P == '/' }}"><a href="/{% if date %}?date={{ date }}{% endif %}">首页</a></div>
       <div class="mi {{ 'on' if P.startswith('/tables') or P.startswith('/reports') or P.startswith('/stores') }}"><button type="button" aria-haspopup="true" aria-expanded="false"><svg class="ai dd-caret" aria-hidden="true"><use href="#i-caret-down"/></svg>报表</button>
@@ -154,17 +154,33 @@
           {% if is_admin %}<a id="user-menu-accounts" href="https://oa-m-hero.41box.com/admin/accounts">账号管理（管理员）</a><a href="/admin/users" class="{{ 'cur' if P.startswith('/admin/users') }}">用户管理</a>{% endif %}<hr>
           <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="lnk" type="submit"><svg class="ai" aria-hidden="true"><use href="#i-logout"/></svg>退出登录</button></form></div></div>{% endif %}
     </nav></div></header>
+  <button type="button" class="nav-backdrop" id="nav-backdrop" tabindex="-1" aria-hidden="true" aria-label="关闭菜单"></button>
   <script>
   (function(){
-    var bar=document.getElementById('topbar'), burger=document.getElementById('burger');
+    var bar=document.getElementById('topbar'), burger=document.getElementById('burger'), menu=document.getElementById('mainmenu'), backdrop=document.getElementById('nav-backdrop');
     var items=[].slice.call(document.querySelectorAll('.mi'));
+    var mobileMq=window.matchMedia('(max-width:860px)');
     function closeAll(except){items.forEach(function(m){if(m!==except){m.classList.remove('open');var b=m.querySelector('button');if(b)b.setAttribute('aria-expanded','false');}});}
+    function setDrawer(open){
+      if(!mobileMq.matches) open=false;
+      bar.classList.toggle('open', !!open);
+      document.body.classList.toggle('nav-open', !!open);
+      burger.setAttribute('aria-expanded', open?'true':'false');
+      burger.setAttribute('aria-label', open?'关闭菜单':'菜单');
+      if(menu){
+        var hide=mobileMq.matches && !open;
+        menu.setAttribute('aria-hidden', hide?'true':'false');
+        if(hide) menu.setAttribute('inert',''); else menu.removeAttribute('inert');
+      }
+      if(backdrop) backdrop.setAttribute('aria-hidden', open?'false':'true');
+      if(!open) closeAll();
+    }
     items.forEach(function(m){var b=m.querySelector(':scope > button'); if(!b) return;
       b.addEventListener('click',function(e){e.stopPropagation();var o=!m.classList.contains('open');closeAll(m);m.classList.toggle('open',o);b.setAttribute('aria-expanded',o);});
       b.addEventListener('keydown',function(e){if(e.key==='ArrowDown'){e.preventDefault();m.classList.add('open');b.setAttribute('aria-expanded','true');var a=m.querySelector('.dd a,.dd button');if(a)a.focus();}});
       m.querySelector('.dd').addEventListener('keydown',function(e){var l=[].slice.call(m.querySelectorAll('.dd a,.dd button.lnk')),i=l.indexOf(document.activeElement);
         if(e.key==='ArrowDown'){e.preventDefault();l[(i+1)%l.length].focus();}else if(e.key==='ArrowUp'){e.preventDefault();l[(i-1+l.length)%l.length].focus();}
-        else if(e.key==='Escape'){m.classList.remove('open');b.setAttribute('aria-expanded','false');b.focus();}});});
+        else if(e.key==='Escape'){e.stopPropagation();m.classList.remove('open');b.setAttribute('aria-expanded','false');b.focus();}});});
     // 鼠标悬停自动展开（仅桌面鼠标）；离开后延迟 220ms 才收起，鼠标从菜单项移到子菜单时不闪烁；点击/键盘/触屏仍可用
     var mq=window.matchMedia('(hover:hover) and (min-width:861px)');
     items.forEach(function(m){var b=m.querySelector(':scope > button'); if(!b) return; var t=null;
@@ -173,8 +189,13 @@
       b.addEventListener('click',function(e){if(mq.matches&&e.detail>0){e.stopImmediatePropagation(); closeAll(m); m.classList.add('open'); b.setAttribute('aria-expanded','true');}},true);
     });
     document.addEventListener('click',function(){closeAll();});
-    document.addEventListener('keydown',function(e){if(e.key==='Escape'){closeAll();bar.classList.remove('open');burger.setAttribute('aria-expanded','false');}});
-    burger.addEventListener('click',function(e){e.stopPropagation();var o=!bar.classList.contains('open');bar.classList.toggle('open',o);burger.setAttribute('aria-expanded',o);});
+    document.addEventListener('keydown',function(e){if(e.key==='Escape') setDrawer(false);});
+    burger.addEventListener('click',function(e){e.stopPropagation();setDrawer(!bar.classList.contains('open'));});
+    if(backdrop) backdrop.addEventListener('click',function(){setDrawer(false);});
+    if(menu) menu.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('a'); if(a&&mobileMq.matches) setDrawer(false);});
+    function onBp(){ if(!mobileMq.matches) setDrawer(false); else if(menu && !bar.classList.contains('open')){ menu.setAttribute('aria-hidden','true'); menu.setAttribute('inert',''); } }
+    if(mobileMq.addEventListener) mobileMq.addEventListener('change', onBp); else if(mobileMq.addListener) mobileMq.addListener(onBp);
+    onBp();
   })();
   </script>
   {% if user and user.preview_admin %}<div id="preview-banner">
