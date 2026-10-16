@@ -102,3 +102,146 @@
     document.addEventListener('DOMContentLoaded', scan);
   }
 })();
+
+/* 移动端导航（<=860px，与 antd-lite.css 4.6 / 4.7 同一断点）。
+ * 桌面端不改顶栏。已有 #burger 的页面（reportdb）只补遮罩点击与 Esc；
+ * 只有水平 nav、没有汉堡的顶栏（VIP）在窄屏插入按钮并加上 .has-burger；
+ * 黄页 .hub-user 仍用页面自己的点击切换，这里补姓名行、aria 与遮罩关闭。 */
+(function () {
+  'use strict';
+  var mq = window.matchMedia('(max-width: 860px)');
+
+  function setBurger(btn, open) {
+    if (!btn) return;
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    var label = btn.getAttribute('aria-label') || '';
+    if (btn.getAttribute('data-mhero-burger') === '1' || label === '打开菜单' || label === '关闭菜单') {
+      btn.setAttribute('aria-label', open ? '关闭菜单' : '打开菜单');
+    }
+  }
+
+  function closeBar(bar) {
+    bar.classList.remove('open');
+    setBurger(bar.querySelector('.burger'), false);
+  }
+
+  function ensurePlainNav(header) {
+    if (header.querySelector('.burger')) return;
+    var nav = header.querySelector(':scope > .in > nav');
+    if (!nav || nav.classList.contains('menu') || nav.classList.contains('ant-menu')) return;
+    if (!nav.id) nav.id = 'mainmenu';
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'burger';
+    btn.setAttribute('data-mhero-burger', '1');
+    btn.setAttribute('aria-controls', nav.id);
+    setBurger(btn, false);
+    nav.parentNode.insertBefore(btn, nav);
+    header.classList.add('has-burger');
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () { header.classList.add('nav-ready'); });
+    });
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var open = !header.classList.contains('open');
+      header.classList.toggle('open', open);
+      setBurger(btn, open);
+    });
+  }
+
+  function ensureHubWho(u) {
+    var dd = u.querySelector('.dd');
+    if (!dd || dd.querySelector('.hub-drawer-who')) return;
+    var who = document.createElement('div');
+    who.className = 'hub-drawer-who';
+    var name = u.querySelector('.n');
+    var tag = u.querySelector('.ant-tag');
+    who.textContent = name ? name.textContent.trim() : '';
+    if (tag && tag.textContent.trim()) {
+      who.appendChild(document.createTextNode(' '));
+      var pill = document.createElement('span');
+      pill.className = tag.className;
+      pill.textContent = tag.textContent.trim();
+      who.appendChild(pill);
+    }
+    dd.insertBefore(who, dd.firstChild);
+  }
+
+  function syncHubLabel() {
+    var u = document.querySelector('.hub-user');
+    if (!u) return;
+    var btn = u.querySelector(':scope > button');
+    if (!btn) return;
+    if (!mq.matches) {
+      if (btn.hasAttribute('data-hub-aria')) {
+        btn.removeAttribute('aria-label');
+        btn.removeAttribute('data-hub-aria');
+      }
+      return;
+    }
+    ensureHubWho(u);
+    if (!u.classList.contains('open')) btn.setAttribute('aria-label', '打开菜单');
+    btn.setAttribute('data-hub-aria', '1');
+  }
+
+  function boot() {
+    [].forEach.call(document.querySelectorAll('header.topbar, header.ant-header'), ensurePlainNav);
+    syncHubLabel();
+  }
+
+  document.addEventListener('click', function (e) {
+    var t = e.target;
+    if (!t || !t.closest) return;
+    if (t.classList && t.classList.contains('hub-user') && t.classList.contains('open')) {
+      t.classList.remove('open');
+      var hb = t.querySelector(':scope > button');
+      if (hb) {
+        hb.setAttribute('aria-expanded', 'false');
+        hb.setAttribute('aria-label', '打开菜单');
+      }
+      return;
+    }
+    var bar = t.closest('.topbar.open, .ant-header.open');
+    if (!bar || !mq.matches) return;
+    if (t.closest('.menu, .ant-menu, .burger, nav, a, button')) return;
+    closeBar(bar);
+  });
+
+  /* 黄页按钮自己的脚本会 stopPropagation，捕获阶段才能在切换之后读到 .open */
+  document.addEventListener('click', function (e) {
+    var btn = e.target && e.target.closest && e.target.closest('.hub-user > button');
+    if (!btn || !mq.matches) return;
+    var u = btn.parentNode;
+    setTimeout(function () {
+      var open = u.classList.contains('open');
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      btn.setAttribute('aria-label', open ? '关闭菜单' : '打开菜单');
+    }, 0);
+  }, true);
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    [].forEach.call(document.querySelectorAll('.topbar.open, .ant-header.open'), closeBar);
+    var u = document.querySelector('.hub-user.open');
+    if (!u) return;
+    u.classList.remove('open');
+    var hb = u.querySelector(':scope > button');
+    if (hb) {
+      hb.setAttribute('aria-expanded', 'false');
+      hb.setAttribute('aria-label', '打开菜单');
+    }
+  });
+
+  if (mq.addEventListener) {
+    mq.addEventListener('change', function () {
+      if (mq.matches) return;
+      [].forEach.call(document.querySelectorAll('.topbar.open, .ant-header.open'), closeBar);
+      var u = document.querySelector('.hub-user.open');
+      if (u) u.classList.remove('open');
+      syncHubLabel();
+    });
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
