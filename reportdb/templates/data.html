@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}{{ ds.title }} · 区域报表{% endblock %}
+{% block body %}
+<header class="ant-page-header">
+  <div class="ant-page-header-heading">
+    <h1>{{ ds.title }}</h1>
+    <div class="ant-page-header-sub">{{ ds.template_sheet }} · {% if filters_on %}筛选后 {{ total }} 行{% else %}共 {{ total }} 行{% endif %}</div>
+    <div class="ant-page-header-meta">{% if not authorized %}<span class="ant-tag ant-tag-warning">已脱敏：VIN / 姓名</span>{% else %}<span class="ant-tag ant-tag-success">已授权完整视图</span>{% endif %}</div>
+  </div>
+  <div class="ant-page-header-actions"><a class="btn btn-export" href="{{ export_url }}" title="导出当前筛选结果为 Excel"><svg class="ai" aria-hidden="true"><use href="#i-download"/></svg>导出 Excel（当前筛选）</a></div>
+</header>
+
+<div class="ant-card">
+  <div class="ant-card-body">
+  <form class="ant-filter-bar" method="get" id="ff">
+    <div class="ant-filter-item"><label>快照日期</label>
+      <select class="ant-select" name="date" onchange="this.form.submit()">{% for s in snaps %}<option value="{{ s.snapshot_date }}" {% if s.snapshot_date==date %}selected{% endif %}>{{ s.snapshot_date }}</option>{% endfor %}</select></div>
+    {% if ds.has_region or ds.store_name_col %}<div class="ant-filter-item"><label>区域</label><select class="ant-select" name="region" onchange="this.form.submit()"><option value="">全部</option>{% for r in regions %}<option {% if r==region %}selected{% endif %}>{{ r }}</option>{% endfor %}</select></div>{% endif %}
+    {% if ds.store_name_col %}<div class="ant-filter-item"><label>门店</label><select class="ant-select" name="store" onchange="this.form.submit()"><option value="">全部</option>{% for s in stores_list %}<option {% if s==store %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></div>{% endif %}
+    {% if ind %}<div class="ant-filter-item"><label>完成情况</label><select class="ant-select" name="decision" onchange="this.form.submit()"><option value="">全部</option>
+      <option value="done" {% if decision=='done' %}selected{% endif %}>已完成（{{ ind.hit }}）</option><option value="todo" {% if decision=='todo' %}selected{% endif %}>未完成</option>
+      <option value="exempt" {% if decision=='exempt' %}selected{% endif %}>已修正</option><option value="excluded" {% if decision=='excluded' %}selected{% endif %}>已剔除</option></select></div>{% endif %}
+    {% if ds.key=='renewal' %}<div class="ant-filter-item"><label>来源</label><select class="ant-select" name="origin" onchange="this.form.submit()"><option value="">全部</option><option value="renewal" {% if origin=='renewal' %}selected{% endif %}>续保</option><option value="backlog" {% if origin=='backlog' %}selected{% endif %}>去年同期交付未新保</option></select></div>{% endif %}
+    {% if ds.has_region %}<div class="ant-filter-item"><label class="ant-checkbox"><input type="checkbox" name="scope_only" value="1" {% if scope_only %}checked{% endif %} onchange="this.form.submit()"> 只看计入范围内</label></div>{% endif %}
+    <div class="ant-filter-item"><label>搜索</label><input class="ant-input" name="q" value="{{ q }}" placeholder="VIN / 门店 / 姓名 / 编号"></div>
+    <div class="ant-filter-item"><label>每页</label><select class="ant-select" name="size" onchange="this.form.submit()">{% for n in (25,50,100,200) %}<option {% if n==size %}selected{% endif %}>{{ n }}</option>{% endfor %}</select></div>
+    <div class="ant-filter-actions">
+      <button class="ant-btn ant-btn-primary" type="submit"><svg class="ai" aria-hidden="true"><use href="#i-search"/></svg>筛选</button>
+      <a class="ant-btn" href="?date={{ date }}"><svg class="ai" aria-hidden="true"><use href="#i-reload"/></svg>重置</a>
+    </div>
+  </form>
+  {% if ds.notes %}<details class="ant-collapse ant-collapse-ghost ant-mt-2"><summary><svg class="ai" aria-hidden="true"><use href="#i-info-circle"/></svg>口径说明</summary><div class="ant-collapse-content"><p class="muted" style="margin:0">{{ ds.notes }}</p></div></details>{% endif %}
+  {% if not authorized %}<div class="ant-alert ant-alert-info ant-mt-2"><span class="ant-alert-icon"><svg class="ai" aria-hidden="true"><use href="#i-info-circle"/></svg></span><div class="ant-alert-content">客户级字段已脱敏（VIN 仅显示前3后4位，姓名仅保留首字）。导出同样为脱敏版。</div></div>{% endif %}
+  </div>
+</div>
+
+{% if ind %}<div class="ant-card"><div class="ant-card-body">
+  <details class="hint"><summary>说明</summary><p class="muted">「{{ ind.title }}」分子 = {{ ind.flag_label }}；标「已修正」的车辆结果已由「否」改为「是」（分子 +1，分母不变）；标「已剔除」的车辆（DMS 出口车规则或整车剔除申请，对所有指标都生效）分子分母都不计。{{ ex_note }}</p></details>
+  {% if can_request %}<div class="ant-alert ant-alert-info"><span class="ant-alert-icon"><svg class="ai" aria-hidden="true"><use href="#i-info-circle"/></svg></span><div class="ant-alert-content">本页只读。要申请，请到 <a class="ant-btn ant-btn-sm" href="/exemptions/new?indicator={{ ind.key }}&date={{ date }}">申请修正结果</a>（把「否」改成「是」，仅限本指标）或 <a class="ant-btn ant-btn-sm" href="/exclusions/new?date={{ date }}">申请剔除</a>（整辆车不计入所有指标）。</div></div>{% endif %}
+</div></div>{% endif %}
+
+<div class="ant-card">
+  <div class="ant-card-body">
+  <div class="tw ant-table-wrap"><table class="sticky1"><thead><tr>
+    <th class="nosort num">#</th>
+    {% set NS = namespace(t=false) %}{% for c, l in cols %}{% if not NS.t and (c == 'vin' or c == 'store_name') %}{% set NS.t = true %}<th class="nosort" data-card-title onclick="location.href='?{{ qs(sort=c, dir=('desc' if (sort==c and dir=='asc') else 'asc'), page=1) }}'">{{ l }}{% if sort==c %} <span class="arr"><svg class="ai" aria-hidden="true"><use href="#i-caret-{{ 'up' if dir=='asc' else 'down' }}"/></svg></span>{% endif %}</th>
+    {% else %}<th onclick="location.href='?{{ qs(sort=c, dir=('desc' if (sort==c and dir=='asc') else 'asc'), page=1) }}'">{{ l }}{% if sort==c %} <span class="arr"><svg class="ai" aria-hidden="true"><use href="#i-caret-{{ 'up' if dir=='asc' else 'down' }}"/></svg></span>{% endif %}</th>{% endif %}{% endfor %}</tr></thead>
+    <tbody>{% for r in rows %}<tr><td class="num">{{ r.row_no }}</td>{% for c, l in cols %}<td>{{ r[c] if r[c] is not none else '' }}{% if loop.first %}{% if r._xc %} <span class="ant-tag ant-tag-warning">已剔除</span>{% elif r._ex %} <span class="ant-tag ant-tag-success">已修正</span>{% endif %}{% endif %}</td>{% endfor %}</tr>
+    {% else %}<tr><td colspan="{{ cols|length+1 }}"><div class="ant-empty"><div class="ant-empty-image"><svg class="ai" aria-hidden="true"><use href="#i-inbox"/></svg></div><div class="ant-empty-title">{% if filters_on %}筛选无结果{% else %}暂无数据{% endif %}</div><div class="ant-empty-desc">{% if filters_on %}当前筛选条件下没有匹配的行，可重置筛选后再试。{% else %}该快照还没有导入这个数据集。{% endif %}</div><div class="ant-empty-actions"><a class="ant-btn ant-btn-sm" href="?date={{ date }}"><svg class="ai" aria-hidden="true"><use href="#i-reload"/></svg>重置筛选</a></div></div></td></tr>{% endfor %}</tbody></table></div>
+  <div class="pager ant-pagination ant-mt-3">
+    {% if page>1 %}<a class="ant-pagination-item" href="?{{ qs(page=1) }}" aria-label="第一页"><svg class="ai" aria-hidden="true"><use href="#i-left"/></svg></a><a class="ant-pagination-item" href="?{{ qs(page=page-1) }}" aria-label="上一页">上一页</a>{% endif %}
+    <span class="ant-pagination-total">第 {{ page }} / {{ pages }} 页</span>
+    {% if page<pages %}<a class="ant-pagination-item" href="?{{ qs(page=page+1) }}" aria-label="下一页">下一页</a><a class="ant-pagination-item" href="?{{ qs(page=pages) }}" aria-label="最后一页"><svg class="ai" aria-hidden="true"><use href="#i-right"/></svg></a>{% endif %}
+  </div>
+  </div>
+</div>
+{% endblock %}

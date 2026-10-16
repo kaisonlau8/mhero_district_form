@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}{{ st.name }} · 门店指标{% endblock %}
+{% block body %}
+<header class="ant-page-header">
+  <div class="ant-page-header-heading">
+    <h1>{{ st.name }}</h1>
+    <div class="ant-page-header-sub">{{ st.code }} · {{ st.region or '无区域' }}{% if st.direct %} · <span class="ant-tag ant-tag-success">直营</span>{% endif %}{% if st.supervisor %} · 督导 {{ st.supervisor }}{% endif %}</div>
+    <div class="ant-page-header-meta">快照 {{ date }} · 口径与首页一致：分子含已批准的「修正结果」，已扣除「剔除」</div>
+  </div>
+  <div class="ant-page-header-actions">
+    {% set xl_url = "/export/stores/" ~ st.code ~ ".xlsx?date=" ~ date %}{% set xl_fixed = true %}{% include "_export_btn.html" %}
+    <a class="ant-btn" href="/stores?date={{ date }}{% if st.region %}&region={{ st.region|urlencode }}{% endif %}"><svg class="ai" aria-hidden="true"><use href="#i-arrow-left"/></svg>返回门店列表</a>
+  </div>
+</header>
+
+<div class="sheet"><table class="xl" id="dt">
+  <thead><tr><th style="text-align:left">指标</th><th>分母</th><th>分子</th><th>完成率</th><th>全国名次</th><th>已修正</th><th>已剔除</th><th>待审批申请</th><th>明细</th></tr></thead>
+  <tbody>
+  {% for i in inds %}{% set c = i.c %}<tr>
+    <td style="font-weight:600">{{ i.title }}<span class="s">{{ i.head[1] }} / {{ i.head[0] }}</span></td>
+    <td>{{ c.den }}</td><td>{{ c.num }}</td><td><span class="v">{{ c.rate_t }}</span></td>
+    <td>{% if c.rank %}第 {{ c.rank }} / {{ c.rank_of }}{% else %}-{% endif %}</td>
+    <td>{{ c.corrected }}</td>
+    <td>{{ c.ex_total }}{% if c.ex_total %}<span class="s">规则 {{ c.ex_rule }} · 无区域 {{ c.ex_noregion }} · 整车 {{ c.ex_vin }}</span>{% endif %}</td>
+    <td>{{ c.pending_fix }}</td>
+    <td><a href="{{ i.url }}">查看车辆明细</a></td></tr>{% endfor %}
+  <tr><td style="font-weight:600">常备件备库率<span class="s">≥{{ (st.spare.threshold*100)|round|int }}% 达标</span></td>
+    <td colspan="2">{{ '达标' if st.spare.ok else '未达标' }}</td><td><span class="v">{{ st.spare.rate_t }}</span></td>
+    <td>{% if st.spare.rank %}第 {{ st.spare.rank }}{% else %}-{% endif %}</td><td>-</td><td>-</td><td>-</td><td><a href="{{ spare_url }}">备件明细</a></td></tr>
+  </tbody></table></div>
+
+<details class="ant-collapse ant-collapse-ghost ant-mt-2">
+  <summary><svg class="ai" aria-hidden="true"><use href="#i-info-circle"/></svg>口径说明</summary>
+  <div class="ant-collapse-content">
+  <p class="legend">已修正 = 已批准、真正把「否」改成「是」的车辆行数（已计入分子）；已剔除 = 被扣除出分子分母的行数（规则=剔除规则命中 / 无区域=DMS 导出无区域 / 整车=已批准的整车剔除）。整车待审批剔除：{{ st.pending_exclude }} 辆（未生效）。</p>
+  </div>
+</details>
+
+<div class="ant-card ant-mt-2">
+  <div class="ant-card-head"><h2 class="ant-card-head-title">本店的修正 / 剔除申请</h2></div>
+  <div class="ant-card-body">
+  <div class="tw ant-table-wrap"><table><thead><tr><th>编号</th><th>类型</th><th>指标</th><th data-card-title>VIN</th><th>理由</th><th>申请人</th><th>时间</th><th>状态</th><th>审批意见</th></tr></thead><tbody>
+  {% for a in apps %}<tr><td>#{{ a.id }}</td><td>{{ kind_cn.get(a.kind, a.kind) }}</td><td>{{ a.ind_cn }}</td><td>{{ a.vin_show }}</td><td style="white-space:normal">{{ a.reason }}</td><td>{{ a.requested_by }}</td><td>{{ a.requested_at }}</td><td><span class="ant-tag {{ {'pending':'ant-tag-warning','approved':'ant-tag-success','rejected':'ant-tag-error'}.get(a.status,'ant-tag') }}">{{ status_cn.get(a.status, a.status) }}</span></td><td style="white-space:normal">{{ a.review_comment or '' }}</td></tr>
+  {% else %}<tr><td colspan="9"><div class="ant-empty"><div class="ant-empty-image"><svg class="ai" aria-hidden="true"><use href="#i-inbox"/></svg></div><div class="ant-empty-title">本店暂无申请</div><div class="ant-empty-desc">督导可在「督导申请」菜单提交修正结果或剔除申请。</div></div></td></tr>{% endfor %}</tbody></table></div></div>
+</div>
+{% endblock %}

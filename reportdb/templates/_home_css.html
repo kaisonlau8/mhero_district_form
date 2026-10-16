@@ -1,0 +1,47 @@
+<style>
+  .hero { display:flex; flex-wrap:wrap; align-items:flex-end; gap:12px 24px; margin:4px 0 12px; }
+  .hero .ttl { flex:1 1 280px; }
+  .hero h2 { font-size:22px; font-weight:700; letter-spacing:.5px; }
+  .hero .date { display:inline-block; margin-top:2px; font-size:30px; font-weight:800; color:var(--blue); font-variant-numeric:tabular-nums; line-height:1.2; }
+  .hero .date small { font-size:13px; font-weight:500; color:var(--gray); margin-left:8px; }
+  .hero .meta { margin-top:2px; font-size:12px; color:var(--gray); }
+  .hero .acts { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .hero select { padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:14px; background:#fff; }
+  .btn-primary { font-weight:600; }
+  .sheet { background:#fff; border:1px solid var(--border); border-radius:10px; box-shadow:0 1px 3px rgba(31,35,41,.06); overflow:auto; max-height:80vh; -webkit-overflow-scrolling:touch; }
+  table.xl { width:100%; border-collapse:separate; border-spacing:0; font-size:14px; }
+  table.xl th, table.xl td { padding:8px 14px; text-align:right; border-bottom:1px solid #eceef1; white-space:nowrap; }
+  table.xl thead th { position:sticky; top:0; z-index:3; background:#f3f6fc; color:#1f2329; border-bottom:2px solid #c9d6f2; cursor:default; vertical-align:bottom; }
+  table.xl thead th small { display:block; font-weight:400; font-size:11px; color:var(--gray); }
+  table.xl th:nth-child(2), table.xl td:nth-child(2) { position:sticky; left:48px; z-index:2; text-align:left; background:#fff; font-weight:600; min-width:84px; border-right:1px solid #eceef1; }
+  table.xl th:first-child, table.xl td:first-child { position:sticky; left:0; z-index:2; background:#fff; }
+  table.xl thead th:first-child, table.xl thead th:nth-child(2) { z-index:4; background:#f3f6fc; }
+  table.xl tbody tr:nth-child(even) td { background:#fafbfd; }
+  table.xl tbody tr:hover td { background:#eef4ff; }
+  table.xl tr.tot td { background:#e8f0ff !important; font-weight:700; border-bottom:2px solid #c9d6f2; }
+  table.xl td .v { font-size:16px; font-weight:700; font-variant-numeric:tabular-nums; }
+  table.xl td .s { display:block; font-size:11px; color:var(--gray); font-weight:400; font-variant-numeric:tabular-nums; }
+  table.xl td .rk { font-size:10px; color:#8f959e; font-weight:500; margin-left:4px; }
+  table.xl tr.tot td .s, table.xl tr.tot td .rk { color:#5b6b8c; }
+  table.xl td.hi .v { color:#0a9d63; } table.xl td.lo .v { color:#d46b08; }
+  table.xl tbody tr td.hi, table.xl tbody tr:nth-child(even) td.hi { background:#e9f8f0; } table.xl tbody tr td.lo, table.xl tbody tr:nth-child(even) td.lo { background:#fff3e3; }
+  table.xl th.sortable a { color:inherit; display:block; } table.xl th.sortable a:hover { color:var(--blue); text-decoration:none; } table.xl th.act { background:#dfe9ff; color:var(--blue); }
+  table.xl td.pos, table.xl th.pos { text-align:center; width:48px; color:var(--gray); font-weight:700; padding-left:8px; padding-right:8px; }
+  .legend { margin:6px 2px 0; font-size:12px; color:var(--gray); }
+  .legend i { display:inline-block; width:9px; height:9px; border-radius:2px; vertical-align:-1px; margin:0 3px 0 8px; }
+  .more { margin-top:22px; }
+  .more h3 { font-size:13px; color:var(--gray); font-weight:600; margin:0 0 8px; letter-spacing:.5px; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px; }
+  .chips a { display:inline-block; padding:4px 11px; font-size:12.5px; border:1px solid var(--border); background:#fff; border-radius:999px; color:#3b4252; }
+  .chips a:hover { border-color:var(--blue); color:var(--blue); text-decoration:none; }
+  .chips a b { color:var(--gray); font-weight:400; margin-left:4px; font-size:11px; }
+  details.qa { background:#fff; border:1px solid var(--border); border-radius:8px; margin-bottom:8px; }
+  details.qa > summary { padding:9px 14px; cursor:pointer; font-size:13px; font-weight:600; color:#3b4252; list-style:none; }
+  details.qa > summary::before { content:'▸'; display:inline-block; width:14px; color:var(--gray); transition:transform .15s; }
+  details.qa[open] > summary::before { transform:rotate(90deg); }
+  details.qa .inner { padding:0 14px 12px; font-size:13px; }
+  details.qa h3.sec { font-size:13px; margin:10px 0 6px; color:#3b4252; }
+  .api { font-size:12px; color:var(--gray); margin-top:10px; }
+  @media (max-width:640px){ .hero h2{font-size:18px;} .hero .date{font-size:24px;} table.xl th,table.xl td{padding:6px 9px;} table.xl td .v{font-size:15px;} .sheet{max-height:none;} }
+  @media print { .nav,.hero .acts,.more,.api,.legend a,form{display:none !important;} body{background:#fff;font-size:12px;} .container{max-width:none;margin:0;padding:0;} .sheet{max-height:none;overflow:visible;box-shadow:none;border:0;} table.xl th,table.xl td{padding:4px 8px;} table.xl th:first-child,table.xl td:first-child,table.xl th:nth-child(2),table.xl td:nth-child(2){position:static;} table.xl thead th{position:static;} }
+</style>

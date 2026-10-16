@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}门店指标 · 区域报表{% endblock %}
+{% block body %}
+<header class="ant-page-header">
+  <div class="ant-page-header-heading">
+    <h1>门店指标</h1>
+    <div class="ant-page-header-sub">每家店的指标完成情况，口径与首页、督导申请完全一致</div>
+    <div class="ant-page-header-meta">快照 {{ date }} · 共 {{ rows|length }}{% if rows|length != n_all %} / {{ n_all }}{% endif %} 家 · 分子已含已批准的「修正结果」，已扣除「剔除」（含 DMS 出口/无区域自动剔除）</div>
+  </div>
+  <div class="ant-page-header-actions">{% set xl_url = "/export/stores.xlsx" %}{% set xl_fixed = false %}{% include "_export_btn.html" %}</div>
+</header>
+
+<div class="ant-card ant-sticky-filter" style="margin-bottom:var(--ant-space-4)">
+  <div class="ant-card-body" style="padding:var(--ant-space-3) var(--ant-space-5)">
+  <form class="ant-filter-bar" method="get">
+    <div class="ant-filter-item"><label>快照日期</label>
+      <select class="ant-select" name="date" onchange="this.form.submit()">{% for s in snaps %}<option value="{{ s.snapshot_date }}" {% if s.snapshot_date==date %}selected{% endif %}>{{ s.snapshot_date }}</option>{% endfor %}</select></div>
+    <div class="ant-filter-item"><label>区域</label><select class="ant-select" name="region" onchange="this.form.submit()"><option value="">全部</option>{% for r in regions %}<option {% if r==region %}selected{% endif %}>{{ r }}</option>{% endfor %}</select></div>
+    <div class="ant-filter-item"><label>门店</label><input class="ant-input" name="q" value="{{ q }}" placeholder="名称或编码包含…"></div>
+    <div class="ant-filter-item"><label>排序</label><select class="ant-select" name="sort" onchange="this.form.submit()"><option value="region" {% if sort=='region' %}selected{% endif %}>区域 / 门店</option>{% for k in order %}<option value="{{ k }}" {% if sort==k %}selected{% endif %}>{{ titles[k] }}名次</option>{% endfor %}<option value="spare" {% if sort=='spare' %}selected{% endif %}>备库率名次</option></select></div>
+    <div class="ant-filter-actions">
+      <button class="ant-btn ant-btn-primary" type="submit"><svg class="ai" aria-hidden="true"><use href="#i-search"/></svg>筛选</button>
+      <a class="ant-btn" href="/stores?date={{ date }}"><svg class="ai" aria-hidden="true"><use href="#i-reload"/></svg>重置</a>
+    </div>
+  </form>
+  </div>
+</div>
+
+<div class="sheet"><table class="xl" id="storetbl">
+  <thead><tr><th class="pos">#</th><th>门店</th><th style="text-align:left">区域</th>
+    {% for k in order %}<th>{{ titles[k] }}<small>{{ heads[k][1] }}/{{ heads[k][0] }}</small></th>{% endfor %}
+    <th>备库率<small>≥{{ (threshold*100)|round|int }}% 达标</small></th><th>修正 / 剔除</th></tr></thead>
+  <tbody>
+  {% for s in rows %}<tr>
+    <td class="pos">{{ loop.index }}</td>
+    <td><a href="/stores/{{ s.code }}?date={{ date }}">{{ s.name }}</a>{% if s.direct %} <span class="ant-tag ant-tag-success">直营</span>{% endif %}</td>
+    <td style="text-align:left">{{ s.region or '-' }}</td>
+    {% for k in order %}{% set c = s.ind[k] %}<td><span class="v">{{ c.rate_t }}</span><span class="s">{{ c.num }}/{{ c.den }}</span>{% if c.rank %}<span class="rk">第{{ c.rank }}</span>{% endif %}</td>{% endfor %}
+    <td><span class="v {{ 'ok' if s.spare.ok else 'bad' }}">{{ s.spare.rate_t }}</span>{% if s.spare.rank %}<span class="rk">第{{ s.spare.rank }}</span>{% endif %}</td>
+    <td><span class="s">{% set fx = namespace(n=0, x=0) %}{% for k in order %}{% set fx.n = fx.n + s.ind[k].corrected %}{% set fx.x = fx.x + s.ind[k].ex_total %}{% endfor %}修正 {{ fx.n }} · 剔除 {{ fx.x }}{% if s.pending_exclude or s.ind.values()|sum(attribute='pending_fix') %} · 待审 {{ s.pending_exclude + s.ind.values()|sum(attribute='pending_fix') }}{% endif %}</span></td>
+  </tr>{% else %}<tr><td colspan="11" style="text-align:left"><div class="ant-empty"><div class="ant-empty-image"><svg class="ai" aria-hidden="true"><use href="#i-inbox"/></svg></div><div class="ant-empty-title">筛选无结果</div><div class="ant-empty-desc">当前筛选条件下没有匹配的门店，可重置筛选后再试。</div><div class="ant-empty-actions"><a class="ant-btn ant-btn-sm" href="/stores?date={{ date }}"><svg class="ai" aria-hidden="true"><use href="#i-reload"/></svg>重置筛选</a></div></div></td></tr>{% endfor %}
+  </tbody></table></div>
+
+{# 手机/长列表：客户端「加载更多」（每批 20 条，纯前端展示，不影响导出/筛选/数字；
+   仅手机（<=768px）启用，桌面端始终显示全部行 #}
+<div class="ant-flex ant-mt-3" id="stores-pager" hidden>
+  <span class="muted" id="stores-pager-info"></span>
+  <button class="ant-btn" id="stores-more" type="button"><svg class="ai" aria-hidden="true"><use href="#i-down"/></svg>加载更多</button>
+</div>
+<script>
+(function () {
+  var tb = document.getElementById('storetbl');
+  if (!tb || !tb.tBodies[0]) return;
+  var rows = Array.prototype.filter.call(tb.tBodies[0].rows, function (r) { return !r.querySelector('.ant-empty'); });
+  if (rows.length <= 20) return;
+  var STEP = 20, shown = STEP;
+  var pager = document.getElementById('stores-pager');
+  var btn = document.getElementById('stores-more');
+  var info = document.getElementById('stores-pager-info');
+  var mq = window.matchMedia('(max-width: 768px)');
+  function apply() {
+    if (!mq.matches) {  // 桌面：全部显示，不出现分页条
+      rows.forEach(function (r) { r.style.display = ''; });
+      pager.hidden = true; btn.hidden = false;
+      return;
+    }
+    rows.forEach(function (r, i) { r.style.display = i < shown ? '' : 'none'; });
+    pager.hidden = false;
+    info.textContent = '已显示 ' + Math.min(shown, rows.length) + ' / ' + rows.length + ' 家门店';
+    btn.hidden = shown >= rows.length;
+  }
+  btn.addEventListener('click', function () { shown += STEP; apply(); });
+  (mq.addEventListener ? mq.addEventListener('change', apply) : mq.addListener(apply));
+  apply();
+})();
+</script>
+
+<details class="ant-collapse ant-collapse-ghost ant-mt-2">
+  <summary><svg class="ai" aria-hidden="true"><use href="#i-info-circle"/></svg>口径与图例说明</summary>
+  <div class="ant-collapse-content">
+  <p class="legend">格内：率 / 分子÷分母 / 全国名次（并列同名次）。「修正」= 已批准、真正把否改成是的行数；「剔除」= 被扣除的行数（五项指标行数之和，一辆车会在多个指标各计一行）。点门店名看明细与各指标下钻。</p>
+  </div>
+</details>
+{% endblock %}

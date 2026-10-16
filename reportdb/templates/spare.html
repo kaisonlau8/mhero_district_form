@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}常备件备库率 · 区域报表{% endblock %}
+{% block body %}
+<header class="ant-page-header">
+  <div class="ant-page-header-heading">
+    <h1>常备件备库率</h1>
+    <div class="ant-page-header-sub">{{ desc }}</div>
+    <div class="ant-page-header-meta">计算于 {{ computed_at }} · 备库率 = 库存&gt;0 的计入备件种数 ÷ {{ m.counted_n }}（达标线 {{ (m.threshold*100)|int }}%） · 共 {{ rows|length }} 家 · 名单版本 v{{ m.list.id if m.list else '-' }}（自 {{ m.list.effective_from if m.list else '' }} 起）{% if is_admin %} · <a href="/settings/spare-parts">修改名单</a>{% endif %}</div>
+  </div>
+  <div class="ant-page-header-actions">{% set xl_url = export_url %}{% set xl_fixed = true %}{% include "_export_btn.html" %}</div>
+</header>
+
+<div class="ant-card">
+  <div class="ant-card-body">
+  {% set show_region = true %}{% set q_label = '门店/编码' %}{% include "_filters.html" %}
+  <details class="ant-collapse ant-collapse-ghost ant-mt-2">
+    <summary><svg class="ai" aria-hidden="true"><use href="#i-info-circle"/></svg>口径与图例说明</summary>
+    <div class="ant-collapse-content">
+    <p class="legend">绿底=已备（库存&gt;0）。表头第二行为备件名称，第三行为标准备库量（仅供参考，不参与计算）。<b>* 不计入备库率的备件列。</b></p>
+    </div>
+  </details>
+  </div>
+</div>
+
+<div class="ant-card"><div class="ant-card-body"><div class="tw ant-table-wrap" style="max-height:78vh">
+<table class="sortable sticky1">
+  <thead>
+    <tr><th>门店</th><th>编码</th><th>区域</th><th class="num">备库率</th><th class="nosort">达标</th>
+    {% for c in m.codes %}<th class="num nosort" title="{{ m.names[loop.index0] }}{% if not m.counted[loop.index0] %}（不计入备库率）{% endif %}">{{ c }}<br><small>{{ m.names[loop.index0] }}{% if not m.counted[loop.index0] %}*{% endif %}</small><br><small class="muted">标准 {{ m.std[loop.index0]|int if m.std[loop.index0] is not none else '' }}</small></th>{% endfor %}</tr>
+  </thead>
+  <tbody>
+  {% for r in rows %}<tr><td data-v="{{ r.name }}">{{ r.name }}</td><td data-v="{{ r.code }}">{{ r.code }}</td><td data-v="{{ r.region or '' }}">{{ r.region or '' }}</td>
+    <td class="num" data-v="{{ r.rate if r.rate is not none else '' }}">{{ r.rate_t }}</td><td data-v="{{ 1 if r.ok else 0 }}">{% if r.ok %}<span class="ok">是</span>{% else %}<span class="bad">否</span>{% endif %}</td>
+    {% for v in r.vals %}<td class="num {{ 'cell1' if v>0 else 'cell0' }}" data-v="{{ v }}">{{ v }}</td>{% endfor %}</tr>
+  {% else %}<tr><td colspan="5" style="text-align:left"><div class="ant-empty"><div class="ant-empty-image"><svg class="ai" aria-hidden="true"><use href="#i-inbox"/></svg></div><div class="ant-empty-title">筛选无结果</div><div class="ant-empty-desc">当前筛选条件下没有匹配的门店，可重置筛选后再试。</div><div class="ant-empty-actions"><a class="ant-btn ant-btn-sm" href="/tables/spare-parts?date={{ date }}"><svg class="ai" aria-hidden="true"><use href="#i-reload"/></svg>重置筛选</a></div></div></td></tr>{% endfor %}
+  </tbody></table></div></div></div>
+{% endblock %}

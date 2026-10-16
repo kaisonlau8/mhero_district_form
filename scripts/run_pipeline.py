@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -103,7 +104,6 @@ def run_pipeline(
         "report": "",
         "error": "",
     }
-
     try:
         if not skip_crawl:
             crawl_result = crawl(year=year, quarter=quarter, output_dir=download_dir, dry_run=dry_run)
@@ -117,10 +117,32 @@ def run_pipeline(
             if crawl_result.get("status") == "partial":
                 print("[WARN] crawl partial, still attempting report build")
 
-        report_path = build_from_download(download_dir, output_dir)
+        # --- 报表引擎：MHERO_REPORT_ENGINE=reportdb → 入库 + 系统计算 + 系统导出日报（不再用 Excel 模板公式）；默认 excel（旧路径）---
+        engine = os.getenv("MHERO_REPORT_ENGINE", "excel").strip().lower()
+        if engine == "reportdb":
+            from reportdb.pipeline import run as reportdb_run
+
+            rdb = reportdb_run(download_dir, output_dir)
+            result["engine"] = "reportdb"
+            result["reportdb"] = {k: v for k, v in rdb.items() if k != "report"}
+            report_path = Path(rdb["report"])
+        else:
+            report_path = build_from_download(download_dir, output_dir)
+        # --- /engine ---
         result["report"] = str(report_path)
         result["status"] = "ok"
         print(f"Report generated: {report_path}")
+        # --- reportdb 可选钩子：默认关闭，MHERO_REPORTDB=1 才执行；engine=reportdb 时已隐含入库，不再重复；失败只记录，不影响 Excel/推送 ---
+        if engine != "reportdb" and os.getenv("MHERO_REPORTDB", "").strip().lower() in {"1", "true", "yes", "on"}:
+            try:
+                from reportdb.ingest import ingest_after_pipeline
+
+                result["reportdb"] = ingest_after_pipeline(download_dir)
+                print(f"[reportdb] {result['reportdb']}")
+            except Exception as exc:  # noqa: BLE001
+                result["reportdb"] = {"ok": False, "error": str(exc)}
+                print(f"[WARN] reportdb ingest failed: {exc}")
+        # --- /reportdb ---
     except Exception as exc:
         result["status"] = "error"
         result["error"] = str(exc)

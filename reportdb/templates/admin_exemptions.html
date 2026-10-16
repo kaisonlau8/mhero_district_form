@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block body %}
+<header class="ant-page-header">
+  <div class="ant-page-header-heading">
+    <h1>{% if kind %}{{ kind_cn[kind] }}审批{% else %}修正结果 / 剔除审批{% endif %}</h1>
+    <div class="ant-page-header-meta">
+      <span class="ant-tag ant-tag-warning">待审批 {{ counts.get('pending',0) }}</span>
+      <span class="ant-tag ant-tag-success">已批准 {{ counts.get('approved',0) }}</span>
+      <span class="ant-tag ant-tag-error">已驳回 {{ counts.get('rejected',0) }}</span>
+      <span class="ant-tag">已撤销 {{ counts.get('revoked',0) }}</span>
+    </div>
+  </div>
+  <div class="ant-page-header-actions"><a class="btn btn-export" href="/admin/exemptions.xlsx?{{ export_qs }}"><svg class="ai" aria-hidden="true"><use href="#i-download"/></svg>导出 Excel</a></div>
+</header>
+
+{% if msg %}<div class="ant-alert ant-alert-success"><span class="ant-alert-icon"><svg class="ai" aria-hidden="true"><use href="#i-check-circle"/></svg></span><div class="ant-alert-content">{{ msg }}</div></div>{% endif %}
+{% if err %}<div class="ant-alert ant-alert-error"><span class="ant-alert-icon"><svg class="ai" aria-hidden="true"><use href="#i-close-circle"/></svg></span><div class="ant-alert-content">{{ err }}</div></div>{% endif %}
+
+<div class="ant-card">
+  <div class="ant-card-body">
+  <form method="get" class="ant-filter-bar">
+    <div class="ant-filter-item"><label>状态</label><select class="ant-select" name="status"><option value="">全部</option>{% for k, v in status_cn.items() %}<option value="{{ k }}" {% if k==status %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
+    <div class="ant-filter-item"><label>类型</label><select class="ant-select" name="kind"><option value="">全部</option>{% for k, v in kind_cn.items() %}<option value="{{ k }}" {% if k==kind %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
+    <div class="ant-filter-item"><label>指标</label><select class="ant-select" name="indicator"><option value="">全部</option>{% for k, i in inds.items() %}<option value="{{ k }}" {% if k==indicator %}selected{% endif %}>{{ i.title }}</option>{% endfor %}</select></div>
+    <div class="ant-filter-item"><label>区域</label><select class="ant-select" name="region" onchange="this.form.submit()"><option value="">全部</option>{% for r in regions %}<option {% if r==region %}selected{% endif %}>{{ r }}</option>{% endfor %}</select></div>
+    <div class="ant-filter-item"><label>门店</label><select class="ant-select" name="store"><option value="">全部</option>{% for s in stores_list %}<option {% if s==store %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></div>
+    <div class="ant-filter-item"><label>搜索</label><input class="ant-input" name="q" value="{{ q }}" placeholder="VIN / 理由"></div>
+    <div class="ant-filter-item"><label>申请人</label><input class="ant-input" name="requester" value="{{ requester }}" placeholder="申请人"></div>
+    <div class="ant-filter-item"><label>申请日期</label><input class="ant-input" type="date" name="date_from" value="{{ date_from }}"> <span class="muted">~</span> <input class="ant-input" type="date" name="date_to" value="{{ date_to }}"></div>
+    <div class="ant-filter-actions"><button class="ant-btn" type="submit"><svg class="ai" aria-hidden="true"><use href="#i-search"/></svg>筛选</button></div>
+  </form>
+  <details class="hint ant-mt-2"><summary>说明</summary><p class="muted">批准 <b>修正结果</b> = 该 VIN 在该指标上从生效日期起（含历史快照，按下方日期重算）由「否」改成「是」，<b>分母不变</b>，只对该指标有效；批准 <b>剔除</b> = 整辆车在所有指标里分子分母都不计，永久生效（撤销才恢复，到期日期对剔除无效），优先于修正结果。两类各自审批：<a href="/admin/exemptions?kind=exempt">只看修正结果</a> · <a href="/admin/exemptions?kind=exclude">只看剔除</a>。门店不在多维表格内的车辆即使批准也不计入。</p></details>
+  </div>
+</div>
+
+<form method="post" action="/admin/exemptions/review" class="ant-card">
+  <div class="ant-card-head"><h2 class="ant-card-head-title">申请列表 <span class="ant-card-head-sub">勾选后批量审批</span></h2></div>
+  <div class="ant-card-body">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="tw ant-table-wrap"><table><thead><tr><th class="nosort"><input type="checkbox" onclick="document.querySelectorAll('.pick').forEach(c=>c.checked=this.checked)" aria-label="全选"></th><th class="nosort">编号</th><th class="nosort">类型</th><th class="nosort" data-card-title>VIN</th><th class="nosort">指标</th><th class="nosort">门店 / 区域</th><th class="nosort">申请理由</th><th class="nosort">申请人 / 时间</th><th class="nosort">状态</th><th class="nosort">生效 / 到期</th><th class="nosort">审批</th></tr></thead><tbody>
+  {% for r in rows %}<tr><td><label class="ant-check-hit"><input class="pick" type="checkbox" name="ids" value="{{ r.id }}"></label></td><td><a href="/admin/exemptions/{{ r.id }}">{{ r.id }}</a></td><td>{{ kind_cn[r.kind] }}</td><td>{{ r.vin }}</td><td>{{ inds[r.indicator].title if r.indicator in inds else "全部指标（整车）" }}</td><td>{{ r.store_name }}<br><span class="muted">{{ r.region or '' }}</span></td>
+    <td style="white-space:normal;min-width:220px">{{ r.reason }}{% if r.evidence %}<br><span class="muted">{{ r.evidence }}</span>{% endif %}</td><td>{{ r.requested_by }}<br><span class="muted">{{ r.requested_at }}</span></td><td><span class="ant-tag {{ {'pending':'ant-tag-warning','approved':'ant-tag-success','rejected':'ant-tag-error'}.get(r.status,'ant-tag') }}">{{ status_cn[r.status] }}</span></td>
+    <td>{{ r.effective_from or '' }}{% if r.expires_at %} ~ {{ r.expires_at }}{% elif r.status=='approved' %} 永久{% endif %}</td><td>{{ r.reviewed_by or '' }}<br><span class="muted">{{ r.review_comment or '' }}</span></td></tr>
+  {% else %}<tr><td colspan="11"><div class="ant-empty"><div class="ant-empty-image"><svg class="ai" aria-hidden="true"><use href="#i-inbox"/></svg></div><div class="ant-empty-title">{% if status or kind or indicator or region or store or q or requester or date_from or date_to %}筛选无结果{% else %}没有记录{% endif %}</div><div class="ant-empty-desc">{% if status or kind or indicator or region or store or q or requester or date_from or date_to %}当前筛选条件下没有匹配的申请。{% else %}还没有督导提交过申请。{% endif %}</div></div></td></tr>{% endfor %}</tbody></table></div>
+  <div class="ant-filter-bar ant-mt-3">
+    <div class="ant-filter-item" style="flex:1 1 260px"><label>意见（驳回/撤销必填）</label><input class="ant-input" style="width:100%" name="comment" maxlength="300" placeholder="审批意见"></div>
+    <div class="ant-filter-item"><label>生效日期（批准用）</label><input class="ant-input" type="date" name="effective_from" title="默认=申请时的快照日"></div>
+    <div class="ant-filter-item"><label>到期日期（选填）</label><input class="ant-input" type="date" name="expires_at" title="默认永久"></div>
+    <div class="ant-filter-actions">
+      <button class="ant-btn ant-btn-primary" name="action" value="approve" onclick="return confirm('批准选中的申请并重算受影响快照？')"><svg class="ai" aria-hidden="true"><use href="#i-check"/></svg>批准</button>
+      <button class="ant-btn ant-btn-danger" name="action" value="reject"><svg class="ai" aria-hidden="true"><use href="#i-close"/></svg>驳回</button>
+      <button class="ant-btn ant-btn-danger" name="action" value="revoke" onclick="return confirm('撤销已批准的申请并重算受影响快照？')"><svg class="ai" aria-hidden="true"><use href="#i-undo"/></svg>撤销已批准</button>
+    </div>
+  </div>
+  </div>
+</form>{% endblock %}

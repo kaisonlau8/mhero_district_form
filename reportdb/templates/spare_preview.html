@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block body %}
+<header class="ant-page-header">
+  <div class="ant-page-header-heading">
+    <h1>预览：{{ draft.filename }}</h1>
+    <div class="ant-page-header-sub">未生效，确认后才会写入 <span class="ant-tag ant-tag-warning">草稿</span></div>
+  </div>
+  <div class="ant-page-header-actions">
+    <a class="ant-btn" href="/settings/spare-parts"><svg class="ai" aria-hidden="true"><use href="#i-close"/></svg>取消</a>
+  </div>
+</header>
+
+{% for w in pv.warnings %}<div class="ant-alert ant-alert-error ant-mb-2"><span class="ant-alert-icon"><svg class="ai" aria-hidden="true"><use href="#i-warning"/></svg></span><div class="ant-alert-content">{{ w }}</div></div>{% endfor %}
+
+{% if pv.matched is none %}<div class="ant-alert ant-alert-info"><span class="ant-alert-icon"><svg class="ai" aria-hidden="true"><use href="#i-info-circle"/></svg></span><div class="ant-alert-content">还没有库存快照，无法比对库存；仍可确认生效。</div></div>
+{% else %}
+<div class="grid">
+  <div class="ant-statistic"><div class="ant-statistic-title">备件号在库存中匹配到（快照 {{ pv.snapshot_date }}）</div><div class="ant-statistic-content">{{ pv.matched }} / {{ pv.parts|length }}</div></div>
+  <div class="ant-statistic"><div class="ant-statistic-title">未匹配（库存里没有这个备件号）</div><div class="ant-statistic-content {{ 'ant-statistic-content-danger' if pv.unmatched }}">{{ pv.unmatched }}</div></div>
+  <div class="ant-statistic"><div class="ant-statistic-title">库存覆盖率</div><div class="ant-statistic-content">{{ (pv.coverage*100)|round(1) }}%</div></div>
+  <div class="ant-statistic"><div class="ant-statistic-title">试算达标店数（现名单 {{ pv.current.ok_stores }}/{{ pv.current.stores }}）</div><div class="ant-statistic-content">{{ pv.trial.ok_stores }}/{{ pv.trial.stores }}</div></div>
+  <div class="ant-statistic"><div class="ant-statistic-title">新分母（现 {{ pv.current.denominator }}）</div><div class="ant-statistic-content">{{ pv.trial.denominator }}</div></div>
+</div>
+<p class="muted">试算平均备库率 {{ '%.1f'|format((pv.trial.avg_rate or 0)*100) }}%（现名单 {{ '%.1f'|format((pv.current.avg_rate or 0)*100) }}%）。未匹配的备件按「库存 0」计，若计入分母会拉低备库率。</p>
+{% endif %}
+
+<div class="ant-card">
+  <div class="ant-card-head"><h2 class="ant-card-head-title">名单明细与匹配情况</h2></div>
+  <div class="ant-card-body">
+  <div class="tw ant-table-wrap"><table><thead><tr><th class="nosort">#</th><th class="nosort">备件号</th><th class="nosort">备件名称</th><th class="nosort">计入分母</th><th class="nosort">匹配库存</th><th class="nosort num">库存行数</th><th class="nosort num">有货门店</th></tr></thead><tbody>
+  {% for r in pv.rows %}<tr><td>{{ loop.index }}</td><td>{{ r.code }}</td><td>{{ r.name or '' }}</td><td>{% if r.counted %}<span class="ant-tag ant-tag-success">是</span>{% else %}<span class="ant-tag">否</span>{% endif %}</td>
+   <td>{% if r.matched is defined %}{% if r.matched %}<span class="ok">已匹配</span>{% else %}<span class="bad">未匹配</span>{% endif %}{% else %}-{% endif %}</td><td class="num">{{ r.stock_rows if r.stock_rows is defined else '' }}</td><td class="num">{{ r.stores_with_stock if r.stores_with_stock is defined else '' }}{% if r.store_total is defined %}/{{ r.store_total }}{% endif %}</td></tr>
+  {% else %}<tr><td colspan="7"><div class="ant-empty"><div class="ant-empty-image"><svg class="ai" aria-hidden="true"><use href="#i-inbox"/></svg></div><div class="ant-empty-title">名单为空</div></div></td></tr>{% endfor %}</tbody></table></div>
+
+  <form method="post" action="/settings/spare-parts/confirm" class="ant-filter-bar ant-mt-3"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="draft_id" value="{{ draft.id }}">
+    <div class="ant-filter-item"><label>生效日期（含）</label><input class="ant-input" type="date" name="effective_from" value="{{ today }}" required></div>
+    <div class="ant-filter-item"><label>备注</label><input class="ant-input" name="note" maxlength="200" placeholder="例如：新增 3 个保养件"></div>
+    <div class="ant-filter-actions"><button class="ant-btn ant-btn-primary" onclick="return confirm('确认生效？将从该日期起重算常备件备库率')">确认生效并重算</button></div>
+  </form>
+  <p class="muted" style="margin:8px 0 0">生效日期可以选过去的日期：该日期之后的快照都会按新名单重算（旧版本保留，可随时回滚）。</p>
+  </div>
+</div>
+{% endblock %}

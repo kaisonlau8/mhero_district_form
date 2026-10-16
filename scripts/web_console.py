@@ -15,7 +15,7 @@ from io import BytesIO
 from pathlib import Path
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, redirect, render_template, request, url_for
 from werkzeug.utils import secure_filename
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -41,7 +41,12 @@ ensure_beijing_tz()
 app = Flask(
     __name__,
     template_folder=str(PLUGIN_ROOT / "templates"),
+    static_folder=str(PLUGIN_ROOT / "static"),
 )
+
+# --- m-hero SSO (Casdoor): inert unless MHERO_AUTH[_DISTRICT]=audit|on is set (see docs/SSO_CASDOOR.md) ---
+from mhero_auth.flask_adapter import init_app as _mhero_auth_init
+_mhero_auth_init(app, "district", default_mode="off", public_get_paths=["/static/brand/*"])   # everything (incl. /api/report/latest) requires login; no public paths
 DEFAULT_TEMPLATE_PATH = PLUGIN_ROOT / "app" / "assets" / "report_template.xlsx"
 TEMPLATE_BACKUP_DIR = PLUGIN_ROOT / "app" / "assets" / "template_backups"
 
@@ -54,6 +59,15 @@ _pipeline_state = {
     "log": "",
     "result": {},
 }
+
+
+# --- 报表引擎（MHERO_REPORT_ENGINE=reportdb）：Excel 模板管理下线；旧代码保留，仅在默认 excel 引擎下可达 ---
+def _engine_reportdb() -> bool:
+    return os.getenv("MHERO_REPORT_ENGINE", "excel").strip().lower() == "reportdb"
+
+
+_TEMPLATE_RETIRED = ({"error": "Excel 模板管理已下线：报表由系统（reportdb）统一计算并导出，见 /reports/daily"}, 410)
+# --- /engine ---
 
 
 def _browser_ok() -> tuple[bool, dict]:
@@ -71,25 +85,11 @@ def _browser_ok() -> tuple[bool, dict]:
 
 
 def _latest_report() -> str:
-    """Latest formula workbook (prefer legacy *_公式版.xlsx sidecar when present)."""
-    output_dir = PLUGIN_ROOT / "output"
-    if not output_dir.exists():
-        return ""
-    files = [
-        p
-        for p in output_dir.glob("区域各指标情况一览*.xlsx")
-        if not p.name.startswith("~$")
-    ]
-    if not files:
-        return ""
-    files = sorted(files, key=lambda p: p.stat().st_mtime, reverse=True)
-    latest = files[0]
-    # Legacy pipeline wrote values as main + *_公式版 sidecar; prefer the formula copy.
-    if "_公式版" not in latest.name:
-        companion = latest.with_name(f"{latest.stem}_公式版.xlsx")
-        if companion.exists():
-            return str(companion)
-    return str(latest)
+    """File served by /api/report/latest. reportdb engine: only the reportdb daily report (summary sheets, no detail);
+    excel engine: legacy behaviour. Logic in report_select.py."""
+    from report_select import latest_report
+
+    return latest_report(PLUGIN_ROOT / "output", os.getenv("MHERO_REPORT_ENGINE", "excel"))
 
 
 def _latest_manifest_text() -> str:
@@ -237,6 +237,46 @@ def _run_pipeline_job(
         })
 
 
+@app.get("/contacts")
+def contacts_page():
+    from directory_sync import national_rows_for_page
+
+    return render_template(
+        "contacts.html",
+        national_list=national_rows_for_page(),
+    )
+
+
+@app.post("/contacts/national/add")
+def contacts_national_add():
+    from directory_sync import load_national_recipients, save_national_recipients
+
+    name = str(request.form.get("name") or "").strip()
+    phone = str(request.form.get("phone") or "").strip()
+    if name or phone:
+        current = [
+            item for item in load_national_recipients()
+            if item.get("name") != name and item.get("phone") != phone
+        ]
+        current.append({"name": name, "phone": phone, "open_id": ""})
+        save_national_recipients(current)
+    return redirect(url_for("contacts_page"))
+
+
+@app.post("/contacts/national/delete")
+def contacts_national_delete():
+    from directory_sync import load_national_recipients, save_national_recipients
+
+    name = str(request.form.get("name") or "").strip()
+    phone = str(request.form.get("phone") or "").strip()
+    kept = [
+        item for item in load_national_recipients()
+        if not (item.get("name") == name and item.get("phone") == phone)
+    ]
+    save_national_recipients(kept, resolve=False)
+    return redirect(url_for("contacts_page"))
+
+
 @app.get("/")
 def index():
     settings = load_settings()
@@ -250,6 +290,7 @@ def index():
         quarter=int(settings["quarter"]),
         notify_feishu=bool(settings.get("notify_feishu", True)),
         latest_report=_latest_report(),
+        engine_reportdb=_engine_reportdb(),
     )
 
 
@@ -266,7 +307,8 @@ def api_status():
         "pipeline": pipeline,
         "latest_report": _latest_report(),
         "latest_manifest": _latest_manifest_text(),
-        "template": _template_info(),
+        "template": ({"retired": True} if _engine_reportdb() else _template_info()),
+        "engine": "reportdb" if _engine_reportdb() else "excel",
         "session_monitor": load_session_monitor(PLUGIN_ROOT),
     })
 
@@ -290,11 +332,15 @@ def api_settings():
 
 @app.get("/api/template")
 def api_template_info():
+    if _engine_reportdb():
+        return jsonify(_TEMPLATE_RETIRED[0]), _TEMPLATE_RETIRED[1]
     return jsonify(_template_info())
 
 
 @app.get("/api/template/download")
 def api_template_download():
+    if _engine_reportdb():
+        return jsonify(_TEMPLATE_RETIRED[0]), _TEMPLATE_RETIRED[1]
     if not DEFAULT_TEMPLATE_PATH.exists():
         return jsonify({"error": "默认模板不存在"}), 404
     return send_xlsx_file(DEFAULT_TEMPLATE_PATH, display_name="report_template.xlsx")
@@ -302,6 +348,8 @@ def api_template_download():
 
 @app.post("/api/template")
 def api_template_upload():
+    if _engine_reportdb():
+        return jsonify(_TEMPLATE_RETIRED[0]), _TEMPLATE_RETIRED[1]
     with _pipeline_lock:
         if _pipeline_state["running"]:
             return jsonify({"error": "流水线运行中，请稍后再上传模板"}), 409

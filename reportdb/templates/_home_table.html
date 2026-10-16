@@ -1,0 +1,6 @@
+<div class="sheet"><table class="xl">
+  <thead><tr><th class="pos">名次</th><th>区域</th>
+    {% for c in home.cols %}<th class="sortable {{ 'act' if home.sort==c.key }}"><a href="{{ base_url }}?date={{ date }}&sort={{ c.key }}{% if region %}&region={{ region|urlencode }}{% endif %}" title="按{{ c.title }}名次排序（第1名在前）">{{ c.title }}{% if home.sort==c.key %} <span class="arr"><svg class="ai" aria-hidden="true"><use href="#i-caret-up"/></svg></span>{% endif %}<small>{{ c.sub }}</small></a></th>{% endfor %}</tr></thead>
+  <tbody>{% for r in home.rows %}<tr class="{{ 'tot' if r.total }}"><td class="pos">{{ '' if r.total else (r.pos if r.pos is not none else '-') }}</td><td>{{ r.label }}</td>
+    {% for c in r.cells %}<td class="{{ c.tone or '' }}"><span class="v">{{ c.v }}</span>{% if c.rank %}<span class="rk">第{{ c.rank }}</span>{% endif %}<span class="s">{{ c.hit if c.hit is not none else '-' }}/{{ c.den if c.den is not none else '-' }}</span></td>{% endfor %}</tr>{% endfor %}</tbody>
+</table></div>

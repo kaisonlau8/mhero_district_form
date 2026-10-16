@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block body %}
+<header class="ant-page-header">
+  <div class="ant-page-header-heading">
+    <h1>{{ u.username }} 的负责门店</h1>
+    <div class="ant-page-header-sub">范围 = 多维表格里「督导」等于下方督导姓名的门店 ∪ 这里手工勾选的门店</div>
+  </div>
+  <div class="ant-page-header-actions">
+    {% set xl_url = "/export/admin/users/" ~ u.id ~ "/stores.xlsx" %}{% set xl_fixed = false %}{% include "_export_btn.html" %}
+    <a class="ant-btn" href="/admin/users"><svg class="ai" aria-hidden="true"><use href="#i-arrow-left"/></svg>返回</a>
+  </div>
+</header>
+
+{% if msg %}<div class="ant-alert ant-alert-success"><span class="ant-alert-icon"><svg class="ai" aria-hidden="true"><use href="#i-check-circle"/></svg></span><div class="ant-alert-content">{{ msg }}</div></div>{% endif %}
+
+<div class="ant-card">
+  <div class="ant-card-body">
+  <form method="get" class="ant-filter-bar"><div class="ant-filter-item"><label>区域</label><select class="ant-select" name="region" onchange="this.form.submit()"><option value="">全部</option>{% for r in regions %}<option {% if r==region %}selected{% endif %}>{{ r }}</option>{% endfor %}</select></div>{% if region %}<span class="ant-filter-hint">筛选时只保存该区域内的勾选，其他区域已分配的不变</span>{% endif %}</form>
+  </div>
+</div>
+
+<form method="post" action="/admin/users/{{ u.id }}/stores">
+  <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="region" value="{{ region }}">
+  <div class="ant-card">
+    <div class="ant-card-head"><h2 class="ant-card-head-title">督导与门店勾选</h2>
+      <div class="ant-card-extra">
+        <div class="ant-filter-item"><label for="sup-name">督导姓名</label><input class="ant-input" id="sup-name" name="supervisor_name" value="{{ u.supervisor_name or '' }}"></div>
+        <button class="ant-btn ant-btn-primary" type="submit"><svg class="ai" aria-hidden="true"><use href="#i-save"/></svg>保存</button>
+      </div></div>
+    <div class="ant-card-body">
+    <div class="tw ant-table-wrap"><table><thead><tr><th class="nosort">手工</th><th class="nosort" data-card-title>门店</th><th class="nosort">区域</th><th class="nosort">多维表格督导</th><th class="nosort">按姓名已匹配</th></tr></thead><tbody>
+    {% for s in stores %}<tr><td><label class="ant-check-hit"><input type="checkbox" name="codes" value="{{ s.code }}" {% if s.code in mine %}checked{% endif %} aria-label="手工分配 {{ s.name }}"></label></td><td>{{ s.name }}</td><td>{{ s.region or '' }}</td><td>{{ s.supervisor or '' }}</td><td>{% if s.code in by_name %}<span class="ok"><svg class="ai" aria-hidden="true"><use href="#i-check"/></svg></span>{% else %}<span class="muted">—</span>{% endif %}</td></tr>
+    {% else %}<tr><td colspan="5"><div class="ant-empty"><div class="ant-empty-image"><svg class="ai" aria-hidden="true"><use href="#i-inbox"/></svg></div><div class="ant-empty-title">没有门店</div></div></td></tr>{% endfor %}</tbody></table></div>
+    </div>
+  </div>
+</form>
+{% endblock %}

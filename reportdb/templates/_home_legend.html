@@ -1,0 +1,7 @@
+<details class="ant-collapse ant-collapse-ghost">
+  <summary><svg class="ai" aria-hidden="true"><use href="#i-info-circle"/></svg>口径与图例说明</summary>
+  <div class="ant-collapse-content">
+    <p class="legend"><b>名次</b>列按当前排序列由好到差 1…N（并列同号），点击指标列头可按该指标名次重排，当前：<b>{{ home.sort_title }}</b>。全国行固定在最上。大字 = 率，小字 = 分子/分母，「第N」= 该指标区域名次。<i style="background:#52c41a"></i>本列区域中最高<i style="background:#faad14"></i>本列区域中最低（仅为相对高低，非考核目标）。
+  备库率 = 常备件达标门店占比（单店备库率 ≥ {{ (spare_threshold*100)|round|int }}% 记达标）。</p>
+  </div>
+</details>

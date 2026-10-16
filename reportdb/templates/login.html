@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>登录 · 区域报表</title>
+  <link rel="icon" href="/ds/brand/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="16x16" href="/ds/brand/icon-16.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/ds/brand/icon-32.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/ds/brand/icon-180.png">
+  <meta name="theme-color" content="#1677ff">
+<style>{{ ds_css|safe }}</style>
+</head><body class="ant-login-page">
+{{ ds_sprite|safe }}
+<form class="ant-card ant-login-card" method="post" action="/login" autocomplete="on">
+  <img class="ant-login-logo" src="/ds/brand/logo-blue.png" srcset="/ds/brand/logo-blue@2x.png 2x" alt="猛士" height="28">
+  <h1>区域报表</h1>
+  <p class="ant-login-sub">请登录后查看</p>
+  {% if error %}<div class="ant-alert ant-alert-error" style="margin-bottom:12px"><span class="ant-alert-icon"><svg class="ai" aria-hidden="true"><use href="#i-close-circle"/></svg></span><div class="ant-alert-content">{{ error }}</div></div>{% endif %}
+  {% if password_login %}
+  <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="next" value="{{ next }}">
+  <div class="ant-form-item"><label class="ant-form-item-label" for="u">用户名</label>
+    <div class="ant-form-item-control"><input class="ant-input" id="u" type="text" name="username" value="{{ username|default('') }}" autocomplete="username" autofocus required></div></div>
+  <div class="ant-form-item" style="margin-bottom:0"><label class="ant-form-item-label" for="p">密码</label>
+    <div class="ant-form-item-control"><input class="ant-input" id="p" type="password" name="password" autocomplete="current-password" required></div></div>
+  <button class="ant-btn ant-btn-primary" type="submit"><svg class="ai" aria-hidden="true"><use href="#i-lock"/></svg>登录</button>
+  {% else %}<p><a class="ant-btn ant-btn-primary" href="/auth/oidc/login?next={{ next|urlencode }}"><svg class="ai" aria-hidden="true"><use href="#i-user"/></svg>使用单点登录</a></p>{% endif %}
+</form></body></html>

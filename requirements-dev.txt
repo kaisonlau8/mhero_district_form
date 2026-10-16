@@ -1,0 +1,3 @@
+# 仅测试用（reportdb 的运行依赖 fastapi/uvicorn/openpyxl/jinja2 已在 requirements.txt / flask 依赖里）
+pytest>=8
+httpx>=0.27
