@@ -66,6 +66,7 @@ def _ds_asset(name: str) -> str:
 _TPL.env.globals["ds_css"] = _ds_asset("antd-lite.css")
 _TPL.env.globals["ds_sprite"] = _ds_asset("sprite.svg")
 _TPL.env.globals["ds_cards"] = _ds_asset("cards.js")
+_TPL.env.globals["ds_feedback"] = _ds_asset("feedback.js")
 
 # 品牌静态资源（logo / favicon；无鉴权挂载，登录页 favicon 也要能用）
 from starlette.staticfiles import StaticFiles as _StaticFiles

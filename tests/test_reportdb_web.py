@@ -109,6 +109,22 @@ def test_masking_by_permission(app_env, client, viewer):
     assert viewer.get("/data/task?token=x").status_code == 200 and "LDP29H925TM016610" not in viewer.get("/data/task?token=x").text
 
 
+def test_interaction_feedback_markup(anon, client):
+    """按钮 loading / Spin / 上传进度 / message 的样式和脚本随页面下发。"""
+    login_html = anon.get("/login").text
+    home = client.get("/").text
+    spare = client.get("/settings/spare-parts").text
+    for html in (login_html, home):
+        assert "antd-feedback" in html
+        assert "ant-btn-loading" in html
+        assert "ant-spin-fullscreen" in html
+        assert "ant-message" in html
+        assert "ant-progress" in html
+        assert 'id="i-loading"' in html
+    assert 'type="file"' in spare and "/settings/spare-parts/upload" in spare
+    assert 'class="ant-btn ant-btn-primary" type="submit"' in login_html
+
+
 def test_exports(client):
     wb = load_workbook(io.BytesIO(client.get("/export/tables/all.xlsx").content))
     assert wb.sheetnames == ["总表", "区域指标", "直营店指标", "常备件备库率"]
