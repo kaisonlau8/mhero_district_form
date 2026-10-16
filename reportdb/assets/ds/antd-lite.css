@@ -27,8 +27,10 @@
        19 移动端全局适配（<=768px：44px 触控 / filter-bar 纵向堆叠 / actions 换行）
        20 打印
        21 兼容层：reportdb 旧模板 class（.card/.btn/.filters/.tw/.sticky1/... ）映射
-       22 ant-spin（区块加载；四点指示器，主色 #1677ff）
-       23 ant-message（顶部轻提示：success / error / info / warning / loading）
+        22 ant-spin（区块加载；四点指示器，主色 #1677ff）
+        23 ant-message（顶部轻提示：success / error / info / warning / loading）
+        24 ant-progress / ant-upload-list（线形进度 + 上传列表）
+        25 ant-notification（右上角白卡片轻提示，z-index 1050）
    · 移动端断点：导航 <=860px 变汉堡（与顶栏 JS 的 matchMedia 861px 对齐）；
      其余 <=768px（覆盖 360 / 390 / 414 宽），可点击控件最小高度 44px。
    ========================================================================== */
@@ -105,11 +107,13 @@
   --ant-control-height-lg: 40px;
   --ant-control-height-mobile: 44px;
 
-  /* ---- z-index 规范：粘性列 1 · 粘性表头 5 · 顶栏 30 · 下拉 40 · 轻提示 1010 ---- */
+  /* ---- z-index 规范：粘性列 1 · 粘性表头 5 · 下拉 40 · 顶栏 100 · 导航遮罩 1000 · 导航抽屉 1001 · 轻提示 1010 ---- */
   --ant-z-sticky-col: 1;
   --ant-z-sticky-header: 5;
-  --ant-z-topbar: 30;
+  --ant-z-topbar: 100;
   --ant-z-dropdown: 40;
+  --ant-z-nav-mask: 1000;
+  --ant-z-nav-drawer: 1001;
   --ant-z-message: 1010;
 
   /* ---- 顶栏 ---- */
@@ -259,12 +263,11 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
   background: rgba(0, 0, 0, .04);
   text-decoration: none;
 }
-/* 当前所在项：主色字 + 主色弱底 */
+/* 当前所在项：主色字 + 600；桌面水平菜单再加 2px 主色下划线（4.4b），抽屉里再加主色弱底（4.6） */
 .mi.on > a, .mi.on > button,
 .ant-menu-item.ant-menu-item-selected > a, .ant-menu-item.ant-menu-item-selected > button {
   color: var(--ant-primary);
   font-weight: 600;
-  background: var(--ant-primary-bg);
 }
 
 /* 下拉触发按钮的箭头：DOM 在文本前（保证纯文本紧邻 </button>），视觉排到文本后 */
@@ -353,10 +356,31 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
   font-weight: 400;
 }
 
-/* ---- 4.5 汉堡按钮（<=860px 出现，与顶栏 JS 断点一致） ----
-   三道杠画在按钮 ::before/::after 上，打开时转成关闭叉；宿主页里的 svg.ai 在移动端让位。 */
-.burger {
-  display: none;
+/* ---- 4.4b 桌面水平菜单（>860px）：Ant Design 式选中下划线 + 防溢出 ---- */
+@media (min-width: 861px) {
+  /* 选中项：2px 主色下划线（box-shadow 不挤占布局、不引起跳动） */
+  .mi.on > a, .mi.on > button,
+  .ant-menu-item.ant-menu-item-selected > a, .ant-menu-item.ant-menu-item-selected > button {
+    box-shadow: inset 0 -2px 0 var(--ant-primary);
+  }
+  /* 不换行的水平菜单放不下时：无下拉子菜单的菜单自身横向滚动（细滚动条），绝不撑出页面横向滚动；
+     带下拉的菜单不滚动（下拉是 absolute 定位，会被滚动容器裁剪），靠 4.5 的间距收紧兜底 */
+  .menu:not(:has(.dd)):not(:has(.ant-dropdown)),
+  .ant-menu:not(:has(.dd)):not(:has(.ant-dropdown)) {
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+}
+
+/* ---- 4.5 汉堡按钮（<=860px 出现，与 cards.js 的 matchMedia 860px 对齐） ----
+   页面可用两种方式自带按钮：class="burger" 或 data-burger 属性，两者等价、被 cards.js
+   识别后不再自动插入第二只（开合仍由页面驱动，cards.js 只补遮罩/Esc/链接关闭行为）。
+   三道杠画在按钮 ::before/::after 上，打开时转成关闭叉；宿主页里的 svg.ai 在移动端让位。
+   .nav-backdrop 是页面自带的遮罩元素钩子（reportdb）：桌面隐藏，<=860px 见 4.6 的遮罩规则。 */
+.burger { display: none; }
+[data-burger] { display: none; }
+.nav-backdrop { display: none; }
+.burger, [data-burger] {
   position: relative;
   margin-left: auto;
   width: 40px;
@@ -369,24 +393,36 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
   align-items: center;
   justify-content: center;
 }
-.burger .ai { font-size: 16px; }
+.burger .ai, [data-burger] .ai { font-size: 16px; }
 
-/* 中等宽度先收紧内边距，避免顶栏自身溢出 */
+/* 中等宽度先收紧内边距，避免顶栏自身溢出（带下拉的菜单不横向滚动，靠这里兜底） */
 @media (max-width: 1080px) {
   .mi > a, .mi > button { padding: 0 8px; }
   .brand { margin-right: 8px; font-size: 15px; }
 }
+@media (max-width: 920px) {
+  .ant-menu, .menu { gap: 0; }
+  .mi > a, .mi > button { padding: 0 6px; }
+}
 
-/* ---- 4.6 移动端导航（断点 <=860px） ----
-   桌面端规则在本媒体查询之外，保持水平菜单。
-   打开/关闭由 .topbar.open / .ant-header.open 驱动（既有顶栏 JS 只切换 class）。
-   进入与退出都是 CSS 过渡，不用 display 切换（display 无法做退出动画）：
+/* ---- 4.6 移动端导航（唯一断点 <=860px） ----
+   桌面端规则在本媒体查询之外，保持水平菜单；桌面无汉堡、无遮罩、无抽屉残留。
+   打开/关闭由 .topbar.open / .ant-header.open（或页面自管的 body.nav-open）驱动，切换的是
+   class 而不是 display，进场与退场因此都能走 CSS 过渡（display 切换做不了退出动画）：
    · 抽屉 300ms translateX(100%) → 0，缓动 cubic-bezier(.23,1,.32,1)（Ant Design Drawer）
    · 遮罩 300ms opacity 0 → 1，颜色 rgba(0,0,0,.45)
-   · visibility 在退出动画结束后才隐藏，避免滑出过程中被提前裁掉
-   prefers-reduced-motion 时过渡关闭，见文末。 */
+   · visibility 在退场播完后才隐藏（transition-delay），避免滑出过程被提前裁掉
+   层级：遮罩 1000 / 抽屉 1001 / 顶栏自身 100（第 1 节 tokens）；抽屉 fixed 定于视口，
+   高度 = 100dvh − 顶栏高。顶栏及其内层禁止 transform/filter/backdrop-filter：一旦出现，
+   fixed 后代的包含块会变成顶栏而被裁剪/错位。prefers-reduced-motion 时见文末。 */
 @media (max-width: 860px) {
-  .burger {
+  .topbar, .ant-header, .topbar > .in, .ant-header > .in {
+    transform: none !important;
+    filter: none !important;
+    backdrop-filter: none !important;
+  }
+
+  .burger, [data-burger] {
     display: inline-flex;
     width: 44px;
     height: 44px;
@@ -394,8 +430,11 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
     margin-left: 0;
     margin-right: auto;
   }
-  .burger .ai { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; }
-  .burger::before, .burger::after {
+  .burger .ai, [data-burger] .ai {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0;
+  }
+  .burger::before, .burger::after,
+  [data-burger]::before, [data-burger]::after {
     content: "";
     position: absolute;
     left: 12px;
@@ -405,21 +444,24 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
     border-radius: 1px;
     transition: transform .3s cubic-bezier(.23, 1, .32, 1), top .3s cubic-bezier(.23, 1, .32, 1), box-shadow .3s;
   }
-  .burger::before { top: 16px; box-shadow: 0 6px 0 currentColor; }
-  .burger::after { top: 28px; }
-  .topbar.open .burger::before, .ant-header.open .burger::before {
+  .burger::before, [data-burger]::before { top: 16px; box-shadow: 0 6px 0 currentColor; }
+  .burger::after, [data-burger]::after { top: 28px; }
+  .topbar.open .burger::before, .ant-header.open .burger::before,
+  .topbar.open [data-burger]::before, .ant-header.open [data-burger]::before {
     top: 21px;
     box-shadow: none;
     transform: rotate(45deg);
   }
-  .topbar.open .burger::after, .ant-header.open .burger::after {
+  .topbar.open .burger::after, .ant-header.open .burger::after,
+  .topbar.open [data-burger]::after, .ant-header.open [data-burger]::after {
     top: 21px;
     transform: rotate(-45deg);
   }
   /* 顶栏品牌与汉堡按钮的触控热区 >=44px */
   .brand { min-height: var(--ant-control-height-mobile); }
 
-  /* 遮罩：盖住顶栏以下的页面。pointer-events 仅在打开时接收点击（cards.js 据此关闭）。 */
+  /* 遮罩：盖住顶栏以下的页面，点击由 cards.js / 页面脚本关闭。
+     页面自带 .nav-backdrop 遮罩元素（reportdb）时用元素遮罩，伪元素遮罩退位，避免叠加变深。 */
   .topbar::before, .ant-header::before {
     content: "";
     position: fixed;
@@ -427,7 +469,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
     top: var(--ant-header-height);
     bottom: 0;
     background: rgba(0, 0, 0, .45);
-    z-index: 1;
+    z-index: var(--ant-z-nav-mask);
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
@@ -439,7 +481,33 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
     pointer-events: auto;
     transition: opacity .3s ease, visibility 0s;
   }
+  body:has(.nav-backdrop) .topbar::before,
+  body:has(.nav-backdrop) .ant-header::before { content: none; }
+  .nav-backdrop {
+    display: block;
+    position: fixed;
+    left: 0; right: 0;
+    top: var(--ant-header-height);
+    bottom: 0;
+    width: auto; height: auto; min-height: 0;
+    padding: 0; border: 0;
+    background: rgba(0, 0, 0, .45);
+    z-index: var(--ant-z-nav-mask);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity .3s ease, visibility 0s linear .3s;
+  }
+  body.nav-open .nav-backdrop,
+  .topbar.open ~ .nav-backdrop,
+  .ant-header.open ~ .nav-backdrop {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transition: opacity .3s ease, visibility 0s;
+  }
 
+  /* 抽屉：菜单本体收成右侧面板（fixed 于视口，宽 min(300px, 82vw)） */
   .menu, .ant-menu {
     display: flex;
     position: fixed;
@@ -447,23 +515,25 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
     right: 0;
     bottom: 0;
     left: auto;
-    width: min(320px, 88vw);
+    width: min(300px, 82vw);
     background: var(--ant-color-bg-container);
     border-left: 1px solid var(--ant-color-split);
     box-shadow: var(--ant-shadow-dropdown);
     flex-direction: column;
     align-items: stretch;
-    padding: 8px 10px 16px;
+    padding: 8px 10px calc(16px + env(safe-area-inset-bottom, 0px));
     gap: 0;
     max-height: none;
     overflow: auto;
-    z-index: 2;
+    overscroll-behavior: contain;
+    z-index: var(--ant-z-nav-drawer);
     transform: translateX(100%);
     visibility: hidden;
     pointer-events: none;
     transition: transform .3s cubic-bezier(.23, 1, .32, 1), visibility 0s linear .3s;
   }
-  .topbar.open .menu, .ant-header.open .ant-menu {
+  .topbar.open .menu, .topbar.open .ant-menu,
+  .ant-header.open .menu, .ant-header.open .ant-menu {
     transform: translateX(0);
     visibility: visible;
     pointer-events: auto;
@@ -477,6 +547,12 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
     justify-content: flex-start;
   }
   .mi > button .dd-caret { margin-left: auto; }
+  /* 抽屉内选中项：主色弱底 #e6f4ff + 主色字 #1677ff（与桌面下划线态区分） */
+  .mi.on > a, .mi.on > button,
+  .ant-menu-item.ant-menu-item-selected > a, .ant-menu-item.ant-menu-item-selected > button {
+    color: var(--ant-primary);
+    background: var(--ant-primary-bg);
+  }
   /* 子菜单改为内嵌缩进列表 */
   .dd, .ant-dropdown {
     position: static;
@@ -497,7 +573,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
   }
   .mi.right { border-top: 1px solid var(--ant-color-split); margin-top: 6px; padding-top: 6px; }
 
-  /* 没有自带 #burger 的顶栏（如 VIP 的 .vip-nav）：cards.js 加上 .has-burger 后再收成抽屉。
+  /* 没有自带汉堡的顶栏（如 VIP 的 .vip-nav）：cards.js 加上 .has-burger 后再收成抽屉。
      脚本未运行时导航保持原样，避免只剩一个打不开的空顶栏。 */
   .ant-header.has-burger > .in > nav:not(.menu):not(.ant-menu),
   .topbar.has-burger > .in > nav:not(.menu):not(.ant-menu) {
@@ -509,15 +585,16 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
     right: 0;
     bottom: 0;
     left: auto;
-    width: min(320px, 88vw);
+    width: min(300px, 82vw);
     margin: 0;
-    padding: 8px 10px 16px;
+    padding: 8px 10px calc(16px + env(safe-area-inset-bottom, 0px));
     background: #fff;
     border-left: 1px solid var(--ant-color-split);
     box-shadow: var(--ant-shadow-dropdown);
     gap: 0;
-    z-index: 2;
+    z-index: var(--ant-z-nav-drawer);
     overflow: auto;
+    overscroll-behavior: contain;
     transform: translateX(100%);
     visibility: hidden;
     pointer-events: none;
@@ -544,8 +621,10 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
   }
   .ant-header.has-burger .vip-meta { display: none; }
 
+  /* 打开时锁滚动：ds 驱动（:has）与页面自管（body.nav-open）两条路都覆盖 */
   body:has(.topbar.open),
-  body:has(.ant-header.open) { overflow: hidden; }
+  body:has(.ant-header.open),
+  body.nav-open { overflow: hidden; }
 }
 
 /* ---- 4.7 黄页用户菜单（.hub-user，模板在 m-hero-hub） ----
@@ -597,7 +676,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
     top: var(--ant-header-height);
     bottom: 0;
     background: rgba(0, 0, 0, .45);
-    z-index: 1;
+    z-index: var(--ant-z-nav-mask);
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
@@ -620,17 +699,18 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
     right: 0 !important;
     bottom: 0 !important;
     left: auto !important;
-    width: min(300px, 86vw) !important;
+    width: min(300px, 82vw) !important;
     min-width: 0 !important;
     margin: 0 !important;
-    padding: 12px 8px 16px !important;
+    padding: 12px 8px calc(16px + env(safe-area-inset-bottom, 0px)) !important;
     border: 0 !important;
     border-left: 1px solid var(--ant-color-split) !important;
     border-radius: 0 !important;
     box-shadow: var(--ant-shadow-dropdown) !important;
     background: #fff !important;
-    z-index: 2 !important;
+    z-index: var(--ant-z-nav-drawer) !important;
     overflow: auto;
+    overscroll-behavior: contain;
     transform: translateX(100%);
     visibility: hidden;
     pointer-events: none;
@@ -1501,7 +1581,8 @@ details.ant-tooltip-hint > summary::-webkit-details-marker { display: none; }
    20. 打印
    ========================================================================== */
 @media print {
-  .topbar, .ant-header, .burger, .pager, .ant-pagination,
+  .topbar, .ant-header, .burger, [data-burger], .nav-backdrop, .pager, .ant-pagination,
+  .ant-message, .ant-notification,
   #preview-banner form, .btn-export { display: none !important; }
   body { background: #fff; font-size: 12px; }
   .container { max-width: none; margin: 0; padding: 0; }
@@ -1932,13 +2013,152 @@ td.row-action { text-align: right; white-space: nowrap; }
   0% { opacity: 1; max-height: 150px; }
   100% { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; }
 }
+
+/* ==========================================================================
+   24. ant-progress / ant-upload-list（线形进度，主色；成功绿、失败红）
+    --------------------------------------------------------------------------
+    自 NSS 控制台版本回收入设计系统（唯一事实来源），标记结构不变。
+    ========================================================================== */
+.ant-progress-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: var(--ant-font-size-base);
+  line-height: 1;
+}
+.ant-progress-outer { flex: 1; min-width: 0; }
+.ant-progress-inner {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 8px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, .06);
+  border-radius: 100px;
+}
+.ant-progress-bg {
+  position: relative;
+  height: 8px;
+  background: var(--ant-primary);
+  border-radius: 100px;
+  transition: width .2s linear;
+}
+.ant-progress-status-success .ant-progress-bg { background: var(--ant-success); }
+.ant-progress-status-exception .ant-progress-bg { background: var(--ant-error); }
+.ant-progress-text {
+  flex: none;
+  width: 3.4em;
+  font-size: var(--ant-font-size-sm);
+  color: var(--ant-color-text-secondary);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.ant-progress-status-active .ant-progress-bg::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  border-radius: 100px;
+  opacity: 0;
+  animation: antProgressActive 2.4s cubic-bezier(.23, 1, .32, 1) infinite;
+}
+@keyframes antProgressActive {
+  0% { transform: translateX(-100%) scaleX(0); opacity: .1; }
+  20% { transform: translateX(-100%) scaleX(0); opacity: .5; }
+  100% { transform: translateX(0) scaleX(1); opacity: 0; }
+}
+.ant-upload-list { margin-top: 8px; }
+.ant-upload-list[hidden] { display: none; }
+.ant-upload-list-item-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--ant-color-text);
+  font-size: var(--ant-font-size-base);
+}
+.ant-upload-list-item-name > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ==========================================================================
+   25. ant-notification（右上角白卡片轻提示，z-index 1050）
+    ========================================================================== */
+@keyframes antNotificationIn {
+  0% { opacity: 0; transform: translateX(16px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+@keyframes antNotificationOut {
+  to { opacity: 0; transform: translateX(8px); }
+}
+.ant-notification {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  z-index: 1050;
+  width: 384px;
+  max-width: calc(100vw - 32px);
+  pointer-events: none;
+}
+.ant-notification-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 16px 24px;
+  background: #fff;
+  border-radius: var(--ant-radius-lg);
+  box-shadow: var(--ant-shadow-dropdown);
+  pointer-events: auto;
+  animation: antNotificationIn .24s ease;
+}
+.ant-notification-notice-leave { animation: antNotificationOut .2s ease forwards; }
+.ant-notification-notice-icon { display: inline-flex; font-size: 24px; line-height: 1; }
+.ant-notification-notice-icon .ai { width: 24px; height: 24px; }
+.ant-notification-notice-content { flex: 1; min-width: 0; }
+.ant-notification-notice-message {
+  margin-bottom: 4px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--ant-color-text);
+}
+.ant-notification-notice-description {
+  font-size: var(--ant-font-size-base);
+  line-height: 1.5714;
+  color: var(--ant-color-text);
+  overflow-wrap: anywhere;
+}
+.ant-notification-notice-close {
+  flex: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ant-color-text-tertiary);
+  line-height: 1;
+  font-size: 14px;
+  cursor: pointer;
+}
+.ant-notification-notice-close:hover { color: var(--ant-color-text); }
+.ant-notification-notice-close .ai { width: 14px; height: 14px; }
+@media (max-width: 768px) {
+  .ant-notification { top: 16px; right: 16px; left: 16px; width: auto; }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .anticon-spin, .ant-spin-dot-spin, .ant-spin-dot-item, .ant-message-notice, .ant-message-notice-leave {
+  .anticon-spin, .ant-spin-dot-spin, .ant-spin-dot-item, .ant-message-notice, .ant-message-notice-leave,
+  .ant-progress-status-active .ant-progress-bg::before,
+  .ant-notification-notice, .ant-notification-notice-leave {
     animation: none;
   }
   .menu, .ant-menu,
-  .topbar::before, .ant-header::before,
+  .topbar::before, .ant-header::before, .nav-backdrop,
   .burger::before, .burger::after,
+  [data-burger]::before, [data-burger]::after,
   .hub-user .dd, .hub-user::before,
   .hub-user > button::before, .hub-user > button::after,
   .ant-header.has-burger > .in > nav,

@@ -103,13 +103,26 @@
   }
 })();
 
-/* 移动端导航（<=860px，与 antd-lite.css 4.6 / 4.7 同一断点）。
- * 桌面端不改顶栏。已有 #burger 的页面（reportdb）只补遮罩点击与 Esc；
- * 只有水平 nav、没有汉堡的顶栏（VIP）在窄屏插入按钮并加上 .has-burger；
- * 黄页 .hub-user 仍用页面自己的点击切换，这里补姓名行、aria 与遮罩关闭。 */
+/* 移动端导航（<=860px，与 antd-lite.css 4.5–4.7 同一断点）。
+ * 统一抽屉契约（配套 antd-lite.css 4.6）：
+ * - 断点唯一：max-width 860px；桌面端不改顶栏。
+ * - 自动汉堡：仅当顶栏（.topbar/.ant-header）里没有 .burger、没有 [data-burger]、
+ *   没有任何 #burger / [id$="-burger"] / [class$="-burger"]（页面自带汉堡的常见命名），
+ *   且顶栏及其祖先都没有 data-no-auto-burger 时，才插入一只按钮（data-mhero-burger
+ *   标记）并把顶栏里的 .menu/.ant-menu/裸 nav 收成右侧抽屉。
+ * - 页面自带按钮（class="burger" 或 data-burger 属性）：不插第二只、不接管开合
+ *   （开合仍由页面 JS 切 .topbar.open / .ant-header.open / body.nav-open 驱动），
+ *   这里只补四种关闭行为：遮罩点击、Escape、点击菜单链接、断点切回桌面。
+ * - 幂等：脚本被引入两次时 window.__mheroMobileNav 保证只初始化一次
+ *   （按钮只插一只、document 级事件只绑一次）。
+ * - 黄页 .hub-user 仍用页面自己的点击切换，这里补姓名行、aria 与遮罩关闭。 */
 (function () {
   'use strict';
+  if (window.__mheroMobileNav) return;
+  window.__mheroMobileNav = true;
+
   var mq = window.matchMedia('(max-width: 860px)');
+  var OWN = '.burger, [data-burger]';
 
   function setBurger(btn, open) {
     if (!btn) return;
@@ -122,31 +135,38 @@
 
   function closeBar(bar) {
     bar.classList.remove('open');
-    setBurger(bar.querySelector('.burger'), false);
+    setBurger(bar.querySelector(OWN), false);
   }
 
-  function ensurePlainNav(header) {
-    if (header.querySelector('.burger')) return;
-    var nav = header.querySelector(':scope > .in > nav');
-    if (!nav || nav.classList.contains('menu') || nav.classList.contains('ant-menu')) return;
+  function navCandidate(header) {
+    var box = header.querySelector(':scope > .in') || header;
+    return box.querySelector(':scope > .menu, :scope > .ant-menu') || box.querySelector(':scope > nav');
+  }
+
+  function ensureAutoBurger(header) {
+    if (header.querySelector(OWN)) return;                          /* 已有 .burger / [data-burger] */
+    if (header.querySelector('#burger, [id$="-burger"], [class$="-burger"]')) return; /* 自带命名的汉堡 */
+    if (header.closest('[data-no-auto-burger]')) return;            /* 顶栏或祖先显式退出 */
+    if (header.querySelector('.burger[data-mhero-burger]')) return; /* 幂等：这只顶栏已插过 */
+    var nav = navCandidate(header);
+    if (!nav) return;
     if (!nav.id) nav.id = 'mainmenu';
     var btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'burger';
     btn.setAttribute('data-mhero-burger', '1');
     btn.setAttribute('aria-controls', nav.id);
-    setBurger(btn, false);
+    btn.setAttribute('aria-expanded', 'false');
+    btn.setAttribute('aria-label', '打开菜单');
     nav.parentNode.insertBefore(btn, nav);
-    header.classList.add('has-burger');
-    requestAnimationFrame(function () {
-      requestAnimationFrame(function () { header.classList.add('nav-ready'); });
-    });
-    btn.addEventListener('click', function (e) {
-      e.stopPropagation();
-      var open = !header.classList.contains('open');
-      header.classList.toggle('open', open);
-      setBurger(btn, open);
-    });
+    if (!nav.classList.contains('menu') && !nav.classList.contains('ant-menu')) {
+      /* 无 ds 菜单 class 的裸 nav：加 .has-burger 才有抽屉样式；
+         .nav-ready 两帧后再上，首次加载才不会从水平菜单位置滑出 */
+      header.classList.add('has-burger');
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () { header.classList.add('nav-ready'); });
+      });
+    }
   }
 
   function ensureHubWho(u) {
@@ -185,13 +205,15 @@
   }
 
   function boot() {
-    [].forEach.call(document.querySelectorAll('header.topbar, header.ant-header'), ensurePlainNav);
+    [].forEach.call(document.querySelectorAll('.topbar, .ant-header'), ensureAutoBurger);
     syncHubLabel();
   }
 
   document.addEventListener('click', function (e) {
     var t = e.target;
     if (!t || !t.closest) return;
+
+    /* 黄页 .hub-user 打开时点自身（遮罩区域）关闭 */
     if (t.classList && t.classList.contains('hub-user') && t.classList.contains('open')) {
       t.classList.remove('open');
       var hb = t.querySelector(':scope > button');
@@ -201,9 +223,43 @@
       }
       return;
     }
+
+    /* 本脚本插入的汉堡：开合在这里驱动（页面自带按钮的开合由页面自己驱动） */
+    var own = t.closest('.burger[data-mhero-burger], [data-burger][data-mhero-burger]');
+    if (own) {
+      e.stopPropagation();
+      var hdr = own.closest('.topbar, .ant-header');
+      if (hdr) {
+        var open = !hdr.classList.contains('open');
+        hdr.classList.toggle('open', open);
+        setBurger(own, open);
+      }
+      return;
+    }
+
+    /* 无页面脚本的顶栏：抽屉里的下拉分组按钮也能展开/收起
+       （reportdb 这类自带处理的页面在自己的 handler 里 stopPropagation，不会走到这） */
+    var tog = t.closest('.mi > button, .ant-menu-item > button');
+    if (tog) {
+      var mi = tog.closest('.mi, .ant-menu-item');
+      if (mi) {
+        var was = mi.classList.contains('open');
+        [].forEach.call(mi.parentNode ? mi.parentNode.children : [], function (sib) {
+          if (sib !== mi) sib.classList.remove('open');
+        });
+        mi.classList.toggle('open', !was);
+        tog.setAttribute('aria-expanded', !was ? 'true' : 'false');
+      }
+      return;
+    }
+
+    if (!mq.matches) return;
     var bar = t.closest('.topbar.open, .ant-header.open');
-    if (!bar || !mq.matches) return;
-    if (t.closest('.menu, .ant-menu, .burger, nav, a, button')) return;
+    if (!bar) return;
+    /* 点抽屉里的链接（含下拉项 / 表单提交按钮）即导航：收起抽屉 */
+    if (t.closest('a, button.lnk')) { closeBar(bar); return; }
+    /* 点到遮罩（伪元素遮罩的点击落在顶栏本体）或顶栏空白处：关闭 */
+    if (t.closest('.menu, .ant-menu, nav, .burger, [data-burger], button')) return;
     closeBar(bar);
   });
 
