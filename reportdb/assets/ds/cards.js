@@ -158,7 +158,8 @@
     btn.setAttribute('aria-controls', nav.id);
     btn.setAttribute('aria-expanded', 'false');
     btn.setAttribute('aria-label', '打开菜单');
-    nav.parentNode.insertBefore(btn, nav);
+    /* 插到 .in 末尾，配合 CSS order:999 / margin-left:auto，视觉与 DOM 都在最右 */
+    nav.parentNode.appendChild(btn);
     if (!nav.classList.contains('menu') && !nav.classList.contains('ant-menu')) {
       /* 无 ds 菜单 class 的裸 nav：加 .has-burger 才有抽屉样式；
          .nav-ready 两帧后再上，首次加载才不会从水平菜单位置滑出 */
