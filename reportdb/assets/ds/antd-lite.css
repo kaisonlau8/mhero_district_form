@@ -203,6 +203,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
 }
 .ant-header > .in, .topbar > .in {
   max-width: 1280px;
+  width: 100%;
   margin: 0 auto;
   padding: 0 12px;
   display: flex;
@@ -210,6 +211,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
   gap: 4px;
   height: var(--ant-header-height);
   min-width: 0;
+  box-sizing: border-box;
 }
 
 /* 品牌：橙色只出现在 logo 图形上，文字用主文本色（白底对比 >=4.5） */
@@ -426,9 +428,25 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
     display: inline-flex;
     width: 44px;
     height: 44px;
-    /* 靠品牌一侧，右侧留给账号按钮（userbar / .hub-user） */
-    margin-left: 0;
-    margin-right: auto;
+    /* 顶栏最右侧：汉堡永远是 .in 里最右的控件（order 压过 brand/nav/userbar） */
+    margin-left: auto;
+    margin-right: 0;
+    order: 999;
+    flex: none;
+  }
+  /* 顶栏已有导航汉堡时：隐藏浮动 #mhero-userbar（否则右上角会出现第二只汉堡叠住）
+     并取消 userbar 为自身预留的 padding-right，让顶栏汉堡贴齐右缘。 */
+  body:has(.burger) #mhero-userbar,
+  body:has([data-burger]) #mhero-userbar {
+    display: none !important;
+  }
+  body:has(.burger) > .nav,
+  body:has([data-burger]) > .nav,
+  body:has(.burger) > .topbar,
+  body:has([data-burger]) > .topbar,
+  body:has(.burger) .ant-header,
+  body:has([data-burger]) .ant-header {
+    padding-right: 0 !important;
   }
   .burger .ai, [data-burger] .ai {
     position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0;
