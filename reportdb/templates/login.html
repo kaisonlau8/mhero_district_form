@@ -21,4 +21,6 @@
     <div class="ant-form-item-control"><input class="ant-input" id="p" type="password" name="password" autocomplete="current-password" required></div></div>
   <button class="ant-btn ant-btn-primary" type="submit"><svg class="ai" aria-hidden="true"><use href="#i-lock"/></svg>登录</button>
   {% else %}<p><a class="ant-btn ant-btn-primary" href="/auth/oidc/login?next={{ next|urlencode }}"><svg class="ai" aria-hidden="true"><use href="#i-user"/></svg>使用单点登录</a></p>{% endif %}
-</form></body></html>
+</form>
+<script>{{ ds_feedback|safe }}</script>
+</body></html>

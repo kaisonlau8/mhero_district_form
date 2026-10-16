@@ -211,5 +211,7 @@ document.querySelectorAll('table.sortable').forEach(function(t){
 </script>
 {# 移动端表格卡片化（<=768px，桌面端零影响）：自动补 data-label/data-card-title/data-cards-full #}
 <script>{{ ds_cards|safe }}</script>
+{# 交互反馈：Button loading / 页面 Spin / 上传进度 / message 轻提示 #}
+<script>{{ ds_feedback|safe }}</script>
 </body>
 </html>
