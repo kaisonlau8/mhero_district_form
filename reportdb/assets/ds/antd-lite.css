@@ -525,6 +525,13 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
     transition: opacity .3s ease, visibility 0s;
   }
 
+  /* 顶栏是 sticky+z-index 的层叠上下文：抽屉在顶栏内，若顶栏层级(100)低于遮罩(1000)，
+     抽屉会被遮罩盖住而无法点击。打开时把顶栏整体抬到遮罩之上（遮罩从顶栏下沿开始，不会盖住顶栏）。 */
+  .topbar.open, .ant-header.open,
+  body.nav-open .topbar, body.nav-open .ant-header {
+    z-index: calc(var(--ant-z-nav-drawer) + 1);
+  }
+
   /* 抽屉：菜单本体收成右侧面板（fixed 于视口，宽 min(300px, 82vw)） */
   .menu, .ant-menu {
     display: flex;
