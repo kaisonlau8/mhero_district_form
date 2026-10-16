@@ -165,5 +165,31 @@
   if (ok) toast("success", ok.textContent);
   if (err) toast("error", err.textContent);
 
-  window.MheroFeedback = { toast: toast, loading: setLoading, clear: clearLoading };
+  function pageReady() {
+    document.documentElement.classList.remove("ant-booting");
+    var spin = document.getElementById("ant-page-spin");
+    if (spin) {
+      spin.setAttribute("aria-busy", "false");
+      spin.setAttribute("aria-hidden", "true");
+    }
+  }
+  function bootPage() {
+    pageReady();
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", bootPage);
+  else bootPage();
+
+  window.AntFeedback = window.AntFeedback || {
+    message: {
+      success: function (t, _ms, _k) { return toast("success", t); },
+      error: function (t, _ms, _k) { return toast("error", t); },
+      info: function (t, _ms, _k) { return toast("info", t); },
+      warning: function (t, _ms, _k) { return toast("warning", t); },
+      loading: function (t) { return toast("loading", t); },
+      close: function () {}
+    },
+    button: { loading: function (el, on) { if (on) setLoading(el); else clearLoading(el); } },
+    pageReady: pageReady
+  };
+  window.MheroFeedback = { toast: toast, loading: setLoading, clear: clearLoading, pageReady: pageReady };
 })();
