@@ -128,7 +128,7 @@
   {# 顶栏：ant-header / ant-menu 规格（历史 hook .topbar/.menu/.mi/.dd 由 antd-lite.css 与 ant-* 共享规则承接） #}
   <header class="topbar" id="topbar"><div class="in">
     <a class="brand" href="/{% if date %}?date={{ date }}{% endif %}"><img class="brand-logo" src="/ds/brand/logo-blue.png" srcset="/ds/brand/logo-blue@2x.png 2x" alt="猛士" height="28">区域报表</a>
-    <button class="burger" id="burger" type="button" aria-label="菜单" aria-expanded="false" aria-controls="mainmenu"><svg class="ai burger-ico burger-ico-menu" aria-hidden="true"><use href="#i-menu"/></svg><svg class="ai burger-ico burger-ico-close" aria-hidden="true"><use href="#i-close"/></svg></button>
+    <button class="burger" id="burger" type="button" aria-label="打开菜单" aria-expanded="false" aria-controls="mainmenu"><svg class="ai burger-ico burger-ico-menu" aria-hidden="true"><use href="#i-menu"/></svg><svg class="ai burger-ico burger-ico-close" aria-hidden="true"><use href="#i-close"/></svg></button>
     <nav class="menu ant-menu" id="mainmenu" aria-label="主导航">
       <div class="mi {{ 'on' if P == '/' }}"><a href="/{% if date %}?date={{ date }}{% endif %}">首页</a></div>
       <div class="mi {{ 'on' if P.startswith('/tables') or P.startswith('/reports') or P.startswith('/stores') }}"><button type="button" aria-haspopup="true" aria-expanded="false"><svg class="ai dd-caret" aria-hidden="true"><use href="#i-caret-down"/></svg>报表</button>
@@ -166,7 +166,7 @@
       bar.classList.toggle('open', !!open);
       document.body.classList.toggle('nav-open', !!open);
       burger.setAttribute('aria-expanded', open?'true':'false');
-      burger.setAttribute('aria-label', open?'关闭菜单':'菜单');
+      burger.setAttribute('aria-label', open?'关闭菜单':'打开菜单');
       if(menu){
         var hide=mobileMq.matches && !open;
         menu.setAttribute('aria-hidden', hide?'true':'false');

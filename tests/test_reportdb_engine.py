@@ -422,15 +422,22 @@ def test_nav_hierarchy_by_role(web):
 
 
 def test_mobile_nav_drawer_hooks(web):
-    """移动端抽屉：汉堡图标、遮罩、240ms 过渡都在页面里；文案与退出入口保留。"""
+    """移动端抽屉：页面保留 #burger/#nav-backdrop/setDrawer 钩子与文案；动效契约在设计系统
+    （antd-lite.css 经 ds_css 内联进页面）：右侧滑入抽屉 + 遮罩淡入淡出 + 退出延迟隐藏。"""
     html = web["admin"].get("/").text
     nav = _nav(html)
-    assert 'id="burger"' in nav and 'aria-controls="mainmenu"' in nav and 'aria-label="菜单"' in nav
+    assert 'id="burger"' in nav and 'aria-controls="mainmenu"' in nav and 'aria-label="打开菜单"' in nav
     assert 'href="#i-menu"' in nav and 'href="#i-close"' in nav
     assert 'id="nav-backdrop"' in html and 'aria-label="关闭菜单"' in html
     assert "setDrawer" in html and "max-width:860px" in html
-    assert "--nav-drawer-duration: 240ms" in html
-    assert "translateY(-12px)" in html and "body.nav-open .nav-backdrop" in html
+    # 抽屉动效（设计系统，内联在页面里）：300ms 右侧滑入 + 遮罩 rgba(0,0,0,.45) 淡入淡出
+    assert "translateX(100%)" in html and "translateX(0)" in html
+    assert "cubic-bezier(.23, 1, .32, 1)" in html
+    assert "rgba(0, 0, 0, .45)" in html
+    assert "@media (max-width: 860px)" in html and "prefers-reduced-motion: reduce" in html
+    # 页面自带的 .nav-backdrop 遮罩元素：桌面隐藏、移动端随 body.nav-open 淡入并锁定滚动
+    assert "body.nav-open .nav-backdrop" in html
+    assert "body.nav-open { overflow: hidden; }" in html
     for label in ("首页", "报表", "明细数据", "退出登录", "修改密码", "用户管理"):
         assert label in nav
 

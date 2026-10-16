@@ -44,6 +44,20 @@ app = Flask(
     static_folder=str(PLUGIN_ROOT / "static"),
 )
 
+# --- 设计系统资源（与 reportdb 同源的 ds 副本，design-system/sync.sh 同步）：
+#     cards.js 提供统一移动端导航（<=860px 自动汉堡 + 右侧抽屉开合/遮罩/Escape/链接关闭） ---
+_DS_DIR = PLUGIN_ROOT / "reportdb" / "assets" / "ds"
+_ds_cache: dict[str, str] = {}
+
+
+def _ds_asset(name: str) -> str:
+    if name not in _ds_cache:
+        _ds_cache[name] = (_DS_DIR / name).read_text(encoding="utf-8")
+    return _ds_cache[name]
+
+
+app.jinja_env.globals["ds_cards"] = lambda: _ds_asset("cards.js")
+
 # --- m-hero SSO (Casdoor): inert unless MHERO_AUTH[_DISTRICT]=audit|on is set (see docs/SSO_CASDOOR.md) ---
 from mhero_auth.flask_adapter import init_app as _mhero_auth_init
 _mhero_auth_init(app, "district", default_mode="off", public_get_paths=["/static/brand/*"])   # everything (incl. /api/report/latest) requires login; no public paths

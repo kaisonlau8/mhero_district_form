@@ -23,12 +23,114 @@
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
-    .nav { background: var(--card-bg); border-bottom: 1px solid var(--border); padding: 12px 24px; display: flex; align-items: center; gap: 24px; }
-    .nav h1 { font-size: 18px; font-weight: 600; color: var(--orange); display: inline-flex; align-items: center; gap: 10px; }
+    /* 顶栏用设计系统钩子（.topbar/.in/.menu/.mi）：桌面水平菜单；<=860px cards.js 自动
+       插入汉堡并把 .menu 收成右侧抽屉（开合/遮罩/Escape/点链接关闭/锁滚动均由 cards.js 驱动，
+       样式这里按设计系统规格实现：300ms cubic-bezier(.23,1,.32,1)、遮罩 rgba(0,0,0,.45)、
+       宽 min(300px,82vw)、选中 #e6f4ff/#1677ff、visibility 退场延迟）。 */
+    .nav { background: var(--card-bg); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100; }
+    .nav .in { max-width: 960px; margin: 0 auto; padding: 0 16px; display: flex; align-items: center; gap: 12px; min-height: 56px; }
+    .nav h1 { font-size: 18px; font-weight: 600; color: var(--orange); display: inline-flex; align-items: center; gap: 10px; white-space: nowrap; }
     .nav .brand-logo { height: 28px; width: auto; display: block; }
-    .nav a { color: var(--text); text-decoration: none; font-size: 14px; padding: 6px 12px; border-radius: 4px; }
-    .nav a:hover { background: var(--bg); color: var(--blue); }
-    @media (max-width: 768px) { .nav { flex-wrap: wrap; padding: 10px 14px; } .nav .brand-logo { height: 22px; } }
+    .menu { display: flex; align-items: center; gap: 4px; min-width: 0; }
+    .nav .menu a { color: var(--text); text-decoration: none; font-size: 14px; padding: 6px 12px; border-radius: 4px; white-space: nowrap; }
+    .nav .menu a:hover { background: var(--bg); color: var(--blue); }
+    .nav .menu a.cur { color: #1677ff; background: #e6f4ff; font-weight: 600; }
+    .nav-meta { margin-left: auto; color: var(--gray); font-size: 13px; white-space: nowrap; }
+    /* 汉堡按钮（cards.js 自动插入 .burger）：桌面隐藏，<=860px 出现且整页只有这一只 */
+    .burger { display: none; }
+    @media (max-width: 860px) {
+      .nav .in { padding: 0 14px; }
+      .nav h1 { font-size: 15px; gap: 8px; min-width: 0; }
+      .nav .brand-logo { height: 22px; }
+      .nav h1 .nav-title-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+      .nav-meta { display: none; }
+      .burger {
+        display: inline-flex;
+        position: relative;
+        width: 44px; height: 44px; flex: none;
+        margin-left: 0;
+        margin-right: auto;
+        padding: 0;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: #fff;
+        color: var(--text);
+        cursor: pointer;
+        align-items: center;
+        justify-content: center;
+      }
+      .burger::before, .burger::after {
+        content: "";
+        position: absolute;
+        left: 12px;
+        width: 18px;
+        height: 2px;
+        border-radius: 1px;
+        background: currentColor;
+        transition: transform .3s cubic-bezier(.23, 1, .32, 1), top .3s cubic-bezier(.23, 1, .32, 1), box-shadow .3s;
+      }
+      .burger::before { top: 16px; box-shadow: 0 6px 0 currentColor; }
+      .burger::after { top: 28px; }
+      .nav.open .burger::before { top: 21px; box-shadow: none; transform: rotate(45deg); }
+      .nav.open .burger::after { top: 21px; transform: rotate(-45deg); }
+      /* 遮罩：盖住顶栏以下区域，点击由 cards.js 关闭 */
+      .nav::before {
+        content: "";
+        position: fixed;
+        left: 0; right: 0; top: 56px; bottom: 0;
+        background: rgba(0, 0, 0, .45);
+        z-index: 1000;
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+        transition: opacity .3s ease, visibility 0s linear .3s;
+      }
+      .nav.open::before {
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+        transition: opacity .3s ease, visibility 0s;
+      }
+      /* 抽屉：菜单本体收成右侧面板 */
+      .nav .menu {
+        position: fixed;
+        top: 56px; right: 0; bottom: 0; left: auto;
+        width: min(300px, 82vw);
+        flex-direction: column;
+        align-items: stretch;
+        gap: 4px;
+        margin: 0;
+        padding: 8px 10px calc(16px + env(safe-area-inset-bottom, 0px));
+        background: #fff;
+        border-left: 1px solid #f0f0f0;
+        box-shadow: -6px 0 16px rgba(0, 0, 0, .08);
+        overflow: auto;
+        z-index: 1001;
+        transform: translateX(100%);
+        visibility: hidden;
+        pointer-events: none;
+        transition: transform .3s cubic-bezier(.23, 1, .32, 1), visibility 0s linear .3s;
+      }
+      .nav.open .menu {
+        transform: translateX(0);
+        visibility: visible;
+        pointer-events: auto;
+        transition: transform .3s cubic-bezier(.23, 1, .32, 1), visibility 0s;
+      }
+      .nav .menu a {
+        width: 100%;
+        min-height: 44px;
+        height: auto;
+        display: flex;
+        align-items: center;
+        padding: 8px 12px;
+        font-size: 15px;
+      }
+      body:has(.nav.open) { overflow: hidden; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .burger::before, .burger::after, .nav .menu { transition: none; }
+    }
     .container { max-width: 960px; margin: 24px auto; padding: 0 16px; }
     .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 16px; }
     .card h2 { font-size: 16px; font-weight: 600; margin-bottom: 12px; }
@@ -73,15 +175,19 @@
   </style>
 </head>
 <body>
-  <nav class="nav">
-    <h1><img class="brand-logo" src="/static/brand/logo-blue.png" srcset="/static/brand/logo-blue@2x.png 2x" alt="猛士" height="28">区域报表自动化</h1>
-    <a href="/">控制台</a>
-    <a href="/contacts">联系人</a>
-    <span style="margin-left:auto; color:var(--gray); font-size:13px;">端口 9003 · 每天 08:30</span>
-  </nav>
+  <header class="nav topbar" id="topbar"><div class="in">
+    <h1><img class="brand-logo" src="/static/brand/logo-blue.png" srcset="/static/brand/logo-blue@2x.png 2x" alt="猛士" height="28"><span class="nav-title-text">区域报表自动化</span></h1>
+    <nav class="menu" id="mainmenu" aria-label="主导航">
+      <a href="/" class="{{ 'cur' if request.path == '/' }}" {% if request.path == '/' %}aria-current="page"{% endif %}>控制台</a>
+      <a href="/contacts" class="{{ 'cur' if request.path.startswith('/contacts') }}" {% if request.path.startswith('/contacts') %}aria-current="page"{% endif %}>联系人</a>
+    </nav>
+    <span class="nav-meta">端口 9003 · 每天 08:30</span>
+  </div></header>
   <div class="container">
     {% block content %}{% endblock %}
   </div>
   <footer>猛士科技 服务运营 — 区域各指标情况一览</footer>
+  {# 统一移动端导航：cards.js 在 <=860px 给 .topbar 自动插汉堡并驱动抽屉（打开菜单/关闭菜单） #}
+  <script>{{ ds_cards()|safe }}</script>
 </body>
 </html>
