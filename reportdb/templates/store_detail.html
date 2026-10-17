@@ -9,7 +9,6 @@
   </div>
   <div class="ant-page-header-actions">
     {% set xl_url = "/export/stores/" ~ st.code ~ ".xlsx?date=" ~ date %}{% set xl_fixed = true %}{% include "_export_btn.html" %}
-    <a class="ant-btn" href="/stores?date={{ date }}{% if st.region %}&region={{ st.region|urlencode }}{% endif %}"><svg class="ai" aria-hidden="true"><use href="#i-arrow-left"/></svg>返回门店列表</a>
   </div>
 </header>
 

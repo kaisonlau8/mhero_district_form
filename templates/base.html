@@ -193,7 +193,7 @@
     </nav>
     <span class="nav-meta">端口 9003 · 每天 08:30</span>
   </div></header>
-  <div class="container"{% if request.path != '/' %} data-ds-back="/"{% endif %}>
+  <div class="container"{% if request.path != '/' %} data-ds-back="/" data-ds-back-label="首页"{% endif %}>
     {% block content %}{% endblock %}
   </div>
   <footer>猛士科技 服务运营 — 区域各指标情况一览</footer>

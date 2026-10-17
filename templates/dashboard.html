@@ -39,7 +39,7 @@
   <div class="ds-collapse" data-ds-title="登录事件">
   <table>
     <thead><tr><th>时间</th><th>状态</th><th>来源</th><th>页面</th><th>依据</th></tr></thead>
-    <tbody id="session-monitor-events"><tr><td colspan="5" class="muted">加载中…</td></tr></tbody>
+    <tbody id="session-monitor-events" data-ds-skeleton><tr><td colspan="5" class="muted">加载中…</td></tr></tbody>
   </table>
   </div>
 </div>
@@ -84,7 +84,7 @@
   <p class="muted" style="margin-bottom:12px;">
     流水线使用 <code>app/assets/report_template.xlsx</code>。模板需人工更新时在此上传覆盖（会自动备份旧文件）。
   </p>
-  <div id="templateInfo" class="muted" style="margin-bottom:12px;">加载中…</div>
+  <div id="templateInfo" class="muted" data-ds-skeleton style="margin-bottom:12px;">加载中…</div>
   <div class="actions">
     <input id="templateFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
     <button class="btn btn-primary btn-sm" onclick="uploadTemplate()">上传并设为默认模板</button>
@@ -94,7 +94,7 @@
 
 <div class="card" style="border-left: 4px solid var(--turquoise);">
   <h2>运行状态</h2>
-  <div id="status" class="muted">加载中…</div>
+  <div id="status" class="muted" data-ds-skeleton>加载中…</div>
   <div class="ds-collapse" data-ds-title="运行日志" data-ds-count="1"><pre class="log" id="log"></pre></div>
 </div>
 
