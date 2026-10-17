@@ -39,7 +39,7 @@
 <div class="ant-card">
   <div class="ant-card-head"><h2 class="ant-card-head-title">版本历史与回滚 <span class="ant-card-head-sub">回滚 = 把旧版本复制为新版本并从指定日期起生效</span></h2></div>
   <div class="ant-card-body">
-  <div class="tw ant-table-wrap"><table><thead><tr><th class="nosort">版本</th><th class="nosort">生效日期</th><th class="nosort">创建</th><th class="nosort">来源</th><th class="nosort num">备件数/计入</th><th class="nosort">备注</th><th class="nosort">操作</th></tr></thead><tbody>
+  <div class="tw ant-table-wrap ds-collapse" data-ds-title="版本历史与回滚"><table><thead><tr><th class="nosort">版本</th><th class="nosort">生效日期</th><th class="nosort">创建</th><th class="nosort">来源</th><th class="nosort num">备件数/计入</th><th class="nosort">备注</th><th class="nosort">操作</th></tr></thead><tbody>
   {% for h in history %}<tr><td>v{{ h.id }}{% if h.id==active.id %} <span class="ant-tag ant-tag-success">生效中</span>{% endif %}</td><td>{{ h.effective_from }}</td><td>{{ h.created_at }} · {{ h.created_by }}</td><td>{{ h['source'] }}</td><td class="num">{{ h.n_items }} / {{ h.n_counted }}</td><td>{{ h.note or '' }}</td>
     <td><div class="ant-flex"><a class="ant-btn ant-btn-sm" href="/settings/spare-parts/template.xlsx?version={{ h.id }}"><svg class="ai" aria-hidden="true"><use href="#i-download"/></svg>下载</a>
       <form method="post" action="/settings/spare-parts/rollback" onsubmit="return confirm('确认回滚到 v{{ h.id }}？会生成新版本并重算历史快照')"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="list_id" value="{{ h.id }}">

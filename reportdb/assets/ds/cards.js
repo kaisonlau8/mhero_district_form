@@ -2,7 +2,7 @@
  * 通用机制，各站点在 base 模板尾部内联引入（{{ ds_cards|safe }} 形式）。
  * - 自动给滚动容器（.tw/.ant-table-wrap/.sheet/.store-table-wrapper/.freeze-wrap）里的表格
  *   加 .ant-table-cards，容器加 .ant-table-wrap-cards；
- * - 从 thead 第一个 tr 的 th 文本给 td 补 data-label（已有不覆盖）；
+ * - 从 thead 逻辑列（支持 rowspan/colspan）给 td 补 data-label（已有不覆盖）；
  *   th 内的 <small> 副标题会并进标签（如「首保完成率 已保/应保」）；
  * - 卡片标题：th[data-card-title] 所在列的 td 标 data-card-title；
  *   未显式指定时回退为第一个「非 #/名次/排名/编号 且非空」的列；
@@ -13,13 +13,27 @@
  * 桌面端只添加无害属性，不改任何布局与行为。 */
 (function () {
   'use strict';
-  var WRAP = '.tw,.ant-table-wrap,.sheet,.store-table-wrapper,.freeze-wrap';
+  var WRAP = '.tw,.ant-table-wrap,.sheet,.store-table-wrapper,.freeze-wrap,.table-scroll';
   var SKIP_TITLES = { '#': 1, '名次': 1, '排名': 1, '编号': 1, '序号': 1 };
   var sigs = new WeakMap();
+  var cellSigs = new WeakMap();
 
   function headCells(t) {
     if (!t.tHead || !t.tHead.rows.length) return [];
-    return [].slice.call(t.tHead.rows[0].cells);
+    var grid = [];
+    [].forEach.call(t.tHead.rows, function (row, y) {
+      grid[y] = grid[y] || [];
+      var x = 0;
+      [].forEach.call(row.cells, function (th) {
+        while (grid[y][x]) x++;
+        for (var dy = 0; dy < th.rowSpan; dy++) {
+          grid[y + dy] = grid[y + dy] || [];
+          for (var dx = 0; dx < th.colSpan; dx++) grid[y + dy][x + dx] = th;
+        }
+        x += th.colSpan;
+      });
+    });
+    return grid[grid.length - 1];
   }
 
   function labelsOf(t) {
@@ -39,12 +53,16 @@
     if (titleIdx < 0) titleIdx = fallback;
     [].forEach.call(t.tBodies, function (tb) {
       [].forEach.call(tb.rows, function (tr) {
+        var column = 0;
         [].forEach.call(tr.cells, function (td) {
-          var i = td.cellIndex;
-          if (td.hasAttribute('colspan')) return;
+          var i = column; column += td.colSpan;
+          if (tr.cells.length === 1 && td.colSpan > 1) return;
+          var label = labels.slice(i, i + td.colSpan).join(' / ');
+          var cellSig = label + '|' + titleIdx;
+          if (!force && cellSigs.get(td) === cellSig) return;
           if (i < labels.length) {
-            if (labels[i]) {
-              if (force || !td.hasAttribute('data-label')) td.setAttribute('data-label', labels[i]);
+            if (label) {
+              if (force || !td.hasAttribute('data-label')) td.setAttribute('data-label', label);
             } else if (force) {
               td.removeAttribute('data-label');
             }
@@ -59,6 +77,7 @@
             }
             if (ctl) td.setAttribute('data-cards-full', '');
           }
+          cellSigs.set(td, cellSig);
         });
       });
     });
@@ -81,11 +100,11 @@
     [].forEach.call(document.querySelectorAll('table'), function (t) {
       if (t.classList.contains('ant-table-cards')) {
         var sig = labelsOf(t).join('|');
-        if (sigs.get(t) !== sig) markRows(t, true);   /* 动态重建表头（如超时机器人）：重标 */
+        markRows(t, sigs.get(t) !== sig);   /* 动态表头及动态行都补标签 */
         sigs.set(t, sig);
         return;
       }
-      if (t.closest && t.closest(WRAP)) upgrade(t);
+      upgrade(t);
     });
   }
 
@@ -101,6 +120,173 @@
   } else {
     document.addEventListener('DOMContentLoaded', scan);
   }
+})();
+
+/* 统一交互增强。模板指定边界/父路由；长表兜底只包表格，不隐藏统计与操作。 */
+(function () {
+  'use strict';
+  if (window.MheroInteraction) return;
+  var serial = 0, timer, mobile = matchMedia('(max-width: 860px)');
+  var states = new WeakMap();
+  function icon(name, cls) {
+    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'ai ' + (cls || ''));
+    svg.setAttribute('aria-hidden', 'true');
+    var use = document.createElementNS(svg.namespaceURI, 'use');
+    use.setAttribute('href', '#i-' + name); svg.appendChild(use); return svg;
+  }
+  function setText(el, text) { if (el.textContent !== text) el.textContent = text; }
+  function rows(root) {
+    return [].filter.call(root.querySelectorAll('tbody > tr'), function (r) {
+      return !(r.cells.length === 1 && r.cells[0].colSpan > 1) && !r.classList.contains('tot');
+    }).length;
+  }
+  function collapse(box, filter) {
+    var state = states.get(box);
+    if (!state) {
+      var panel = document.createElement('div'); panel.className = 'ds-collapse-panel';
+      panel.id = 'ds-panel-' + (++serial);
+      while (box.firstChild) panel.appendChild(box.firstChild);
+      var btn = document.createElement('button'); btn.type = 'button'; btn.className = 'ds-collapse-toggle';
+      var label = document.createElement('span'); label.textContent = box.dataset.dsTitle || (filter ? '筛选条件' : '明细列表');
+      var count = document.createElement('span'); count.className = filter ? 'ds-filter-summary' : 'ds-collapse-count';
+      btn.appendChild(label); btn.appendChild(count); btn.appendChild(icon('down', 'ds-collapse-arrow'));
+      btn.setAttribute('aria-controls', panel.id); box.appendChild(btn); box.appendChild(panel);
+      state = { panel: panel, btn: btn, count: count, open: false, filter: filter };
+      states.set(box, state);
+      btn.addEventListener('click', function () { state.open = !state.open; refresh(box); });
+    }
+    refresh(box);
+  }
+  function summary(panel) {
+    var parts = [];
+    [].forEach.call(panel.querySelectorAll('input:not([type="hidden"]):not([type="submit"]),select'), function (el) {
+      if (el.type === 'file' || el.type === 'password' || el.disabled) return;
+      if ((el.type === 'checkbox' || el.type === 'radio') && !el.checked) return;
+      var value = el.tagName === 'SELECT' ? [].filter.call(el.options, function (o) { return o.selected && o.value; }).map(function (o) { return o.textContent; }).join('、') : el.value;
+      if (!value) return;
+      var group = el.closest('.selector-group,.ant-filter-item,.filter-item');
+      var label = (el.labels && el.labels[0]) || (group && group.querySelector('label'));
+      parts.push((label ? label.textContent.trim() : el.getAttribute('aria-label') || el.name || '搜索') + '：' + ((el.type === 'checkbox') ? '已启用' : value));
+    });
+    [].forEach.call(panel.querySelectorAll('.select-trigger'), function (el) { parts.push(el.textContent.trim()); });
+    return parts.length ? parts.join(' · ') : '未筛选';
+  }
+  function refresh(box) {
+    var s = states.get(box); if (!s) return;
+    var open = s.filter && !mobile.matches ? true : s.open;
+    s.panel.hidden = !open; s.btn.setAttribute('aria-expanded', String(open));
+    if (s.filter) {
+      if (!s.dirty || s.href !== location.href || s.panel.querySelector('[data-ds-filter-live]')) {
+        s.applied = summary(s.panel); s.href = location.href; s.dirty = false;
+      }
+      setText(s.count, s.applied + (s.dirty ? ' · 有未应用修改' : ''));
+    } else setText(s.count, '(' + (box.dataset.dsCount || rows(s.panel)) + ')');
+  }
+  function longTables() {
+    [].forEach.call(document.querySelectorAll('table'), function (t) {
+      if (t.closest('details,.ds-collapse,[data-ds-summary]') || rows(t) <= 8) return;
+      var wrap = t.closest('.tw,.ant-table-wrap,.sheet,.store-table-wrapper,.freeze-wrap,.table-scroll') || t;
+      var card = wrap.closest('.card,.ant-card,.stat-block,section');
+      var heading = card && card.querySelector('h2,h3');
+      var box = document.createElement('div'); box.className = 'ds-collapse';
+      box.dataset.dsTitle = t.dataset.dsTitle || (heading && heading.textContent.replace(/\s+/g, ' ').trim()) || '明细列表';
+      wrap.parentNode.insertBefore(box, wrap); box.appendChild(wrap); collapse(box, false);
+    });
+  }
+  function filters() {
+    [].forEach.call(document.querySelectorAll('form.ant-filter-bar, .timeout-filters, [data-ds-filter]'), function (el) {
+      if (el.closest('details,.ds-collapse') || (el.closest('form') && el.closest('form').method.toLowerCase() !== 'get')) return;
+      var box = document.createElement('div'); box.className = 'ds-collapse ds-filter';
+      el.parentNode.insertBefore(box, el); box.appendChild(el); collapse(box, true);
+    });
+  }
+  function nativeDetails(d) {
+    var head = d.querySelector(':scope > summary'); if (!head) return;
+    head.classList.add('ds-native-summary');
+    head.setAttribute('aria-expanded', String(d.open));
+    if (!d.dataset.dsToggleReady) {
+      d.addEventListener('toggle', function () { head.setAttribute('aria-expanded', String(d.open)); });
+      d.dataset.dsToggleReady = '1';
+    }
+    if (!head.querySelector(':scope > .ds-collapse-arrow')) head.appendChild(icon('down', 'ds-collapse-arrow'));
+    // 已有计数沿用；自动计数只用于有表格且标题没有计数的明细。
+    if (d.querySelector('table') && !head.querySelector('.store-count,.ds-collapse-count') && !/\d/.test(head.textContent)) {
+      var count = document.createElement('span'); count.className = 'ds-collapse-count';
+      head.insertBefore(count, head.lastChild);
+    }
+    var c = head.querySelector('.ds-collapse-count'); if (c) setText(c, '(' + rows(d) + ')');
+    if (d.hasAttribute('data-mobile-collapsed') && !d.dataset.dsMobileReady) {
+      d.open = !mobile.matches; d.dataset.dsMobileReady = '1';
+    }
+  }
+  function links() {
+    [].forEach.call(document.querySelectorAll('a[href]'), function (a) {
+      var raw = a.getAttribute('href'), u;
+      if (!raw || raw[0] === '#' || a.closest('.brand') || a.classList.contains('brand') || a.classList.contains('ds-back') || a.hasAttribute('download') || a.dataset.dsLink === 'off') return;
+      try { u = new URL(a.href); } catch (e) { return; }
+      if (!/^https?:$/.test(u.protocol) || /logout|\/_auth\/|\/auth\//.test(u.pathname)) return;
+      if (/\.(xlsx?|csv|zip|pdf|png)$/.test(u.pathname) || /\/export|\/download|\/api\/report\/latest/.test(u.pathname)) return;
+      var external = u.origin !== location.origin || a.target === '_blank';
+      if (!external && u.pathname === location.pathname && !a.closest('.ant-pagination')) return;
+      var name = external ? 'export' : 'right';
+      if (external) { a.target = '_blank'; a.rel = (a.rel + ' noopener').trim().split(/\s+/).filter(function (v,i,x) { return x.indexOf(v) === i; }).join(' '); }
+      if (!a.querySelector('use[href="#i-' + name + '"]') && !a.querySelector('use[href="#i-arrow-left"]')) a.appendChild(icon(name, 'ds-link-icon'));
+      a.classList.add('ds-page-link');
+    });
+  }
+  function closes() {
+    [].forEach.call(document.querySelectorAll('button,a[role="button"],.ant-notification-notice-close'), function (b) {
+      var text = b.textContent.trim();
+      if (!b.matches('.ds-close,.sd-x,.rule-x,.nav-drawer-close,.ant-modal-close,.ant-drawer-close,.ant-message-notice-close,.ant-notification-notice-close,.ant-alert-close-icon,.dual-slot-rm') && !/^(关闭|×|✕)$/.test(text)) return;
+      b.classList.add('ds-close');
+      if (!b.classList.contains('dual-slot-rm')) b.setAttribute('aria-label', '关闭');
+      if (!b.querySelector('svg')) { b.textContent = ''; b.appendChild(icon('close')); }
+    });
+  }
+  function cells() {
+    [].forEach.call(document.querySelectorAll('th[onclick],table.sortable th:not(.nosort)'), function (th) {
+      if (th.querySelector('a,button') || th.dataset.dsKeyboard) return;
+      th.classList.add('ds-cell-action'); th.tabIndex = 0; th.setAttribute('role', 'button');
+      th.title = th.title || '点击或按 Enter 排序'; th.dataset.dsKeyboard = '1';
+      th.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); th.click(); }
+      });
+    });
+  }
+  function back() {
+    var config = document.querySelector('[data-ds-back]'); if (!config || config.querySelector('.ds-title-row')) return;
+    var heading = config.querySelector('.ant-page-header-heading > h1, :scope > h1, :scope > h2');
+    if (!heading) return;
+    var a = config.querySelector('a.ds-back') || [].find.call(config.querySelectorAll('.ant-page-header a'), function (link) { return /^返回/.test(link.textContent.trim()); });
+    if (!a) { a = document.createElement('a'); a.className = 'ds-back'; a.href = config.dataset.dsBack; a.appendChild(icon('arrow-left')); a.appendChild(document.createTextNode('返回')); }
+    a.classList.add('ds-back');
+    if (!a.querySelector('use[href="#i-arrow-left"]')) a.insertBefore(icon('arrow-left'), a.firstChild);
+    var row = document.createElement('div'); row.className = 'ds-title-row';
+    heading.parentNode.insertBefore(row, heading); row.appendChild(a); row.appendChild(heading);
+  }
+  function scan() {
+    back();
+    filters();
+    [].forEach.call(document.querySelectorAll('.ds-collapse'), function (b) { collapse(b, b.classList.contains('ds-filter')); });
+    longTables();
+    [].forEach.call(document.querySelectorAll('details'), nativeDetails);
+    links(); closes(); cells();
+  }
+  function schedule() { if (!timer) timer = setTimeout(function () { timer = null; scan(); }, 80); }
+  window.MheroInteraction = { scan: scan, icon: icon };
+  function boot() {
+    scan(); new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true, characterData: true });
+    function filterInput(e) {
+      var box = e.target.closest && e.target.closest('.ds-filter');
+      var s = box && states.get(box);
+      if (s) s.dirty = summary(s.panel) !== s.applied;
+      schedule();
+    }
+    document.addEventListener('input', filterInput); document.addEventListener('change', filterInput);
+    mobile.addEventListener('change', function () { document.querySelectorAll('.ds-filter').forEach(refresh); });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();
 
 /* 移动端导航（<=860px，与 antd-lite.css 4.5–4.7 同一断点）。
