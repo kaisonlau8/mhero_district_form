@@ -202,7 +202,8 @@
     <span><svg class="ai" aria-hidden="true"><use href="#i-eye"/></svg>只读预览：你（{{ user.preview_admin }}）正在以督导「{{ user.display_name }}」的身份查看，所有提交已禁用。</span>
     <form method="post" action="/admin/preview/exit"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-sm" id="preview-exit">退出预览</button></form></div>{% endif %}
   {% set parent_url = '/admin/users' if P.startswith('/admin/users/') else '/admin/exemptions' if P.startswith('/admin/exemptions/') else '/settings/spare-parts' if P.startswith('/settings/spare-parts/') else '/stores' if P.startswith('/stores/') else '/' %}
-  <div class="container"{% if P not in ['/', '/login'] %} data-ds-back="{{ parent_url }}{% if date %}?date={{ date }}{% endif %}"{% endif %}>
+  {% set parent_label = '用户管理' if P.startswith('/admin/users/') else '审批列表' if P.startswith('/admin/exemptions/') else '备件名单设置' if P.startswith('/settings/spare-parts/') else '门店指标' if P.startswith('/stores/') else '首页' %}
+  <div class="container"{% if P not in ['/', '/login'] %} data-ds-back="{{ parent_url }}{% if date %}?date={{ date }}{% endif %}" data-ds-back-label="{{ parent_label }}"{% endif %}>
     {% block body %}{% endblock %}
     <footer class="ant-page-footer">
       {% if date %}快照 {{ date }}{% endif %}{% if snap.ingested_at %} · 数据载入 {{ snap.ingested_at }}{% endif %}{% if stores_synced_at %} · 门店清单同步 {{ stores_synced_at }}{% endif %}
