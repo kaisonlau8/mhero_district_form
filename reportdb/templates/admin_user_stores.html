@@ -28,7 +28,7 @@
         <button class="ant-btn ant-btn-primary" type="submit"><svg class="ai" aria-hidden="true"><use href="#i-save"/></svg>保存</button>
       </div></div>
     <div class="ant-card-body">
-    <div class="tw ant-table-wrap"><table><thead><tr><th class="nosort">手工</th><th class="nosort" data-card-title>门店</th><th class="nosort">区域</th><th class="nosort">多维表格督导</th><th class="nosort">按姓名已匹配</th></tr></thead><tbody>
+    <div class="tw ant-table-wrap"><table data-ds-primary><thead><tr><th class="nosort">手工</th><th class="nosort" data-card-title>门店</th><th class="nosort">区域</th><th class="nosort">多维表格督导</th><th class="nosort">按姓名已匹配</th></tr></thead><tbody>
     {% for s in stores %}<tr><td><label class="ant-check-hit"><input type="checkbox" name="codes" value="{{ s.code }}" {% if s.code in mine %}checked{% endif %} aria-label="手工分配 {{ s.name }}"></label></td><td>{{ s.name }}</td><td>{{ s.region or '' }}</td><td>{{ s.supervisor or '' }}</td><td>{% if s.code in by_name %}<span class="ok"><svg class="ai" aria-hidden="true"><use href="#i-check"/></svg></span>{% else %}<span class="muted">—</span>{% endif %}</td></tr>
     {% else %}<tr><td colspan="5"><div class="ant-empty"><div class="ant-empty-image"><svg class="ai" aria-hidden="true"><use href="#i-inbox"/></svg></div><div class="ant-empty-title">没有门店</div></div></td></tr>{% endfor %}</tbody></table></div>
     </div>

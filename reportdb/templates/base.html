@@ -201,7 +201,8 @@
   {% if user and user.preview_admin %}<div id="preview-banner">
     <span><svg class="ai" aria-hidden="true"><use href="#i-eye"/></svg>只读预览：你（{{ user.preview_admin }}）正在以督导「{{ user.display_name }}」的身份查看，所有提交已禁用。</span>
     <form method="post" action="/admin/preview/exit"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-sm" id="preview-exit">退出预览</button></form></div>{% endif %}
-  <div class="container">
+  {% set parent_url = '/admin/users' if P.startswith('/admin/users/') else '/admin/exemptions' if P.startswith('/admin/exemptions/') else '/settings/spare-parts' if P.startswith('/settings/spare-parts/') else '/stores' if P.startswith('/stores/') else '/' %}
+  <div class="container"{% if P not in ['/', '/login'] %} data-ds-back="{{ parent_url }}{% if date %}?date={{ date }}{% endif %}"{% endif %}>
     {% block body %}{% endblock %}
     <footer class="ant-page-footer">
       {% if date %}快照 {{ date }}{% endif %}{% if snap.ingested_at %} · 数据载入 {{ snap.ingested_at }}{% endif %}{% if stores_synced_at %} · 门店清单同步 {{ stores_synced_at }}{% endif %}

@@ -26,8 +26,8 @@
   </div>
 </div>
 
-<div class="sheet"><table class="xl" id="storetbl">
-  <thead><tr><th class="pos">#</th><th>门店</th><th style="text-align:left">区域</th>
+<div class="sheet"><table class="xl" id="storetbl" data-ds-primary>
+  <thead><tr><th class="pos">序号</th><th>门店</th><th style="text-align:left">区域</th>
     {% for k in order %}<th>{{ titles[k] }}<small>{{ heads[k][1] }}/{{ heads[k][0] }}</small></th>{% endfor %}
     <th>备库率<small>≥{{ (threshold*100)|round|int }}% 达标</small></th><th>修正 / 剔除</th></tr></thead>
   <tbody>

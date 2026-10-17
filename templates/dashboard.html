@@ -36,10 +36,12 @@
     　今日退出：<strong id="session-monitor-count">0</strong>
     　最近变化：<span id="session-monitor-changed">—</span>
   </p>
+  <div class="ds-collapse" data-ds-title="登录事件">
   <table>
     <thead><tr><th>时间</th><th>状态</th><th>来源</th><th>页面</th><th>依据</th></tr></thead>
     <tbody id="session-monitor-events"><tr><td colspan="5" class="muted">加载中…</td></tr></tbody>
   </table>
+  </div>
 </div>
 
 <div class="card" style="border-left: 4px solid var(--orange);">
@@ -70,7 +72,7 @@
     <button class="btn btn-primary btn-sm" id="btn-save" onclick="saveSettings()">保存配置</button>
     <button class="btn btn-success btn-sm" id="btn-run" onclick="runPipeline(false)">爬取并生成报表</button>
     <button class="btn btn-outline btn-sm" id="btn-skip" onclick="runPipeline(true)">仅用已下载文件生成</button>
-    <a class="btn btn-outline btn-sm" href="/api/report/latest" id="latestReportLink" {% if not latest_report %}style="display:none"{% endif %}>下载报表</a>
+    <a class="btn btn-outline btn-sm" href="/api/report/latest" download id="latestReportLink" {% if not latest_report %}style="display:none"{% endif %}><svg class="ai" aria-hidden="true"><use href="#i-download"/></svg>下载报表</a>
   </div>
   <p id="task-detail" class="muted">会话：<code>{{ session_home }}</code> · 浏览器 {{ browser_label }}</p>
   {% if engine_reportdb %}<p class="muted">报表引擎：<b>系统统一计算（reportdb）</b>——日报由系统入库、计算并导出（无公式、不依赖 Excel 模板），飞书推送格式不变。在线查看与下载：reportdb 网页的「日报导出」。</p>
@@ -93,7 +95,7 @@
 <div class="card" style="border-left: 4px solid var(--turquoise);">
   <h2>运行状态</h2>
   <div id="status" class="muted">加载中…</div>
-  <pre class="log" id="log"></pre>
+  <div class="ds-collapse" data-ds-title="运行日志" data-ds-count="1"><pre class="log" id="log"></pre></div>
 </div>
 
 <script>
@@ -205,7 +207,7 @@ async function saveSettings() {
     body: JSON.stringify(currentSettingsPayload()),
   });
   const d = await r.json();
-  alert(d.message || d.error || '已保存');
+  AntFeedback.message[d.error ? 'error' : 'success'](d.message || d.error || '已保存');
   refresh();
 }
 
@@ -220,14 +222,14 @@ async function runPipeline(skipCrawl) {
     body: JSON.stringify(payload),
   });
   const d = await r.json();
-  if (d.error) alert(d.error);
+  if (d.error) AntFeedback.notification.error({ title: '运行失败', description: d.error });
   refresh();
 }
 
 async function uploadTemplate() {
   const input = document.getElementById('templateFile');
   if (!input.files || !input.files[0]) {
-    alert('请先选择 .xlsx 模板文件');
+    AntFeedback.message.warning('请先选择 .xlsx 模板文件');
     return;
   }
   const fd = new FormData();
@@ -235,10 +237,10 @@ async function uploadTemplate() {
   const r = await fetch('/api/template', { method: 'POST', body: fd });
   const d = await r.json();
   if (!r.ok) {
-    alert(d.error || '上传失败');
+    AntFeedback.notification.error({ title: '上传失败', description: d.error || '上传失败' });
     return;
   }
-  alert(d.message || '已更新默认模板');
+  AntFeedback.message.success(d.message || '已更新默认模板');
   input.value = '';
   refresh();
 }

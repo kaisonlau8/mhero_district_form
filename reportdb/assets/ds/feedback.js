@@ -170,8 +170,8 @@
     });
     var close = document.createElement('button');
     close.type = 'button';
-    close.className = 'ant-notification-notice-close';
-    close.setAttribute('aria-label', '关闭通知');
+    close.className = 'ant-notification-notice-close ds-close';
+    close.setAttribute('aria-label', '关闭');
     var closeIcon = loadingSvg();
     closeIcon.setAttribute('class', 'ai');
     closeIcon.querySelector('use').setAttribute('href', '#i-close');

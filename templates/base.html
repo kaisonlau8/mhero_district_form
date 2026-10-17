@@ -9,9 +9,10 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/static/brand/icon-32.png">
   <link rel="apple-touch-icon" sizes="180x180" href="/static/brand/icon-180.png">
   <meta name="theme-color" content="#1677ff">
+  <style>{{ ds_css()|safe }}</style>
   <style>
     :root {
-      --blue: #3370ff;
+      --blue: #1677ff;
       --orange: #ff8800;
       --red: #f5222d;
       --turquoise: #00b578;
@@ -183,6 +184,7 @@
   </style>
 </head>
 <body>
+  {{ ds_sprite()|safe }}
   <header class="nav topbar" id="topbar"><div class="in">
     <h1><img class="brand-logo" src="/static/brand/logo-blue.png" srcset="/static/brand/logo-blue@2x.png 2x" alt="猛士" height="28"><span class="nav-title-text">区域报表自动化</span></h1>
     <nav class="menu" id="mainmenu" aria-label="主导航">
@@ -191,11 +193,12 @@
     </nav>
     <span class="nav-meta">端口 9003 · 每天 08:30</span>
   </div></header>
-  <div class="container">
+  <div class="container"{% if request.path != '/' %} data-ds-back="/"{% endif %}>
     {% block content %}{% endblock %}
   </div>
   <footer>猛士科技 服务运营 — 区域各指标情况一览</footer>
   {# 统一移动端导航：cards.js 在 <=860px 给 .topbar 自动插汉堡并驱动抽屉（打开菜单/关闭菜单） #}
   <script>{{ ds_cards()|safe }}</script>
+  <script>{{ ds_feedback()|safe }}</script>
 </body>
 </html>

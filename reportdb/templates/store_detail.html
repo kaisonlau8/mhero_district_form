@@ -13,8 +13,8 @@
   </div>
 </header>
 
-<div class="sheet"><table class="xl" id="dt">
-  <thead><tr><th style="text-align:left">指标</th><th>分母</th><th>分子</th><th>完成率</th><th>全国名次</th><th>已修正</th><th>已剔除</th><th>待审批申请</th><th>明细</th></tr></thead>
+<div class="sheet" data-ds-summary><table class="xl" id="dt">
+  <thead><tr><th style="text-align:left">指标</th><th>分母</th><th>分子</th><th>完成率</th><th>全国名次</th><th>已修正</th><th>已剔除</th><th>待审批申请</th><th>操作</th></tr></thead>
   <tbody>
   {% for i in inds %}{% set c = i.c %}<tr>
     <td style="font-weight:600">{{ i.title }}<span class="s">{{ i.head[1] }} / {{ i.head[0] }}</span></td>
@@ -39,7 +39,7 @@
 <div class="ant-card ant-mt-2">
   <div class="ant-card-head"><h2 class="ant-card-head-title">本店的修正 / 剔除申请</h2></div>
   <div class="ant-card-body">
-  <div class="tw ant-table-wrap"><table><thead><tr><th>编号</th><th>类型</th><th>指标</th><th data-card-title>VIN</th><th>理由</th><th>申请人</th><th>时间</th><th>状态</th><th>审批意见</th></tr></thead><tbody>
+  <div class="tw ant-table-wrap ds-collapse" data-ds-title="本店的修正 / 剔除申请"><table><thead><tr><th>编号</th><th>类型</th><th>指标</th><th data-card-title>VIN</th><th>理由</th><th>申请人</th><th>时间</th><th>状态</th><th>审批意见</th></tr></thead><tbody>
   {% for a in apps %}<tr><td>#{{ a.id }}</td><td>{{ kind_cn.get(a.kind, a.kind) }}</td><td>{{ a.ind_cn }}</td><td>{{ a.vin_show }}</td><td style="white-space:normal">{{ a.reason }}</td><td>{{ a.requested_by }}</td><td>{{ a.requested_at }}</td><td><span class="ant-tag {{ {'pending':'ant-tag-warning','approved':'ant-tag-success','rejected':'ant-tag-error'}.get(a.status,'ant-tag') }}">{{ status_cn.get(a.status, a.status) }}</span></td><td style="white-space:normal">{{ a.review_comment or '' }}</td></tr>
   {% else %}<tr><td colspan="9"><div class="ant-empty"><div class="ant-empty-image"><svg class="ai" aria-hidden="true"><use href="#i-inbox"/></svg></div><div class="ant-empty-title">本店暂无申请</div><div class="ant-empty-desc">督导可在「督导申请」菜单提交修正结果或剔除申请。</div></div></td></tr>{% endfor %}</tbody></table></div></div>
 </div>

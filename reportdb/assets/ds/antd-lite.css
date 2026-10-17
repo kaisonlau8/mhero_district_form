@@ -30,8 +30,9 @@
         22 ant-spin（区块加载；四点指示器，主色 #1677ff）
         23 ant-message（顶部轻提示：success / error / info / warning / loading）
         24 ant-progress / ant-upload-list（线形进度 + 上传列表）
-        25 ant-notification（右上角白卡片轻提示，z-index 1050）
-   · 移动端断点：导航 <=860px 变汉堡（与顶栏 JS 的 matchMedia 861px 对齐）；
+         25 ant-notification（右上角白卡片轻提示，z-index 1050）
+         26 统一交互（折叠 / 移动筛选 / 返回 / 关闭 / 跳转，见 INTERACTION.md）
+   · 移动端断点：导航/筛选 <=860px 折叠（与顶栏 JS 的 matchMedia 对齐）；
      其余 <=768px（覆盖 360 / 390 / 414 宽），可点击控件最小高度 44px。
    ========================================================================== */
 
@@ -2196,3 +2197,74 @@ td.row-action { text-align: right; white-space: nowrap; }
     transition: none !important;
   }
 }
+
+/* 26. 统一交互（INTERACTION.md）：只折叠明细，统计/主操作不进入面板。 */
+.ds-collapse { min-width: 0; margin: 12px 0; border: 1px solid #f0f0f0; border-radius: 8px; background: #fff; }
+.ds-collapse > .ds-collapse-toggle {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px;
+  padding: 10px 14px; border: 0; border-radius: 8px; background: #fafafa;
+  color: rgba(0,0,0,.88); font: inherit; font-weight: 600; text-align: left; cursor: pointer;
+}
+.ds-collapse-toggle:hover { background: #e6f4ff; }
+.ds-collapse-count { color: rgba(0,0,0,.65); font-weight: 400; }
+.ds-collapse-arrow { margin-left: auto; flex: none; transition: transform .2s; }
+.ds-collapse-toggle[aria-expanded="true"] .ds-collapse-arrow,
+details[open] > summary > .ds-collapse-arrow { transform: rotate(180deg); }
+.ds-collapse-panel { min-width: 0; padding: 12px; }
+.ds-collapse-panel[hidden], .ds-close[hidden] { display: none !important; }
+.ds-filter-summary { min-width: 0; font-size: 12px; color: rgba(0,0,0,.65); font-weight: 400; overflow-wrap: anywhere; }
+.ds-filter > .ds-collapse-toggle { display: none; }
+.ds-filter { border: 0; background: transparent; }
+.ds-filter > .ds-collapse-panel { padding: 0; }
+.ds-native-summary { display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none; }
+.ds-native-summary::-webkit-details-marker { display: none; }
+details > .ds-native-summary::before, details > .ds-native-summary::after,
+.ds-native-summary > .ant-collapse-arrow { display: none !important; }
+.ds-title-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.ds-title-row > h1, .ds-title-row > h2 { min-width: 0; margin-bottom: 0 !important; }
+a.ds-back { display: inline-flex; align-items: center; justify-content: center; gap: 4px; flex: none; min-height: 32px; padding: 4px 8px; border: 1px solid #d9d9d9; border-radius: 6px; background: #fff; color: #1677ff; font-size: 14px; text-decoration: none; }
+a.ds-back:hover { border-color: #1677ff; background: #e6f4ff; }
+/* !important 保证应用旧的图标按钮尺寸不覆盖公共热区。保留 hidden 语义。 */
+.ds-close:not([hidden]), .ant-notification-notice-close:not([hidden]) {
+  display: inline-flex !important; align-items: center; justify-content: center;
+  width: 32px !important; height: 32px !important; min-width: 32px !important; min-height: 32px !important;
+  padding: 0 !important; flex: none; border: 0; border-radius: 6px; background: transparent;
+  color: rgba(0,0,0,.65); cursor: pointer; line-height: 1; font-size: 16px;
+}
+.ds-close .ai, .ant-notification-notice-close .ai { width: 16px !important; height: 16px !important; }
+.ds-close:hover, .ant-notification-notice-close:hover { background: #f5f5f5 !important; color: rgba(0,0,0,.88); }
+.ds-collapse-toggle:focus-visible, .ds-close:focus-visible, .ds-back:focus-visible,
+.ds-native-summary:focus-visible { outline: 2px solid #1677ff; outline-offset: 2px; }
+.ds-link-icon { width: 14px; height: 14px; margin-left: 4px; vertical-align: -.15em; flex: none; }
+a.ds-page-link { cursor: pointer; }
+a.ds-page-link:hover { text-decoration: underline; }
+td:has(> a.ds-page-link):hover { background: #e6f4ff; }
+[data-sd-events][role="button"], [data-sd-members], .sd-link { cursor: pointer; }
+[data-sd-events][role="button"]:hover, [data-sd-members]:hover, .sd-link:hover { background: #e6f4ff; }
+.sd-link { text-decoration: underline; text-underline-offset: 3px; }
+.ds-cell-action, .theater-row { cursor: pointer !important; }
+.ds-cell-action:hover, .ds-cell-action:focus-visible, .theater-row:hover td { background: #e6f4ff !important; }
+.ds-cell-action, .theater-row td:first-child { text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; }
+.ds-cell-action:focus-visible, .theater-row:focus-visible { outline: 2px solid #1677ff; outline-offset: -2px; }
+@media (max-width: 860px) {
+  .ds-filter { border: 1px solid #f0f0f0; background: #fff; }
+  .ds-filter > .ds-collapse-toggle { display: flex; flex-wrap: wrap; }
+  .ds-filter > .ds-collapse-panel { padding: 12px; }
+  .ds-filter-summary { flex: 1 1 130px; }
+  .ds-close:not([hidden]), .ant-notification-notice-close:not([hidden]) {
+    width: 40px !important; height: 40px !important; min-width: 40px !important; min-height: 40px !important;
+  }
+  a.ds-back { min-width: 40px; min-height: 40px; }
+  .ds-title-row { align-items: flex-start; }
+  .burger, [data-burger], .nav-toggle, .hub-user { order: 999; margin-left: auto; }
+}
+@media (max-width: 768px) {
+  .ant-table-cards td[colspan][data-label]:not([data-card-title])::before {
+    content: attr(data-label) !important; display: block; color: rgba(0,0,0,.65); font-size: 12px;
+  }
+}
+@media print {
+  .ds-collapse-panel[hidden] { display: block !important; }
+  .ds-collapse-toggle, .ds-back { display: none !important; }
+}
+@media (prefers-reduced-motion: reduce) { .ds-collapse-arrow { transition: none; } }

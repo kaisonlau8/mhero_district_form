@@ -57,6 +57,9 @@ def _ds_asset(name: str) -> str:
 
 
 app.jinja_env.globals["ds_cards"] = lambda: _ds_asset("cards.js")
+app.jinja_env.globals["ds_css"] = lambda: _ds_asset("antd-lite.css")
+app.jinja_env.globals["ds_sprite"] = lambda: _ds_asset("sprite.svg")
+app.jinja_env.globals["ds_feedback"] = lambda: _ds_asset("feedback.js")
 
 # --- m-hero SSO (Casdoor): inert unless MHERO_AUTH[_DISTRICT]=audit|on is set (see docs/SSO_CASDOOR.md) ---
 from mhero_auth.flask_adapter import init_app as _mhero_auth_init
