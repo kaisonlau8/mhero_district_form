@@ -41,7 +41,7 @@ def _brand_datauri(ds_dir: str, name: str) -> str:
 
 _CSS = """
 *{box-sizing:border-box}
-html,body{margin:0;padding:0}
+html,body{margin:0;padding:0;touch-action:manipulation}
 body{min-height:100vh;background:#f5f5f5;color:rgba(0,0,0,.88);font:14px/1.5714 -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Helvetica Neue',Helvetica,Arial,sans-serif;
 display:flex;align-items:center;justify-content:center;padding:24px 16px}
 .ai{width:1em;height:1em;fill:currentColor;vertical-align:-.125em;display:inline-block;flex:none}
@@ -79,7 +79,7 @@ def render_no_access(name: str, system_label: str, hub_url: str, logout_url: str
     fav_html = f'<link rel="icon" type="image/png" sizes="32x32" href="{fav}">' if fav else ""
     return (
         '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
-        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">'
         '<title>没有访问权限</title><meta name="robots" content="noindex">'
         f'{fav_html}<meta name="theme-color" content="#1677ff">'
         f'<style>{_CSS}</style></head><body>{_sprite(ds_dir)}'

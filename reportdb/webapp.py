@@ -712,7 +712,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             if exc.status == 403:       # 账号已通过统一登录但没有开通本系统：友好页（返回黄页 / 退出登录），状态码仍为 403
                 return HTMLResponse(render_no_access(exc.display_name, "区域报表", os.getenv("MHERO_AUTH_HUB_URL", "").strip() or DEFAULT_HUB_URL,
                                                      "/auth/oidc/logout", ds_dir=_DS_DIR), status_code=403, headers={"Cache-Control": "no-store"})
-            return HTMLResponse(f"<meta charset=utf-8><p>登录失败：{str(exc)[:200]}</p><p><a href='/login'>重新登录</a></p>", status_code=401)
+            return HTMLResponse(f"<meta name='viewport' content='width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover'><meta charset=utf-8><p>登录失败：{str(exc)[:200]}</p><p><a href='/login'>重新登录</a></p>", status_code=401)
         resp = RedirectResponse(safe_next(nxt), status_code=303)
         resp.delete_cookie(STATE_COOKIE, path="/")
         return start_session(request, conn, row, resp)

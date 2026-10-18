@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>登录 · 区域报表</title>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"><title>登录 · 区域报表</title>
   <link rel="icon" href="/ds/brand/favicon.ico" sizes="any">
   <link rel="icon" type="image/png" sizes="16x16" href="/ds/brand/icon-16.png">
   <link rel="icon" type="image/png" sizes="32x32" href="/ds/brand/icon-32.png">
@@ -22,5 +22,6 @@
   <button class="ant-btn ant-btn-primary" type="submit"><svg class="ai" aria-hidden="true"><use href="#i-lock"/></svg>登录</button>
   {% else %}<p><a class="ant-btn ant-btn-primary" href="/auth/oidc/login?next={{ next|urlencode }}"><svg class="ai" aria-hidden="true"><use href="#i-user"/></svg>使用单点登录</a></p>{% endif %}
 </form>
+<script>{{ ds_cards|safe }}</script>
 <script>{{ ds_feedback|safe }}</script>
 </body></html>
