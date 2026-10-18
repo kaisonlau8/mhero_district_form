@@ -68,6 +68,12 @@ _TPL.env.globals["ds_sprite"] = _ds_asset("sprite.svg")
 _TPL.env.globals["ds_cards"] = _ds_asset("cards.js")
 _TPL.env.globals["ds_feedback"] = _ds_asset("feedback.js")
 
+# 共享断行过滤器（design-system/linebreak.py 由 sync.sh 同步到 assets/ds/）
+from .assets.ds.linebreak import ds_wbr_filename, nobreak_tail  # noqa: E402
+
+_TPL.env.filters["nobreak_tail"] = nobreak_tail
+_TPL.env.filters["ds_wbr_filename"] = ds_wbr_filename
+
 # 品牌静态资源（logo / favicon；无鉴权挂载，登录页 favicon 也要能用）
 from starlette.staticfiles import StaticFiles as _StaticFiles
 
