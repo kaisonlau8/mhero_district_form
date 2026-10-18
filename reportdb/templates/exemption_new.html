@@ -29,7 +29,7 @@
 </div>
 
 <div class="ant-card">
-  <div class="ant-card-head"><h2 class="ant-card-head-title">结果为「否」的车辆 <span class="ant-card-head-sub">{{ ind.title }}，最多显示 200 条 —— 逐辆填写理由，点该行的「提交申请」</span></h2></div>
+  <div class="ant-card-head"><h2 class="ant-card-head-title">结果为「否」的车辆</h2><div class="ant-card-head-sub ds-card-desc">{{ ind.title }}，最多显示 200 条 —— 逐辆填写理由，点该行的「提交申请」</div></div>
   <div class="ant-card-body">
   <p class="muted">只能逐辆提交，不支持批量：每一行（手机上每张卡片）有自己的「提交申请」，一次只提交这一辆，理由必填。</p>
   <div class="tw ant-table-wrap"><table class="sticky1" data-freeze-vin><thead><tr><th class="nosort num">#</th>{% set NS = namespace(t=false) %}{% for c, l in cols %}{% if not NS.t and (c == 'vin' or c == 'store_name') %}{% set NS.t = true %}<th class="nosort" data-card-title>{{ l }}</th>{% else %}<th class="nosort">{{ l }}</th>{% endif %}{% endfor %}<th class="nosort">已有申请</th><th class="nosort row-reason-h">申请修正结果理由（必填）</th><th class="nosort row-action-h">操作</th></tr></thead><tbody>

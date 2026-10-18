@@ -23,10 +23,10 @@
 </div>
 
 <div class="ant-card"><div class="ant-card-body"><div class="tw ant-table-wrap" style="max-height:78vh">
-<table class="sortable sticky1" data-ds-primary>
+<table class="sortable sticky1 ds-card-label-wide" data-ds-primary>
   <thead>
     <tr><th>门店</th><th>编码</th><th>区域</th><th class="num">备库率</th><th class="nosort">达标</th>
-    {% for c in m.codes %}<th class="num nosort" title="{{ m.names[loop.index0] }}{% if not m.counted[loop.index0] %}（不计入备库率）{% endif %}">{{ c }}<br><small>{{ m.names[loop.index0] }}{% if not m.counted[loop.index0] %}*{% endif %}</small><br><small class="muted">标准 {{ m.std[loop.index0]|int if m.std[loop.index0] is not none else '' }}</small></th>{% endfor %}</tr>
+    {% for c in m.codes %}{% set part_name = m.names[loop.index0] %}{% set part_std = m.std[loop.index0] %}<th class="num nosort ds-spare-th" data-card-label="{{ part_name }}{% if not m.counted[loop.index0] %}*{% endif %}" data-card-sub="编码 {{ c }}{% if part_std is not none %} · 标准 {{ part_std|int }}{% endif %}" title="{{ part_name }}{% if not m.counted[loop.index0] %}（不计入备库率）{% endif %}">{{ c }}<br><small>{{ part_name }}{% if not m.counted[loop.index0] %}*{% endif %}</small><br><small class="muted">标准 {{ part_std|int if part_std is not none else '' }}</small></th>{% endfor %}</tr>
   </thead>
   <tbody>
   {% for r in rows %}<tr><td data-v="{{ r.name }}">{{ r.name }}</td><td data-v="{{ r.code }}">{{ r.code }}</td><td data-v="{{ r.region or '' }}">{{ r.region or '' }}</td>
