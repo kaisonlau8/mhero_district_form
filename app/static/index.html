@@ -2,7 +2,7 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
     <title>区域报表自动生成</title>
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
@@ -51,5 +51,6 @@
     </div>
 
     <script src="/static/app.js"></script>
+    <script>(function(){if(window.__dsZoomGuard)return;window.__dsZoomGuard=1;var l=0;function p(e){if(e.cancelable)e.preventDefault()}document.addEventListener('gesturestart',p,{passive:false});document.addEventListener('gesturechange',p,{passive:false});document.addEventListener('touchend',function(e){var t=e.target;if(t&&t.closest&&t.closest('input,select,textarea,label,[contenteditable]'))return;var n=Date.now();if(l&&n-l<300){if(e.cancelable)e.preventDefault();l=0;return}l=n},{passive:false})})();</script>
   </body>
 </html>

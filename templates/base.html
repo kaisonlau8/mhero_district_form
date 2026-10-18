@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <title>{% block title %}区域报表自动化{% endblock %}</title>
   <link rel="icon" href="/static/brand/favicon.ico" sizes="any">
   <link rel="icon" type="image/png" sizes="16x16" href="/static/brand/icon-16.png">
@@ -25,100 +25,27 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
     /* 顶栏用设计系统钩子（.topbar/.in/.menu/.mi）：桌面水平菜单；<=860px cards.js 自动
-       插入汉堡并把 .menu 收成右侧抽屉（开合/遮罩/Escape/点链接关闭/锁滚动均由 cards.js 驱动，
-       样式这里按设计系统规格实现：300ms cubic-bezier(.23,1,.32,1)、遮罩 rgba(0,0,0,.45)、
-       宽 min(300px,82vw)、选中 #e6f4ff/#1677ff、visibility 退场延迟）。 */
-    .nav { background: var(--card-bg); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100; }
+       插入汉堡并把 .menu 收成右侧抽屉（开合/遮罩/Escape/点链接关闭/锁滚动均由 cards.js 驱动）。
+       移动端顶栏高度/固定定位/安全区/汉堡尺寸全部交给设计系统，不再在页面里写 56px。 */
+    .nav { background: var(--card-bg); border-bottom: 1px solid var(--border); }
+    @media (min-width: 861px) {
+      .nav { position: sticky; top: 0; z-index: var(--ant-z-topbar); }
+    }
     .nav .in { max-width: 960px; margin: 0 auto; padding: 0 16px; display: flex; align-items: center; gap: 12px; min-height: 56px; }
-    .nav h1 { font-size: 18px; font-weight: 600; color: var(--orange); display: inline-flex; align-items: center; gap: 10px; white-space: nowrap; }
+    .nav h1 { font-size: 16px; font-weight: 600; color: var(--text); display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
     .nav .brand-logo { height: 28px; width: auto; display: block; }
     .menu { display: flex; align-items: center; gap: 4px; min-width: 0; }
     .nav .menu a { color: var(--text); text-decoration: none; font-size: 14px; padding: 6px 12px; border-radius: 4px; white-space: nowrap; }
     .nav .menu a:hover { background: var(--bg); color: var(--blue); }
     .nav .menu a.cur { color: #1677ff; background: #e6f4ff; font-weight: 600; }
     .nav-meta { margin-left: auto; color: var(--gray); font-size: 13px; white-space: nowrap; }
-    /* 汉堡按钮（cards.js 自动插入 .burger）：桌面隐藏，<=860px 出现且整页只有这一只 */
-    .burger { display: none; }
+    /* 汉堡按钮由 cards.js 自动插入，尺寸/位置/层级走设计系统 4.6。 */
     @media (max-width: 860px) {
-      .nav .in { padding: 0 14px; }
-      .nav h1 { font-size: 15px; gap: 8px; min-width: 0; }
+      .nav .in { padding: 0 16px; height: 100%; min-height: 0; }
+      .nav h1 { font-size: 16px; gap: 6px; min-width: 0; }
       .nav .brand-logo { height: 22px; }
       .nav h1 .nav-title-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
       .nav-meta { display: none; }
-      .burger {
-        display: inline-flex;
-        position: relative;
-        width: 44px; height: 44px; flex: none;
-        margin-left: auto;
-        margin-right: 0;
-        order: 999;
-        padding: 0;
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        background: #fff;
-        color: var(--text);
-        cursor: pointer;
-        align-items: center;
-        justify-content: center;
-      }
-      .burger::before, .burger::after {
-        content: "";
-        position: absolute;
-        left: 12px;
-        width: 18px;
-        height: 2px;
-        border-radius: 1px;
-        background: currentColor;
-        transition: transform .3s cubic-bezier(.23, 1, .32, 1), top .3s cubic-bezier(.23, 1, .32, 1), box-shadow .3s;
-      }
-      .burger::before { top: 16px; box-shadow: 0 6px 0 currentColor; }
-      .burger::after { top: 28px; }
-      .nav.open .burger::before { top: 21px; box-shadow: none; transform: rotate(45deg); }
-      .nav.open .burger::after { top: 21px; transform: rotate(-45deg); }
-      /* 遮罩：盖住顶栏以下区域，点击由 cards.js 关闭 */
-      .nav::before {
-        content: "";
-        position: fixed;
-        left: 0; right: 0; top: 56px; bottom: 0;
-        background: rgba(0, 0, 0, .45);
-        z-index: 1000;
-        opacity: 0;
-        visibility: hidden;
-        pointer-events: none;
-        transition: opacity .3s ease, visibility 0s linear .3s;
-      }
-      .nav.open::before {
-        opacity: 1;
-        visibility: visible;
-        pointer-events: auto;
-        transition: opacity .3s ease, visibility 0s;
-      }
-      /* 抽屉：菜单本体收成右侧面板 */
-      .nav .menu {
-        position: fixed;
-        top: 56px; right: 0; bottom: 0; left: auto;
-        width: min(300px, 82vw);
-        flex-direction: column;
-        align-items: stretch;
-        gap: 4px;
-        margin: 0;
-        padding: 8px 10px calc(16px + env(safe-area-inset-bottom, 0px));
-        background: #fff;
-        border-left: 1px solid #f0f0f0;
-        box-shadow: -6px 0 16px rgba(0, 0, 0, .08);
-        overflow: auto;
-        z-index: 1001;
-        transform: translateX(100%);
-        visibility: hidden;
-        pointer-events: none;
-        transition: transform .3s cubic-bezier(.23, 1, .32, 1), visibility 0s linear .3s;
-      }
-      .nav.open .menu {
-        transform: translateX(0);
-        visibility: visible;
-        pointer-events: auto;
-        transition: transform .3s cubic-bezier(.23, 1, .32, 1), visibility 0s;
-      }
       .nav .menu a {
         width: 100%;
         min-height: 44px;
@@ -129,9 +56,6 @@
         font-size: 15px;
       }
       body:has(.nav.open) { overflow: hidden; }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      .burger::before, .burger::after, .nav .menu { transition: none; }
     }
     .container { max-width: 960px; margin: 24px auto; padding: 0 16px; }
     .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 16px; }

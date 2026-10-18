@@ -25,7 +25,7 @@ def _engine_reportdb() -> bool:
 
 
 _RETIRED_HTML = (
-    "<!doctype html><meta charset='utf-8'><title>已下线</title>"
+    "<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover'><title>已下线</title>"
     "<p>Excel 自动回填工具已下线：区域各指标情况一览现在由系统（reportdb）统一计算并导出，"
     "请使用 reportdb 网页的「日报导出」。</p>"
 )
