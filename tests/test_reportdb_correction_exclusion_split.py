@@ -184,7 +184,7 @@ def test_migration_v5_per_indicator_exclusions_become_vehicle_level(tmp_path):
     h = _ins(c, "EEE", "renewal", "exclude", "pending", eff=None)
     c.commit()
     assert dbm.schema_version(c) == 4
-    assert dbm.migrate(c) == 6
+    assert dbm.migrate(c) == len(dbm.MIGRATIONS)
     st = {r["id"]: dict(r) for r in c.execute("SELECT * FROM exemptions")}
     assert st[ex1]["kind"] == "exempt" and st[ex1]["indicator"] == "second_service" and st[ex1]["status"] == "approved"   # 豁免 → 修正结果，原样
     assert all(st[i]["indicator"] == "all" for i in (a, b, d, e, f, g, h))
@@ -203,7 +203,7 @@ def test_migration_v5_per_indicator_exclusions_become_vehicle_level(tmp_path):
     # 幂等：再迁移一次什么也不变
     snap = [tuple(r) for r in c.execute("SELECT * FROM exemptions ORDER BY id")]
     nlog = c.execute("SELECT COUNT(*) FROM exemption_log").fetchone()[0]
-    assert dbm.migrate(c) == 6
+    assert dbm.migrate(c) == len(dbm.MIGRATIONS)
     assert [tuple(r) for r in c.execute("SELECT * FROM exemptions ORDER BY id")] == snap
     assert c.execute("SELECT COUNT(*) FROM exemption_log").fetchone()[0] == nlog
 

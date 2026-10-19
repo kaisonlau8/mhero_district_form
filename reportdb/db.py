@@ -161,8 +161,6 @@ def _migrate_v3(conn: sqlite3.Connection) -> None:
     conn.executescript(V3_DDL)
     _add_col(conn, "stores", "supervisor", "TEXT")            # 多维表格「督导」
     _add_col(conn, "users", "supervisor_name", "TEXT")        # 督导账号对应的督导姓名（匹配 stores.supervisor）
-    _add_col(conn, "users", "global_admin", "INTEGER NOT NULL DEFAULT 0")   # 统一登录全局超级管理员（唯一能管账号 / 权限）
-    _add_col(conn, "stores", "supervisor_phone", "TEXT")      # 多维表格「督导手机号」（与统一登录账号名=手机号匹配）
 
 
 def _migrate_v4(conn: sqlite3.Connection) -> None:
@@ -261,8 +259,15 @@ def _migrate_v6(conn: sqlite3.Connection) -> None:
             conn.execute("UPDATE regions SET name=? WHERE name=?", (norm(r[0]), r[0]))
 
 
+def _migrate_v7(conn: sqlite3.Connection) -> None:
+    """权限一期：全局超级管理员标记；督导门店只按飞书联络表「督导」匹配，清掉手工分配。"""
+    _add_col(conn, "users", "global_admin", "INTEGER NOT NULL DEFAULT 0")   # 统一登录全局超级管理员（唯一能管账号 / 权限）
+    _add_col(conn, "stores", "supervisor_phone", "TEXT")      # 多维表格「督导手机号」（与统一登录账号名=手机号匹配）
+    conn.execute("DELETE FROM user_stores")                    # 手工分配停用（部署前已备份数据库）
+
+
 # 迁移列表：下标+1 == user_version。只追加，不改旧条目。元素可以是 SQL 脚本或 callable(conn)。
-MIGRATIONS: list = [CORE_DDL + "\n" + "\n".join(ddl(d) for d in DATASETS), _migrate_v2, _migrate_v3, _migrate_v4, _migrate_v5, _migrate_v6]
+MIGRATIONS: list = [CORE_DDL + "\n" + "\n".join(ddl(d) for d in DATASETS), _migrate_v2, _migrate_v3, _migrate_v4, _migrate_v5, _migrate_v6, _migrate_v7]
 
 
 def connect(path: str | Path | None = None) -> sqlite3.Connection:

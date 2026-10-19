@@ -122,8 +122,10 @@ def history(conn, ex_id: int) -> list[dict]:
 
 
 # ----------------------------------------------------------------------------- 督导范围
+# 手机号优先：门店填了「督导手机号」就只认手机号；没填手机号的门店才按督导姓名兜底（防同名 / 旧姓名越权）
 SUPERVISOR_STORES_SQL = ("SELECT code,name,region FROM stores WHERE active=1 AND ("
-                         "(?<>'' AND COALESCE(supervisor_phone,'')=?) OR (?<>'' AND lower(COALESCE(supervisor,''))=lower(?)))")
+                         "(?<>'' AND COALESCE(supervisor_phone,'')=?) OR "
+                         "(COALESCE(supervisor_phone,'')='' AND ?<>'' AND lower(COALESCE(supervisor,''))=lower(?)))")
 
 
 def supervisor_stores(conn, username: str, supervisor_name: str) -> list:

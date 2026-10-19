@@ -43,8 +43,9 @@ def _http_json(url: str, data: dict | None = None, headers: dict | None = None, 
 def _override(username: str) -> str | None:
     try:
         from mhero_auth.roles import override_for
-    except Exception:  # noqa: BLE001 — 共享登录组件不可用：没有单独角色
-        return None
+    except Exception:  # noqa: BLE001 — 共享登录组件不可用
+        # 配了单独角色文件却读不到组件：按「用户」处理（故障时只降不升）
+        return "user" if os.getenv("MHERO_AUTH_ROLE_OVERRIDES_FILE", "").strip() else None
     return override_for(username, "report")
 
 

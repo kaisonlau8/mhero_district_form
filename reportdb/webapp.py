@@ -1499,24 +1499,23 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
     @app.get("/export/admin/users.xlsx")
     def export_admin_users(region: str = "", conn=Depends(get_conn), user=Depends(account_admin_required)):
         """账号列表（不含任何密码 / 令牌信息）。"""
-        users = [dict(r) for r in conn.execute("SELECT id,username,display_name,role,disabled,auth_source,created_at,last_login,supervisor_name FROM users ORDER BY id")]
-        if region:
-            mine = {r[0] for r in conn.execute("SELECT DISTINCT us.user_id FROM user_stores us JOIN stores s ON s.code=us.store_code WHERE s.region=?", (region,))}
-            names = {(r[0] or "").casefold() for r in conn.execute("SELECT DISTINCT supervisor FROM stores WHERE region=? AND active=1", (region,))}
-            users = [u for u in users if u["id"] in mine or (u["supervisor_name"] or "").casefold() in names and u["supervisor_name"]]
+        users = [dict(r) for r in conn.execute("SELECT id,username,display_name,role,disabled,auth_source,created_at,last_login,supervisor_name,global_admin FROM users ORDER BY id")]
         body = []
         for u in users:
-            n, regs = "", ""
-            if u["role"] == "supervisor":
-                sn = u["supervisor_name"] or ""
-                cond = "active=1 AND (code IN (SELECT store_code FROM user_stores WHERE user_id=?) OR (?<>'' AND lower(COALESCE(supervisor,''))=lower(?)))"
-                n = conn.execute(f"SELECT COUNT(*) FROM stores WHERE {cond}", (u["id"], sn, sn)).fetchone()[0]
-                regs = "、".join(sorted(r[0] for r in conn.execute(f"SELECT DISTINCT region FROM stores WHERE {cond}", (u["id"], sn, sn)) if r[0]))
-            body.append([u["username"], u["display_name"] or "", {"admin": "管理员", "supervisor": "督导"}.get(u["role"], u["role"]), u["supervisor_name"] or "",
+            n, regs, rs = "", "", set()
+            if u["role"] == "supervisor":   # 可申请门店：只按飞书联络表「督导」匹配（与页面、实际权限一致）
+                sr = ex_mod.supervisor_stores(conn, u["username"], u["supervisor_name"] or "")
+                rs = {r["region"] for r in sr if r["region"]}
+                n, regs = len(sr), "、".join(sorted(rs))
+            if region and region not in rs:
+                continue
+            label = {"admin": "超级管理员" if (u["global_admin"] or u["auth_source"] == "local") else "本系统超级管理员",
+                     "readonly_admin": "只读管理员", "supervisor": "督导"}.get(u["role"], "用户")
+            body.append([u["username"], u["display_name"] or "", label, u["supervisor_name"] or "",
                          n, regs, "已停用" if u["disabled"] else "正常", u["auth_source"], u["created_at"], u["last_login"] or ""])
         audit = [[a["at"], a["actor"], a["action"], a["detail"], a["ip"]] for a in conn.execute("SELECT * FROM audit_log ORDER BY id DESC LIMIT 200")]
         return xl_response(f"账号列表_{datetime.now():%Y-%m-%d}.xlsx", [
-            ("账号", ["用户名", "姓名", "角色", "督导姓名", "负责门店数", "负责区域", "状态", "来源", "创建时间", "最近登录"], body),
+            ("账号", ["用户名", "姓名", "角色", "督导姓名", "可申请门店数（飞书匹配）", "所在区域", "状态", "来源", "创建时间", "最近登录"], body),
             ("最近操作记录", ["时间", "操作者", "动作", "详情", "IP"], audit)])
 
     @app.get("/export/admin/users/{uid}/stores.xlsx")
@@ -1524,11 +1523,10 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         u = conn.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
         if not u:
             raise HTTPException(404)
-        mine = {r[0] for r in conn.execute("SELECT store_code FROM user_stores WHERE user_id=?", (uid,))}
+        matched = {r["code"] for r in ex_mod.supervisor_stores(conn, u["username"], u["supervisor_name"] or "")}
         rows = conn.execute("SELECT code,name,region,supervisor FROM stores WHERE active=1" + (" AND region=?" if region else "") + " ORDER BY seq", (region,) if region else ()).fetchall()
-        sn = (u["supervisor_name"] or "").casefold()
-        body = [["是" if r["code"] in mine else "否", r["name"], r["code"], r["region"] or "", r["supervisor"] or "", "是" if sn and (r["supervisor"] or "").casefold() == sn else "否"] for r in rows]
-        return xl_response(f"负责门店_{u['username']}.xlsx", [("门店分配", ["手工", "门店", "门店编码", "区域", "多维表格督导", "按姓名已匹配"], body)])
+        body = [[r["name"], r["code"], r["region"] or "", r["supervisor"] or "", "是" if r["code"] in matched else "否"] for r in rows]
+        return xl_response(f"可申请门店_{u['username']}.xlsx", [("可申请门店", ["门店", "门店编码", "区域", "飞书「督导」", "可申请"], body)])
 
     @app.get("/export/admin/exclusion-rules.xlsx")
     def export_exclusion_rules(region: str = "", conn=Depends(get_conn), user=Depends(admin_view_required)):

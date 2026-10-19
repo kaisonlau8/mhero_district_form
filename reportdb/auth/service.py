@@ -270,6 +270,9 @@ def provision_external(conn: sqlite3.Connection, ident: Identity) -> sqlite3.Row
         else:
             if u["disabled"]:
                 raise AuthError("账号已被停用")
+            if u["auth_source"] != ident.auth_source or u["username"] != ident.username:
+                # 同名（含大小写不同）的本地账号不与统一登录合并：防止借本地应急管理员身份提权，也防止覆盖它
+                raise AuthError("已有同名的本地账号，不能用统一登录进入，请联系超级管理员处理", 403)
             conn.execute("UPDATE users SET display_name=?, role=?, full_detail=?, last_login=?, global_admin=?, "
                          "supervisor_name=COALESCE(supervisor_name, ?) WHERE id=?",
                          (ident.display_name or u["display_name"], ident.role, int(ident.full_detail), _now(), int(ident.global_admin),

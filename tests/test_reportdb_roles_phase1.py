@@ -149,3 +149,18 @@ def test_oidc_mapping_roles_and_report_override(monkeypatch, tmp_path):
     assert m("u", "mhero-app-report").role == "viewer"                                       # 无身份 = 用户
     with pytest.raises(Exception):
         m("u2", "mhero-supervisor")                                                          # 未开通区域报表
+
+
+def test_phone_beats_name_and_local_merge_refused(web):
+    from reportdb.auth.base import AuthError, Identity
+    c = connect(web["db"])
+    # D1 写了别人的手机号：同名督导不能再按姓名匹配
+    c.execute("UPDATE stores SET supervisor_phone='13700000001' WHERE name=?", (D1,)); c.commit()
+    assert ex.supervisor_stores(c, "sup", "张督导") == []
+    assert {r["name"] for r in ex.supervisor_stores(c, "13700000001", "")} == {D1}
+    # 统一登录不能合并进同名本地账号（本地应急管理员）
+    with pytest.raises(AuthError):
+        service.provision_external(c, Identity("localadm", "x", "admin", True, "oidc", global_admin=False))
+    with pytest.raises(AuthError):
+        service.provision_external(c, Identity("LOCALADM", "x", "admin", True, "oidc", global_admin=False))
+    assert service.get_user(c, "localadm")["auth_source"] == "local"

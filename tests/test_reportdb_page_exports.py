@@ -151,7 +151,7 @@ def test_admin_exports_content(env):
     assert heads(wb(env["admin"].get("/export/admin/exclusion-rules.xlsx")))[:2] == ["#", "数据集"]
     assert heads(wb(env["admin"].get("/export/admin/spare-settings.xlsx")), 1)[0] == "版本"
     uid = connect(env["path"]).execute("SELECT id FROM users WHERE username='sup1'").fetchone()[0]
-    assert heads(wb(env["admin"].get(f"/export/admin/users/{uid}/stores.xlsx")))[:2] == ["手工", "门店"]
+    assert heads(wb(env["admin"].get(f"/export/admin/users/{uid}/stores.xlsx")))[:2] == ["门店", "门店编码"]
 
 
 def test_buttons_on_pages(env):

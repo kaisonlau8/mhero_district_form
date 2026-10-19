@@ -60,6 +60,8 @@ def sync_users(conn: sqlite3.Connection, snapshot: list[dict], backend, actor: s
                 ident = backend.map_identity(_info_from_snapshot(row))
             except AuthError:
                 stats["skipped_no_access"] += 1
+                if oidc_local:   # 失去本系统权限：旧会话立即作废（下次登录也会被拒）
+                    conn.execute("DELETE FROM sessions WHERE user_id=?", (u["id"],))
                 continue
             eligible.add(name.casefold())
             stats["eligible"] += 1

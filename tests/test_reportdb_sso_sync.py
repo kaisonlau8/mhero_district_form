@@ -167,3 +167,16 @@ def test_autosync_failure_does_not_break_page(env, monkeypatch):
     conn.close()
     c = TestClient(app); c.cookies.set("reportdb_session", tok)
     assert c.get("/admin/users").status_code == 200
+
+
+def test_lost_access_revokes_sessions(env):
+    db, f, svc = env
+    snap_sync(db, svc)
+    conn = connect(db)
+    uid = service.get_user(conn, "13700000001")["id"]
+    service.create_session(conn, uid)
+    conn.close()
+    f.roles["mhero-app-report"].discard("13700000001")       # 区域报表权限被收回（Casdoor 里改的）
+    snap_sync(db, svc)
+    conn = connect(db)
+    assert conn.execute("SELECT COUNT(*) FROM sessions WHERE user_id=?", (uid,)).fetchone()[0] == 0
