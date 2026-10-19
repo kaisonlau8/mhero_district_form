@@ -74,7 +74,7 @@ def ingest_report(conn: sqlite3.Connection, report: Path, snap: str, **kw) -> di
 
 
 def recompute(conn: sqlite3.Connection, snap: str, region_mode: str | None = None, remap: bool = False) -> int:
-    """重算某一天。remap=True：先按当前门店表重新归属各明细行的 region / in_scope。"""
+    """重算某一天。remap=True：按当前门店表重新归属各明细行的 in_scope，并按 DMS 区域重算 region。"""
     if remap:
         lookup = region_lookup_factory(conn)
         with conn:

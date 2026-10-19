@@ -244,7 +244,7 @@ def _migrate_v5(conn: sqlite3.Connection) -> None:
 
 
 def _migrate_v6(conn: sqlite3.Connection) -> None:
-    """区域口径：报表区域以 DMS 导出为准（归一：华中1区→华中1）；多维表格区域仅作 DMS 为空时的回退（bitable_region）。"""
+    """区域口径：报表区域只取 DMS 导出（归一：华中1区→华中1）；多维表格区域只存 bitable_region 作信息，不参与归属。"""
     import re
 
     def norm(v):

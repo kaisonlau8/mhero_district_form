@@ -37,6 +37,9 @@ def norm_region(v: Any) -> str | None:
     return t or None
 
 
+NO_REGION = "无区域"  # DMS 区域为空时的区域口径（不再回退多维表格区域）
+
+
 class StoreSyncAborted(RuntimeError):
     """多维表格返回的门店名单为空或明显偏少：放弃本次同步，保留现有门店表。"""
 
@@ -50,8 +53,9 @@ def upsert_stores(
     min_ratio: float | None = None,
 ) -> dict[str, int]:
     """rows: [{code,name,region,province,city,district}]。
-    - 已有门店：更新名称/区域/省市区，标记 in_bitable=1。
-    - 新门店：追加到 seq 末尾（active=1）。
+    - 已有门店：更新名称/省市区和多维表格区域（bitable_region），保留 DMS 归属的 region。
+    - 新门店：追加到 seq 末尾（active=1），region 先为 NULL，待 apply_dms_regions 写入。
+    - 多维表格区域只写 bitable_region（仅信息展示），不参与门店区域归属。
     - authoritative=True（默认，多维表格为唯一来源）：不在清单里的门店 active=0，in_bitable=0。
     - 安全闸：清单为空，或有效门店数 < 当前启用门店数 × min_ratio（默认 50%）→ 抛 StoreSyncAborted，什么都不改。
     """
@@ -76,12 +80,12 @@ def upsert_stores(
                 continue
             seen.add(code)
             r = dict(r, region=norm_region(r.get("region")))
-            cur = conn.execute("SELECT code,name,region FROM stores WHERE code=?", (code,)).fetchone()
+            cur = conn.execute("SELECT code,name FROM stores WHERE code=?", (code,)).fetchone()
             if cur:
                 conn.execute(
-                    "UPDATE stores SET name=?, region=?, bitable_region=?, province=?, city=?, district=?, in_bitable=1,"
+                    "UPDATE stores SET name=?, bitable_region=?, province=?, city=?, district=?, in_bitable=1,"
                     " active=1, source=?, updated_at=? WHERE code=?",
-                    (r.get("name") or cur["name"], r.get("region") or cur["region"], r.get("region"), r.get("province"),
+                    (r.get("name") or cur["name"], r.get("region"), r.get("province"),
                      r.get("city"), r.get("district"), source, _now(), code),
                 )
                 if "supervisor" in r:
@@ -91,8 +95,8 @@ def upsert_stores(
                 max_seq += 1
                 conn.execute(
                     "INSERT INTO stores(code,name,region,bitable_region,province,city,district,seq,active,source,in_bitable,updated_at)"
-                    " VALUES (?,?,?,?,?,?,?,?,1,?,1,?)",
-                    (code, r.get("name") or code, r.get("region"), r.get("region"), r.get("province"), r.get("city"),
+                    " VALUES (?,?,NULL,?,?,?,?,?,1,?,1,?)",
+                    (code, r.get("name") or code, r.get("region"), r.get("province"), r.get("city"),
                      r.get("district"), max_seq, source, _now()),
                 )
                 if "supervisor" in r:
@@ -151,60 +155,61 @@ def sync_from_bitable(conn: sqlite3.Connection, **kw) -> dict[str, int]:
 def region_lookup_factory(conn: sqlite3.Connection):
     """返回 f(code, name, src_region=None)->(region|None, in_scope)。
     是否参与考核（in_scope）只认启用中的门店（多维表格清单）；不在清单内 → (None, 0)。
-    区域：以 DMS 导出的区域列（归一后）为准；DMS 为空/不是已知区域时，退回该门店的多维表格区域。"""
-    known = {(r[0] or "").casefold() for r in conn.execute("SELECT name FROM regions")}
-    by_code: dict[str, str | None] = {}
-    by_name: dict[str, str | None] = {}
-    has_b = "bitable_region" in {r[1] for r in conn.execute("PRAGMA table_info(stores)")}
-    rcol = "COALESCE(bitable_region,region)" if has_b else "region"
-    for r in conn.execute(f"SELECT code,name,{rcol} AS region FROM stores WHERE active=1 ORDER BY seq"):
-        by_code[(r["code"] or "").casefold()] = r["region"]
-        by_name.setdefault((r["name"] or "").casefold(), r["region"])
+    区域只取 DMS 导出的区域列（归一后，不要求出现在 regions 表里）；DMS 为空 → 「无区域」。
+    不再回退多维表格区域。"""
+    codes: set[str] = set()
+    names: set[str] = set()
+    for r in conn.execute("SELECT code,name FROM stores WHERE active=1 ORDER BY seq"):
+        codes.add((r["code"] or "").casefold())
+        names.add((r["name"] or "").casefold())
 
     def lookup(code: Any, name: Any, src_region: Any = None) -> tuple[str | None, int]:
-        if code and str(code).casefold() in by_code:
-            fb = by_code[str(code).casefold()]
-        elif name and str(name).casefold() in by_name:
-            fb = by_name[str(name).casefold()]
-        else:
+        code_hit = bool(code) and str(code).casefold() in codes
+        name_hit = bool(name) and str(name).casefold() in names
+        if not code_hit and not name_hit:
             return None, 0
-        d = norm_region(src_region)
-        if d and d.casefold() in known:
-            return d, 1
-        return fb, 1
+        return norm_region(src_region) or NO_REGION, 1
 
     return lookup
 
 
 def apply_dms_regions(conn: sqlite3.Connection, snap: str) -> dict[str, Any]:
-    """把门店表的 region 设为该快照 DMS 导出里该店出现最多的区域（归一后）；DMS 里没有 → 退回多维表格区域。
-    只在 snap 是最新快照时执行（门店表只反映最新状态）。返回 {changed:[...], fallback_rows:{ds:n}, fallback_stores:[...]}。"""
+    """把门店表的 region 设为该快照 DMS 导出里该店出现最多的区域（归一后）；没有 DMS 区域行 → 「无区域」。
+    只在 snap 是最新快照时执行（门店表只反映最新状态）。
+    返回 {changed:[...], fallback_rows:{ds:n}, fallback_stores:[...]}；fallback 现指落到「无区域」的明细行/门店。"""
     from .datasets import DATASETS
-    if "bitable_region" not in {r[1] for r in conn.execute("PRAGMA table_info(stores)")}:
-        return {"skipped": True}
     latest = conn.execute("SELECT MAX(snapshot_date) FROM snapshots").fetchone()[0]
     if latest and snap < latest:
         return {"skipped": True}
     votes: dict[str, dict[str, int]] = {}
     fb_rows: dict[str, int] = {}
     fb_stores: set[str] = set()
+    # 投票按门店表里的规范编码归并：编码命中优先，否则按门店名称（与 region_lookup_factory 的口径一致）
+    code_by_code: dict[str, str] = {}
+    code_by_name: dict[str, str] = {}
+    for s in conn.execute("SELECT code,name FROM stores WHERE active=1 ORDER BY seq"):
+        code_by_code[(s["code"] or "").casefold()] = (s["code"] or "").casefold()
+        code_by_name.setdefault((s["name"] or "").casefold(), (s["code"] or "").casefold())
     for ds in DATASETS:
         if not ds.has_region:
             continue
         for r in conn.execute(
-            f"SELECT {ds.store_code_col} c, region, src_region FROM {ds.table} WHERE snapshot_date=? AND in_scope=1", (snap,)):
-            if norm_region(r["src_region"]) and r["region"]:
-                votes.setdefault((r["c"] or "").casefold(), {}).setdefault(r["region"], 0)
-                votes[(r["c"] or "").casefold()][r["region"]] += 1
+            f"SELECT {ds.store_code_col} c, {ds.store_name_col} n, src_region FROM {ds.table} WHERE snapshot_date=? AND in_scope=1", (snap,)):
+            d = norm_region(r["src_region"])
+            if d:
+                key = code_by_code.get((r["c"] or "").casefold()) or code_by_name.get((r["n"] or "").casefold()) or (r["c"] or "").casefold()
+                votes.setdefault(key, {}).setdefault(d, 0)
+                votes[key][d] += 1
             else:
                 fb_rows[ds.key] = fb_rows.get(ds.key, 0) + 1
-                fb_stores.add(r["c"] or "")
     changed = []
     with conn:
-        for s in conn.execute("SELECT code,name,region,bitable_region FROM stores WHERE active=1").fetchall():
+        for s in conn.execute("SELECT code,name,region FROM stores WHERE active=1").fetchall():
             v = votes.get((s["code"] or "").casefold())
-            new = max(v.items(), key=lambda kv: kv[1])[0] if v else s["bitable_region"]
-            if new and new != s["region"]:
+            new = max(v.items(), key=lambda kv: kv[1])[0] if v else NO_REGION
+            if new == NO_REGION:
+                fb_stores.add(s["code"] or "")
+            if new != s["region"]:
                 conn.execute("UPDATE stores SET region=? WHERE code=?", (new, s["code"]))
                 changed.append((s["code"], s["name"], s["region"], new))
     return {"changed": changed, "fallback_rows": fb_rows, "fallback_stores": sorted(fb_stores)}

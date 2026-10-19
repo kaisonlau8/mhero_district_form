@@ -21,10 +21,10 @@ def make_data(conn, extra_stock=()):
     code = lambda n: stores[n]["code"]
     # 首保（12 列）：B=大区(DMS) C=编码 D=名称 H=是否 I=实际日期（processor 规则：I 有值 => 是）
     first = [
-        row(12, {1: "北区", 2: code(D1), 3: D1, 7: "否", 8: "2026-01-01"}),   # I 有值 → 是
-        row(12, {1: "北区", 2: code(D1), 3: D1, 7: "是", 8: None}),          # I 空 → 否（H 原值被覆盖）
-        row(12, {1: "北区", 2: code(D1), 3: D1, 7: "否", 8: None}),
-        row(12, {1: "北区", 2: code(D2), 3: D2, 7: "是", 8: "2026-01-02"}),
+        row(12, {1: "华南区", 2: code(D1), 3: D1, 7: "否", 8: "2026-01-01"}),   # I 有值 → 是
+        row(12, {1: "华南区", 2: code(D1), 3: D1, 7: "是", 8: None}),          # I 空 → 否（H 原值被覆盖）
+        row(12, {1: "华南区", 2: code(D1), 3: D1, 7: "否", 8: None}),
+        row(12, {1: "华北区", 2: code(D2), 3: D2, 7: "是", 8: "2026-01-02"}),
         row(12, {1: "中区", 2: "NOSUCH", 3: "不在门店表的店", 7: "是", 8: "2026-01-02"}),  # 无归属 → 不计区域
     ]
     from app.processor import normalize_first_service_rows
@@ -71,7 +71,7 @@ def test_hand_computed(conn):
     assert first.rows[2][1:4] == [0, 0, 0] and first.rows[3][1:4] == [0, 0, 0]
     assert [r[4] for r in first.rows] == [2, 1, 3, 3]  # RANK 降序，并列同名次
     assert first.total[:4] == ["合计", 4, 2, 0.5]
-    # 区域层：南宁/天津属于门店表里的区域；"不在门店表的店" 不进任何区域
+    # 区域层：南宁/天津按 DMS 区域（归一后）归属；"不在门店表的店" 不进任何区域
     summ = sheets["summary"].blocks[0]
     assert summ.total[1] == 4 and summ.total[2] == 2, "全国=各区域之和，不含未归属行"
     # 招揽：待处理 1 / 总 2（南宁）
@@ -108,7 +108,7 @@ def test_region_mode_source_vs_store(conn):
     data, origin = make_data(conn)
     ingest_datasets(conn, "2026-01-01", data, source="t", origin_renewal=origin, recompute=False)
     src = calc.compute(conn, "2026-01-01", "source")["summary"].blocks[0]
-    # source 模式沿用 DMS 大区文本：'北区'/'中区' 都不等于模板区域名 → 全 0 且比率为空（与旧模板在新区域名下的行为一致）
+    # source 模式沿用 DMS 大区原文：'华南区'/'华北区'/'中区' 都不等于模板区域名 → 全 0 且比率为空（与旧模板在新区域名下的行为一致）
     assert src.total[1] == 0 and all(r[3] is None for r in src.rows)
 
 

@@ -33,7 +33,8 @@ def rows_for(conn, ind, n_first=1):
     st = {r["name"]: r["code"] for r in conn.execute("SELECT code,name FROM stores")}
 
     def mk(vin, store, done):
-        return row(width, {vi: vin, 1: "x", 2: st.get(store, "NOSUCH"), 3: store, di: done})
+        region = "华南区" if store == D1 else ("华北区" if store == D2 else "中区")
+        return row(width, {vi: vin, 1: region, 2: st.get(store, "NOSUCH"), 3: store, di: done})
 
     return [mk(f"A1{ind[:2].upper()}0000000000001", D1, miss),     # D1 未完成（可豁免）
             mk(f"A2{ind[:2].upper()}0000000000002", D1, hit),      # D1 已完成

@@ -52,11 +52,16 @@ def test_recompute_remap(conn):
 
 def test_store_upsert_rules(conn):
     n0 = conn.execute("SELECT COUNT(*) FROM stores WHERE active=1").fetchone()[0]
+    dms_region_before = conn.execute("SELECT region FROM stores WHERE code='MSCSDS001'").fetchone()[0]
     res = upsert_stores(conn, [{"code": "NEW001", "name": "新店", "region": "华东"},
                                {"code": "MSCSDS001", "name": "改名后的店", "region": "华南"}], authoritative=False)
     assert (res["added"], res["updated"], res["deactivated"]) == (1, 1, 0)
     assert conn.execute("SELECT COUNT(*) FROM stores WHERE active=1").fetchone()[0] == n0 + 1
-    assert conn.execute("SELECT region FROM stores WHERE code='MSCSDS001'").fetchone()[0] == "华南"
+    # 多维表格区域只写 bitable_region（信息用）；stores.region 由 DMS 快照写入，不在同步时改
+    assert conn.execute("SELECT region FROM stores WHERE code='MSCSDS001'").fetchone()[0] == dms_region_before
+    assert conn.execute("SELECT bitable_region FROM stores WHERE code='MSCSDS001'").fetchone()[0] == "华南"
+    assert conn.execute("SELECT region FROM stores WHERE code='NEW001'").fetchone()[0] is None
+    assert conn.execute("SELECT bitable_region FROM stores WHERE code='NEW001'").fetchone()[0] == "华东"
     # 直营标记不被同步覆盖；新店追加在末尾
     assert conn.execute("SELECT MAX(seq) FROM stores").fetchone()[0] == conn.execute("SELECT seq FROM stores WHERE code='NEW001'").fetchone()[0]
     import pytest
@@ -67,6 +72,7 @@ def test_store_upsert_rules(conn):
     res = upsert_stores(conn, [{"code": "NEW001", "name": "新店", "region": "华东"}], min_ratio=0)  # 显式放宽才会真停用
     assert res["deactivated"] == n0
     assert conn.execute("SELECT COUNT(*) FROM stores WHERE active=1").fetchone()[0] == 1
+    assert conn.execute("SELECT region FROM stores WHERE code='NEW001'").fetchone()[0] is None
 
 
 def test_pipeline_hook_default_off(monkeypatch):
@@ -96,7 +102,7 @@ def test_cli_real_files(tmp_path, capsys):
 
 
 def test_dms_region_rules(conn):
-    """区域取 DMS 导出区域列（归一）；DMS 区域为空 → 自动剔除（分子分母都不计）；区域未知 → 退回多维表格区域。"""
+    """区域取 DMS 导出区域列（归一）；DMS 区域为空 → 自动剔除（分子分母都不计）；不回退多维表格区域。"""
     from reportdb import exclusions
     from reportdb.stores import norm_region
     from test_reportdb_calc import D1, row
@@ -106,7 +112,7 @@ def test_dms_region_rules(conn):
     code = conn.execute("SELECT code FROM stores WHERE name=?", (D1,)).fetchone()[0]
     data["first-service"] = [r[:] for r in data["first-service"]] + [
         row(len(data["first-service"][0]), {1: "", 2: code, 3: D1, 7: "否"}),            # DMS 无区域
-        row(len(data["first-service"][0]), {1: "华东区", 2: code, 3: D1, 7: "否"}),      # DMS 区域覆盖多维表格
+        row(len(data["first-service"][0]), {1: "华东区", 2: code, 3: D1, 7: "否"}),      # DMS 区域优先于多维表格区域
     ]
     ingest.ingest_datasets(conn, "2026-02-01", data, source="t", origin_renewal=origin)
     regs = {r[0]: r[1] for r in conn.execute("SELECT row_no, region FROM first_service WHERE snapshot_date='2026-02-01'")}
@@ -121,3 +127,75 @@ def test_dms_region_rules(conn):
     total_first = sum(1 for r in conn.execute("SELECT 1 FROM first_service WHERE snapshot_date='2026-02-01' AND in_scope=1 AND trim(COALESCE(src_region,''))<>''"))
     nat = [b for b in sheet.blocks if b.title == "首保实施率"][0].total
     assert nat[1] == total_first
+
+
+def test_region_lookup_dms_only(conn):
+    """区域只取 DMS（归一后，不要求已知区域）；DMS 为空 → 无区域；不在门店表 → (None, 0)。"""
+    from reportdb.stores import NO_REGION, region_lookup_factory
+    from test_reportdb_calc import D1
+
+    code = conn.execute("SELECT code FROM stores WHERE name=?", (D1,)).fetchone()[0]
+    conn.execute("UPDATE stores SET region='华南', bitable_region='华南' WHERE code=?", (code,))
+    conn.commit()
+    lookup = region_lookup_factory(conn)
+    assert lookup(code, D1, "华中1区") == ("华中1", 1)
+    assert lookup(code, D1, "  ") == (NO_REGION, 1)
+    assert lookup(code, D1, "海外区") == ("海外", 1)          # 不在 regions 表也按 DMS 原值，不回退多维表格
+    assert lookup("NOPE", D1, "华东区") == ("华东", 1)        # 编码找不到时按门店名称
+    assert lookup("NOPE", "不在门店表的店", "华东区") == (None, 0)
+
+
+def test_apply_dms_regions_no_votes_sets_no_region(conn):
+    """快照里没有该店的 DMS 区域行 → stores.region = 无区域（不再回退多维表格区域）。"""
+    from reportdb.stores import apply_dms_regions
+    from test_reportdb_calc import D1
+
+    code = conn.execute("SELECT code FROM stores WHERE name=?", (D1,)).fetchone()[0]
+    conn.execute("UPDATE stores SET region='华南', bitable_region='华南' WHERE code=?", (code,))
+    conn.commit()
+    res = apply_dms_regions(conn, "2026-01-01")
+    assert conn.execute("SELECT region FROM stores WHERE code=?", (code,)).fetchone()[0] == "无区域"
+    assert conn.execute("SELECT bitable_region FROM stores WHERE code=?", (code,)).fetchone()[0] == "华南"
+    assert code in res["fallback_stores"]
+    assert any(c[0] == code and c[3] == "无区域" for c in res["changed"])
+
+
+def test_apply_dms_regions_uses_dms_not_feishu(conn):
+    """门店区域取该店 DMS 区域众数；DMS 空行只计数，不拿多维表格区域兜底。"""
+    from test_reportdb_calc import D1, D2, make_data, row
+
+    data, origin = make_data(conn)
+    code1 = conn.execute("SELECT code FROM stores WHERE name=?", (D1,)).fetchone()[0]
+    code2 = conn.execute("SELECT code FROM stores WHERE name=?", (D2,)).fetchone()[0]
+    conn.execute("UPDATE stores SET region='华南', bitable_region='华南' WHERE code=?", (code1,))
+    conn.execute("UPDATE stores SET region='华东', bitable_region='华东' WHERE code=?", (code2,))
+    conn.commit()
+    # 只保留 D1 的两行首保数据：DMS 区域为「北区」；D2 没有任何 DMS 区域行
+    data = {k: [] for k in data}
+    data["first-service"] = [
+        row(12, {1: "北区", 2: code1, 3: D1, 7: "否", 8: None}),
+        row(12, {1: "北区", 2: code1, 3: D1, 7: "否", 8: None}),
+    ]
+    ingest.ingest_datasets(conn, "2026-03-01", data, source="t", origin_renewal=origin, recompute=False)
+    assert conn.execute("SELECT region FROM stores WHERE code=?", (code1,)).fetchone()[0] == "北"
+    assert conn.execute("SELECT region FROM stores WHERE code=?", (code2,)).fetchone()[0] == "无区域"
+    assert conn.execute("SELECT bitable_region FROM stores WHERE code=?", (code1,)).fetchone()[0] == "华南"
+    assert conn.execute("SELECT bitable_region FROM stores WHERE code=?", (code2,)).fetchone()[0] == "华东"
+
+
+def test_apply_dms_regions_majority_and_name_matched_votes(conn):
+    """众数取胜；编码为空但门店名称命中的行也计入该店；空区域行计入 fallback_rows。"""
+    from test_reportdb_calc import D1, make_data, row
+
+    data, origin = make_data(conn)
+    code1 = conn.execute("SELECT code FROM stores WHERE name=?", (D1,)).fetchone()[0]
+    data = {k: [] for k in data}
+    data["first-service"] = [
+        row(12, {1: "华北区", 2: code1, 3: D1, 7: "否", 8: None}),
+        row(12, {1: "华东区", 2: None, 3: D1, 7: "否", 8: None}),   # 编码空，按名称归到 D1
+        row(12, {1: "华东区", 2: None, 3: D1, 7: "否", 8: None}),
+        row(12, {1: None, 2: code1, 3: D1, 7: "否", 8: None}),      # DMS 区域空
+    ]
+    res = ingest.ingest_datasets(conn, "2026-03-02", data, source="t", origin_renewal=origin, recompute=False)
+    assert conn.execute("SELECT region FROM stores WHERE code=?", (code1,)).fetchone()[0] == "华东"
+    assert res["region_fallback_rows"] == {"first-service": 1}
