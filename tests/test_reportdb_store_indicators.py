@@ -104,7 +104,8 @@ def test_pages(client, tmp_path):
     c0 = connect(tmp_path / "t.sqlite3")
     code = next(s["code"] for s in si.compute(c0, SNAP1)["stores"] if s["name"] == D1)
     c0.close()
-    for who in ("admin", "sup1", "view1"):
+    assert client["view1"].get("/stores").status_code == 403 and client["view1"].get(f"/stores/{code}").status_code == 403   # 用户只看汇总
+    for who in ("admin", "sup1"):
         c = client[who]
         h = c.get("/stores").text
         assert D1 in h and D2 in h and "/stores/" in h and "门店指标" in h

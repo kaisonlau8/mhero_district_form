@@ -235,7 +235,7 @@ def test_every_route_is_guarded(app_env):
         if not hasattr(r, "dependant") or path in open_paths:
             continue
         names = {d.call.__name__ for d in r.dependant.dependencies}
-        assert names & {"login_required", "admin_required", "requester_required"}, path
+        assert names & {"login_required", "admin_required", "admin_view_required", "account_admin_required", "requester_required"}, path
 
 
 def test_oidc_require_role_rejects_unmapped(monkeypatch):

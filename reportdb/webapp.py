@@ -109,10 +109,14 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         def __init__(self, row, csrf):
             self.id, self.username, self.role = row["id"], row["username"], row["role"]
             self.display_name = row["display_name"] or row["username"]
-            self.full_detail = bool(row["full_detail"]) or row["role"] in ("admin", "supervisor")  # 督导默认看未脱敏明细
+            self.full_detail = bool(row["full_detail"]) or row["role"] in ("admin", "readonly_admin", "supervisor")  # 督导 / 只读管理员看未脱敏明细
             self.auth_source, self.csrf = row["auth_source"], csrf
             self.supervisor_name = row["supervisor_name"] or ""
             self.can_request = row["role"] in ("supervisor", "admin")
+            self.can_view_admin = row["role"] in ("admin", "readonly_admin")      # 只读管理员：管理页只能看
+            keys = row.keys()
+            # 账号 / 权限管理只归统一登录的全局超级管理员；本地应急管理员（auth_source=local）同样视为全局
+            self.global_admin = row["role"] == "admin" and (row["auth_source"] == "local" or bool(row["global_admin"] if "global_admin" in keys else 0))
             self.preview_admin = ""      # 管理员「以某位督导身份」只读预览时，这里是真实管理员的用户名
 
     def client_ip(request: Request) -> str:
@@ -139,12 +143,38 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
                 q = Principal(t, p.csrf)
                 q.preview_admin = p.username
                 p = q
+        if p.role == "viewer" and not _summary_path(request):
+            raise HTTPException(403, "你的账号是「用户」，只能查看汇总报表（首页 / 报表 / 日报），不能查看明细")
         request.state.principal = p
         return p
 
+    _SUMMARY_PREFIXES = ("/tables/", "/export/tables/", "/export/tables-view/", "/api/tables")
+    _SUMMARY_EXACT = {"/", "/export/home.xlsx", "/api/snapshots", "/api/health", "/reports/daily", "/export/daily-history.xlsx",
+                      "/export/daily-report.xlsx", "/account/password", "/logout", "/admin/preview/exit"}
+
+    def _summary_path(request: Request) -> bool:
+        """用户（viewer）只看汇总：首页、各汇总表、日报（不含明细版）。"""
+        path = request.url.path
+        if path == "/export/daily-report.xlsx" and request.query_params.get("detail") not in (None, "", "0"):
+            return False
+        return path in _SUMMARY_EXACT or path.startswith(_SUMMARY_PREFIXES)
+
     def admin_required(p: Principal = Depends(login_required)) -> Principal:
+        """写操作 / 审批 / 设置：本系统超级管理员（全局超级管理员，或黄页里给区域报表单独设为超级管理员）。"""
         if p.role != "admin":
+            raise HTTPException(403, "只读管理员只能查看，不能修改" if p.role == "readonly_admin" else "需要管理员权限")
+        return p
+
+    def admin_view_required(p: Principal = Depends(login_required)) -> Principal:
+        """管理页的查看（审批列表、规则、备件设置及其导出）：超级管理员或只读管理员。"""
+        if not p.can_view_admin:
             raise HTTPException(403, "需要管理员权限")
+        return p
+
+    def account_admin_required(p: Principal = Depends(login_required)) -> Principal:
+        """账号 / 权限管理：只有全局超级管理员（或本地应急管理员）。"""
+        if not p.global_admin:
+            raise HTTPException(403, "账号与权限管理只限全局超级管理员")
         return p
 
     def check_csrf(p: Principal, token: str) -> None:
@@ -220,6 +250,9 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         return {
             "request": request, "date": cur, "snaps": snaps, "snap": info, "user": user,
             "csrf": getattr(user, "csrf", ""), "is_admin": bool(user and user.role == "admin"),
+            "can_view_admin": bool(user and getattr(user, "can_view_admin", False)),
+            "is_global_admin": bool(user and getattr(user, "global_admin", False)),
+            "summary_only": bool(user and user.role == "viewer"),
             "stores_synced_at": get_meta(conn, "stores_directory_synced_at") or get_meta(conn, "stores_synced_at"),
             "can_change_password": bool(user and backend.manages_users and user.auth_source == "local"),
             # SSO (OIDC) users manage their password in the IdP's personal center (Casdoor /account)
@@ -755,23 +788,19 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
 
     # ---- 管理员：用户
     @app.get("/admin/users", response_class=HTMLResponse)
-    def admin_users(request: Request, msg: str = "", err: str = "", region: str = "", conn=Depends(get_conn), user=Depends(admin_required)):
+    def admin_users(request: Request, msg: str = "", err: str = "", region: str = "", conn=Depends(get_conn), user=Depends(account_admin_required)):
         if backend.name == "oidc":      # 打开页面时自动从统一登录补齐账号（节流 60 秒；Casdoor 不可达时静默跳过）
             sso_sync.maybe_sync(conn_factory, account_bridge(), backend, min_interval=60)
         users = [dict(r) for r in conn.execute(
-            "SELECT id,username,display_name,role,full_detail,disabled,auth_source,created_at,last_login,failed_count,locked_until,supervisor_name FROM users ORDER BY id")]
+            "SELECT id,username,display_name,role,full_detail,disabled,auth_source,created_at,last_login,failed_count,locked_until,supervisor_name,global_admin FROM users ORDER BY id")]
         for u in users:
             u["locked"] = u["locked_until"] > time.time()
-            if u["role"] == "supervisor":   # 负责范围：手工分配 ∪ 按督导姓名匹配的启用门店
-                rows = conn.execute("SELECT DISTINCT region FROM stores WHERE active=1 AND (code IN (SELECT store_code FROM user_stores WHERE user_id=?) "
-                                    "OR (?<>'' AND lower(COALESCE(supervisor,''))=lower(?)))", (u["id"], u["supervisor_name"] or "", u["supervisor_name"] or "")).fetchall()
-                n = conn.execute("SELECT COUNT(*) FROM stores WHERE active=1 AND (code IN (SELECT store_code FROM user_stores WHERE user_id=?) "
-                                 "OR (?<>'' AND lower(COALESCE(supervisor,''))=lower(?)))", (u["id"], u["supervisor_name"] or "", u["supervisor_name"] or "")).fetchone()[0]
-                u["scope_n"], u["scope_regions"] = n, "、".join(sorted(r[0] for r in rows if r[0]))
-        if region:   # 区域筛选：只看负责该区域门店的督导（手工分配或按督导姓名匹配）
-            mine = {r[0] for r in conn.execute("SELECT DISTINCT us.user_id FROM user_stores us JOIN stores s ON s.code=us.store_code WHERE s.region=?", (region,))}
-            names = {(r[0] or "").casefold() for r in conn.execute("SELECT DISTINCT supervisor FROM stores WHERE region=? AND active=1", (region,))}
-            users = [u for u in users if u["id"] in mine or (u["supervisor_name"] or "").casefold() in names and u["supervisor_name"]]
+            if u["role"] == "supervisor":   # 可申请的门店：只按多维表格「督导」字段（督导手机号 = 账号名，或督导姓名）匹配
+                sr = ex_mod.supervisor_stores(conn, u["username"], u["supervisor_name"] or "")
+                u["scope_n"], u["scope_regions"] = len(sr), "、".join(sorted({r["region"] for r in sr if r["region"]}))
+                u["_regions"] = {r["region"] for r in sr}
+        if region:   # 区域筛选：只看在该区域有门店的督导
+            users = [u for u in users if region in (u.get("_regions") or set())]
         return page(request, "admin_users.html", conn, user, region=region, regions=regions(conn), users=users, msg=msg, err=err,
                     manages=backend.manages_users, backend_name=backend.name, hub_accounts_url=os.getenv("MHERO_HUB_URL", "").rstrip("/") + "/admin/accounts" if os.getenv("MHERO_HUB_URL") else "",
                     audit=[dict(r) for r in conn.execute("SELECT * FROM audit_log ORDER BY id DESC LIMIT 20")])
@@ -794,7 +823,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         return app.state._bridge_cache
 
     @app.post("/admin/users/sync-sso")
-    def admin_users_sync_sso(csrf: str = Form(""), conn=Depends(get_conn), user=Depends(admin_required)):
+    def admin_users_sync_sso(csrf: str = Form(""), conn=Depends(get_conn), user=Depends(account_admin_required)):
         """「从 SSO 同步」：把统一登录里能进入本系统的账号全部补进用户列表（默认不分配门店），已有账号同步显示名 / 身份。"""
         check_csrf(user, csrf)
         if backend.name != "oidc":
@@ -864,7 +893,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
 
     @app.post("/admin/users/create")
     def admin_user_create(username: str = Form(""), password: str = Form(""), role: str = Form("viewer"),
-                          full_detail: str = Form(""), supervisor_name: str = Form(""), csrf: str = Form(""), conn=Depends(get_conn), user=Depends(admin_required)):
+                          full_detail: str = Form(""), supervisor_name: str = Form(""), csrf: str = Form(""), conn=Depends(get_conn), user=Depends(account_admin_required)):
         check_csrf(user, csrf)
         if not backend.manages_users:
             raise HTTPException(400, "当前为单点登录，用户在 IdP 中管理")
@@ -877,8 +906,10 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
 
     @app.post("/admin/users/{uid}/update")
     def admin_user_update(uid: int, role: str = Form(""), full_detail: str = Form(""), disabled: str = Form(""),
-                          action: str = Form("save"), csrf: str = Form(""), conn=Depends(get_conn), user=Depends(admin_required)):
+                          action: str = Form("save"), csrf: str = Form(""), conn=Depends(get_conn), user=Depends(account_admin_required)):
         check_csrf(user, csrf)
+        if backend.name == "oidc" and action != "unlock":
+            return _back("/admin/users", err="身份、系统角色和停用都在黄页「账号管理」里统一设置（只限全局超级管理员）")
         try:
             tgt = conn.execute("SELECT username,role,disabled FROM users WHERE id=?", (uid,)).fetchone()
             if backend.name == "oidc" and tgt and action in ("toggle", "save") and (action == "toggle" or (role and role != tgt["role"])):
@@ -913,7 +944,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         return _back("/admin/users", msg="已更新")
 
     @app.post("/admin/users/{uid}/password")
-    def admin_user_password(uid: int, password: str = Form(""), csrf: str = Form(""), conn=Depends(get_conn), user=Depends(admin_required)):
+    def admin_user_password(uid: int, password: str = Form(""), csrf: str = Form(""), conn=Depends(get_conn), user=Depends(account_admin_required)):
         check_csrf(user, csrf)
         row = conn.execute("SELECT username FROM users WHERE id=?", (uid,)).fetchone()
         if not row:
@@ -930,7 +961,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         return r[0] if r else None
 
     @app.get("/settings/spare-parts", response_class=HTMLResponse)
-    def spare_settings(request: Request, msg: str = "", err: str = "", conn=Depends(get_conn), user=Depends(admin_required)):
+    def spare_settings(request: Request, msg: str = "", err: str = "", conn=Depends(get_conn), user=Depends(admin_view_required)):
         snap = latest_snapshot(conn)
         today = datetime.now().strftime("%Y-%m-%d")
         active = spare_mod.list_for_date(conn, today if not snap or today >= snap else snap)
@@ -938,7 +969,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
                     err=err, today=today, snap=snap, regions=regions(conn))
 
     @app.get("/settings/spare-parts/template.xlsx")
-    def spare_template(version: int | None = None, conn=Depends(get_conn), user=Depends(admin_required)):
+    def spare_template(version: int | None = None, conn=Depends(get_conn), user=Depends(admin_view_required)):
         lst = spare_mod.get_list(conn, version) if version else spare_mod.list_for_date(conn, datetime.now().strftime("%Y-%m-%d"))
         name = f"常备件名单模板_v{lst['id']}.xlsx"
         return Response(spare_mod.template_xlsx(lst["items"]), media_type=XLSX_MIME,
@@ -959,7 +990,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         return RedirectResponse(f"/settings/spare-parts/preview/{did}", status_code=303)
 
     @app.get("/settings/spare-parts/preview/{draft_id}", response_class=HTMLResponse)
-    def spare_preview(draft_id: int, request: Request, conn=Depends(get_conn), user=Depends(admin_required)):
+    def spare_preview(draft_id: int, request: Request, conn=Depends(get_conn), user=Depends(admin_view_required)):
         try:
             d = spare_mod.load_draft(conn, draft_id)
             pv = spare_mod.preview(conn, d["parts"], latest_snapshot(conn))
@@ -1151,7 +1182,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
     @app.get("/admin/exemptions", response_class=HTMLResponse)
     def admin_exemptions(request: Request, status: str = "pending", indicator: str = "", kind: str = "", q: str = "",
                          requester: str = "", store: str = "", region: str = "", date_from: str = "", date_to: str = "",
-                         msg: str = "", err: str = "", conn=Depends(get_conn), user=Depends(admin_required)):
+                         msg: str = "", err: str = "", conn=Depends(get_conn), user=Depends(admin_view_required)):
         rows = ex_mod.list_exemptions(conn, status=status, indicator=indicator, q=q, requester=requester, store=store, kind=kind,
                                       region=region, date_from=date_from, date_to=date_to)
         counts = {r[0]: r[1] for r in conn.execute("SELECT status, COUNT(*) FROM exemptions GROUP BY status")}
@@ -1162,7 +1193,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
 
     @app.get("/admin/exemptions.xlsx")
     def admin_exemptions_xlsx(status: str = "", indicator: str = "", kind: str = "", q: str = "", requester: str = "", store: str = "",
-                              region: str = "", date_from: str = "", date_to: str = "", conn=Depends(get_conn), user=Depends(admin_required)):
+                              region: str = "", date_from: str = "", date_to: str = "", conn=Depends(get_conn), user=Depends(admin_view_required)):
         body = ex_mod.export_xlsx(ex_mod.list_exemptions(conn, status=status, indicator=indicator, kind=kind, q=q, requester=requester, store=store,
                                                          region=region, date_from=date_from, date_to=date_to, limit=100000))
         return Response(body, media_type=XLSX_MIME,
@@ -1184,7 +1215,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         return _back("/admin/exemptions", msg=msg)
 
     @app.get("/admin/exemptions/{ex_id}", response_class=HTMLResponse)
-    def admin_exemption_detail(ex_id: int, request: Request, conn=Depends(get_conn), user=Depends(admin_required)):
+    def admin_exemption_detail(ex_id: int, request: Request, conn=Depends(get_conn), user=Depends(admin_view_required)):
         r = conn.execute("SELECT * FROM exemptions WHERE id=?", (ex_id,)).fetchone()
         if not r:
             raise HTTPException(404)
@@ -1193,19 +1224,19 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
 
     # ---- 管理员：给督导分配门店
     @app.get("/admin/users/{uid}/stores", response_class=HTMLResponse)
-    def admin_user_stores(uid: int, request: Request, msg: str = "", region: str = "", conn=Depends(get_conn), user=Depends(admin_required)):
+    def admin_user_stores(uid: int, request: Request, msg: str = "", region: str = "", conn=Depends(get_conn), user=Depends(account_admin_required)):
         u = conn.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
         if not u:
             raise HTTPException(404)
-        mine = {r[0] for r in conn.execute("SELECT store_code FROM user_stores WHERE user_id=?", (uid,))}
-        stores = [dict(r) for r in conn.execute("SELECT code,name,region,supervisor FROM stores WHERE active=1" + (" AND region=?" if region else "") + " ORDER BY seq", (region,) if region else ())]
-        by_name = [s["code"] for s in stores if u["supervisor_name"] and (s["supervisor"] or "").casefold() == u["supervisor_name"].casefold()]
-        return page(request, "admin_user_stores.html", conn, user, u=dict(u), stores=stores, mine=mine, by_name=set(by_name), msg=msg, region=region, regions=regions(conn))
+        matched = {r["code"] for r in ex_mod.supervisor_stores(conn, u["username"], u["supervisor_name"] or "")}
+        stores = [dict(r) for r in conn.execute("SELECT code,name,region,supervisor,supervisor_phone FROM stores WHERE active=1" + (" AND region=?" if region else "") + " ORDER BY seq", (region,) if region else ())]
+        return page(request, "admin_user_stores.html", conn, user, u=dict(u), stores=stores, mine=set(), by_name=matched, msg=msg, region=region, regions=regions(conn))
 
     @app.post("/admin/users/{uid}/stores")
     def admin_user_stores_save(uid: int, supervisor_name: str = Form(""), codes: list[str] = Form([]), region: str = Form(""), csrf: str = Form(""),
-                               conn=Depends(get_conn), user=Depends(admin_required)):
+                               conn=Depends(get_conn), user=Depends(account_admin_required)):
         check_csrf(user, csrf)
+        return _back(f"/admin/users/{uid}/stores", msg="督导门店只按飞书联络表的「督导」字段自动匹配，已不支持手工分配；请在飞书表里修改")
         u = conn.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
         if not u:
             raise HTTPException(404)
@@ -1238,7 +1269,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
     # ------------------------------------------------------------------ 设置：剔除规则（管理员）
     @app.get("/settings/exclusion-rules", response_class=HTMLResponse)
     def exclusion_rules_page(request: Request, msg: str = "", err: str = "", pv_dataset: str = "", pv_column: str = "",
-                             pv_match: str = "equals", pv_value: str = "", region: str = "", conn=Depends(get_conn), user=Depends(admin_required)):
+                             pv_match: str = "equals", pv_value: str = "", region: str = "", conn=Depends(get_conn), user=Depends(admin_view_required)):
         snap = latest_snapshot(conn)
         reg_stores = {n.casefold() for n in stores_of(conn, region)} if region else None
         rules = excl_mod.list_rules(conn)
@@ -1456,7 +1487,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             ("我的申请明细", REQ_HEADS, _req_rows(mine, user.full_detail))])
 
     @app.get("/export/admin/exemptions/{ex_id}.xlsx")
-    def export_admin_exemption_detail(ex_id: int, conn=Depends(get_conn), user=Depends(admin_required)):
+    def export_admin_exemption_detail(ex_id: int, conn=Depends(get_conn), user=Depends(admin_view_required)):
         r = conn.execute("SELECT * FROM exemptions WHERE id=?", (ex_id,)).fetchone()
         if not r:
             raise HTTPException(404)
@@ -1466,41 +1497,39 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
              [[h["at"], h["actor"], h["action"], f"{h['from_status'] or ''} → {h['to_status'] or ''}", h["comment"] or ""] for h in ex_mod.history(conn, ex_id)])])
 
     @app.get("/export/admin/users.xlsx")
-    def export_admin_users(region: str = "", conn=Depends(get_conn), user=Depends(admin_required)):
+    def export_admin_users(region: str = "", conn=Depends(get_conn), user=Depends(account_admin_required)):
         """账号列表（不含任何密码 / 令牌信息）。"""
-        users = [dict(r) for r in conn.execute("SELECT id,username,display_name,role,disabled,auth_source,created_at,last_login,supervisor_name FROM users ORDER BY id")]
-        if region:
-            mine = {r[0] for r in conn.execute("SELECT DISTINCT us.user_id FROM user_stores us JOIN stores s ON s.code=us.store_code WHERE s.region=?", (region,))}
-            names = {(r[0] or "").casefold() for r in conn.execute("SELECT DISTINCT supervisor FROM stores WHERE region=? AND active=1", (region,))}
-            users = [u for u in users if u["id"] in mine or (u["supervisor_name"] or "").casefold() in names and u["supervisor_name"]]
+        users = [dict(r) for r in conn.execute("SELECT id,username,display_name,role,disabled,auth_source,created_at,last_login,supervisor_name,global_admin FROM users ORDER BY id")]
         body = []
         for u in users:
-            n, regs = "", ""
-            if u["role"] == "supervisor":
-                sn = u["supervisor_name"] or ""
-                cond = "active=1 AND (code IN (SELECT store_code FROM user_stores WHERE user_id=?) OR (?<>'' AND lower(COALESCE(supervisor,''))=lower(?)))"
-                n = conn.execute(f"SELECT COUNT(*) FROM stores WHERE {cond}", (u["id"], sn, sn)).fetchone()[0]
-                regs = "、".join(sorted(r[0] for r in conn.execute(f"SELECT DISTINCT region FROM stores WHERE {cond}", (u["id"], sn, sn)) if r[0]))
-            body.append([u["username"], u["display_name"] or "", {"admin": "管理员", "supervisor": "督导"}.get(u["role"], u["role"]), u["supervisor_name"] or "",
+            n, regs, rs = "", "", set()
+            if u["role"] == "supervisor":   # 可申请门店：只按飞书联络表「督导」匹配（与页面、实际权限一致）
+                sr = ex_mod.supervisor_stores(conn, u["username"], u["supervisor_name"] or "")
+                rs = {r["region"] for r in sr if r["region"]}
+                n, regs = len(sr), "、".join(sorted(rs))
+            if region and region not in rs:
+                continue
+            label = {"admin": "超级管理员" if (u["global_admin"] or u["auth_source"] == "local") else "本系统超级管理员",
+                     "readonly_admin": "只读管理员", "supervisor": "督导"}.get(u["role"], "用户")
+            body.append([u["username"], u["display_name"] or "", label, u["supervisor_name"] or "",
                          n, regs, "已停用" if u["disabled"] else "正常", u["auth_source"], u["created_at"], u["last_login"] or ""])
         audit = [[a["at"], a["actor"], a["action"], a["detail"], a["ip"]] for a in conn.execute("SELECT * FROM audit_log ORDER BY id DESC LIMIT 200")]
         return xl_response(f"账号列表_{datetime.now():%Y-%m-%d}.xlsx", [
-            ("账号", ["用户名", "姓名", "角色", "督导姓名", "负责门店数", "负责区域", "状态", "来源", "创建时间", "最近登录"], body),
+            ("账号", ["用户名", "姓名", "角色", "督导姓名", "可申请门店数（飞书匹配）", "所在区域", "状态", "来源", "创建时间", "最近登录"], body),
             ("最近操作记录", ["时间", "操作者", "动作", "详情", "IP"], audit)])
 
     @app.get("/export/admin/users/{uid}/stores.xlsx")
-    def export_admin_user_stores(uid: int, region: str = "", conn=Depends(get_conn), user=Depends(admin_required)):
+    def export_admin_user_stores(uid: int, region: str = "", conn=Depends(get_conn), user=Depends(account_admin_required)):
         u = conn.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
         if not u:
             raise HTTPException(404)
-        mine = {r[0] for r in conn.execute("SELECT store_code FROM user_stores WHERE user_id=?", (uid,))}
+        matched = {r["code"] for r in ex_mod.supervisor_stores(conn, u["username"], u["supervisor_name"] or "")}
         rows = conn.execute("SELECT code,name,region,supervisor FROM stores WHERE active=1" + (" AND region=?" if region else "") + " ORDER BY seq", (region,) if region else ()).fetchall()
-        sn = (u["supervisor_name"] or "").casefold()
-        body = [["是" if r["code"] in mine else "否", r["name"], r["code"], r["region"] or "", r["supervisor"] or "", "是" if sn and (r["supervisor"] or "").casefold() == sn else "否"] for r in rows]
-        return xl_response(f"负责门店_{u['username']}.xlsx", [("门店分配", ["手工", "门店", "门店编码", "区域", "多维表格督导", "按姓名已匹配"], body)])
+        body = [[r["name"], r["code"], r["region"] or "", r["supervisor"] or "", "是" if r["code"] in matched else "否"] for r in rows]
+        return xl_response(f"可申请门店_{u['username']}.xlsx", [("可申请门店", ["门店", "门店编码", "区域", "飞书「督导」", "可申请"], body)])
 
     @app.get("/export/admin/exclusion-rules.xlsx")
-    def export_exclusion_rules(region: str = "", conn=Depends(get_conn), user=Depends(admin_required)):
+    def export_exclusion_rules(region: str = "", conn=Depends(get_conn), user=Depends(admin_view_required)):
         snap = latest_snapshot(conn)
         reg_stores = {n.casefold() for n in stores_of(conn, region)} if region else None
         body, stores_rows = [], []
@@ -1525,7 +1554,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         return xl_response(f"历史日报清单_{datetime.now():%Y-%m-%d}.xlsx", [("历史日报", ["快照日期", "入库时间", "文件名"], body)])
 
     @app.get("/export/admin/spare-settings.xlsx")
-    def export_spare_settings(conn=Depends(get_conn), user=Depends(admin_required)):
+    def export_spare_settings(conn=Depends(get_conn), user=Depends(admin_view_required)):
         snap = latest_snapshot(conn)
         today = datetime.now().strftime("%Y-%m-%d")
         active = spare_mod.list_for_date(conn, today if not snap or today >= snap else snap)

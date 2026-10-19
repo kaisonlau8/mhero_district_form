@@ -25,8 +25,9 @@ _LAST = {"at": 0.0}
 
 def _info_from_snapshot(row: dict, prefix: str = "mhero-") -> dict:
     roles = []
-    if row.get("level"):
-        roles.append(prefix + row["level"])
+    suffix = {"admin": "admin", "readonly_admin": "readonly-admin", "supervisor": "supervisor"}.get(row.get("level") or "")
+    if suffix:
+        roles.append(prefix + suffix)
     roles += [f"{prefix}app-{a}" for a in row.get("apps") or []]
     name = row["name"]
     return {"preferred_username": name, "name": name, "sub": name, "displayName": row.get("display") or name,
@@ -59,6 +60,8 @@ def sync_users(conn: sqlite3.Connection, snapshot: list[dict], backend, actor: s
                 ident = backend.map_identity(_info_from_snapshot(row))
             except AuthError:
                 stats["skipped_no_access"] += 1
+                if oidc_local:   # 失去本系统权限：旧会话立即作废（下次登录也会被拒）
+                    conn.execute("DELETE FROM sessions WHERE user_id=?", (u["id"],))
                 continue
             eligible.add(name.casefold())
             stats["eligible"] += 1
@@ -66,10 +69,10 @@ def sync_users(conn: sqlite3.Connection, snapshot: list[dict], backend, actor: s
                 if row.get("disabled"):
                     stats["skipped_disabled"] += 1
                     continue
-                conn.execute("INSERT INTO users(username,display_name,role,full_detail,auth_source,created_at,created_by,supervisor_name)"
-                             " VALUES (?,?,?,?,?,?,?,?)",
+                conn.execute("INSERT INTO users(username,display_name,role,full_detail,auth_source,created_at,created_by,supervisor_name,global_admin)"
+                             " VALUES (?,?,?,?,?,?,?,?,?)",
                              (name, ident.display_name, ident.role, int(ident.full_detail), "oidc", service._now(), actor,
-                              ident.display_name if ident.role == "supervisor" else None))
+                              ident.display_name if ident.role == "supervisor" else None, int(ident.global_admin)))
                 stats["created"].append(name)
                 continue
             if not oidc_local:
@@ -80,11 +83,13 @@ def sync_users(conn: sqlite3.Connection, snapshot: list[dict], backend, actor: s
             if ident.role != u["role"]:
                 changes["role"] = ident.role
                 changes["full_detail"] = int(ident.full_detail)      # 与登录一致：身份变了，明细权限按新身份重算
+            if int(ident.global_admin) != int(u["global_admin"] or 0):
+                changes["global_admin"] = int(ident.global_admin)
             if ident.role == "supervisor" and not u["supervisor_name"]:
                 changes["supervisor_name"] = ident.display_name
             if changes:
                 conn.execute(f"UPDATE users SET {', '.join(k + '=?' for k in changes)} WHERE id=?", (*changes.values(), u["id"]))
-                if "role" in changes:
+                if "role" in changes or "global_admin" in changes:
                     conn.execute("DELETE FROM sessions WHERE user_id=?", (u["id"],))   # 权限变化后旧会话作废，重新登录生效
                 stats["updated"].append(name)
         for (name,) in conn.execute("SELECT username FROM users WHERE auth_source='oidc' AND disabled=0"):

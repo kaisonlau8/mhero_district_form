@@ -91,7 +91,7 @@ def render(plan: dict, existing: set[str] | None = None) -> str:
 
 
 def apply_reportdb(conn, people: list[dict], actor: str = "import") -> dict:
-    """users 行 + user_stores（只增不删；已存在用户不改角色）。"""
+    """只建 users 行（已存在用户不改角色）。门店不再写 user_stores：督导门店只按多维表格「督导」字段匹配（2026-10-19）。"""
     from .auth import service
     new_users = linked = 0
     valid = {r[0] for r in conn.execute("SELECT code FROM stores")}
@@ -103,10 +103,7 @@ def apply_reportdb(conn, people: list[dict], actor: str = "import") -> dict:
                              " VALUES (?,?,?,?,?,?,?,?,0)", (p["phone"], p["name"], "supervisor", 0, "oidc", service._now(), actor, p["name"]))
                 new_users += 1
                 u = service.get_user(conn, p["phone"])
-            for c in p["stores"]:
-                if c in valid:
-                    cur = conn.execute("INSERT OR IGNORE INTO user_stores(user_id,store_code) VALUES (?,?)", (u["id"], c))
-                    linked += cur.rowcount
+            linked += sum(1 for c in p["stores"] if c in valid)    # 仅统计：这些门店会按多维表格「督导」自动匹配
     service.audit(conn, actor, "import.supervisors", f"users+{new_users} store_links+{linked}")
     return {"new_users": new_users, "store_links": linked}
 

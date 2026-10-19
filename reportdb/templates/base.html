@@ -134,24 +134,24 @@
       <div class="mi {{ 'on' if P.startswith('/tables') or P.startswith('/reports') or P.startswith('/stores') }}"><button type="button" aria-haspopup="true" aria-expanded="false"><svg class="ai dd-caret" aria-hidden="true"><use href="#i-caret-down"/></svg>报表</button>
         <div class="dd ant-dropdown" role="menu">
           {% for slug, t in table_titles.items() %}{{ item('/tables/' ~ slug, t[0]) }}{% endfor %}
-          <a href="/stores{% if date %}?date={{ date }}{% endif %}" class="{{ 'cur' if P.startswith('/stores') }}">门店指标</a>
+          {% if not summary_only %}<a href="/stores{% if date %}?date={{ date }}{% endif %}" class="{{ 'cur' if P.startswith('/stores') }}">门店指标</a>{% endif %}
           <hr>{{ item('/reports/daily', '日报下载') }}</div></div>
-      <div class="mi {{ 'on' if P.startswith('/data') }}"><button type="button" aria-haspopup="true" aria-expanded="false"><svg class="ai dd-caret" aria-hidden="true"><use href="#i-caret-down"/></svg>明细数据</button>
-        <div class="dd ant-dropdown" role="menu">{% for d in datasets %}{{ item('/data/' ~ d.key, d.title.split('（')[0]) }}{% endfor %}</div></div>
+      {% if not summary_only %}<div class="mi {{ 'on' if P.startswith('/data') }}"><button type="button" aria-haspopup="true" aria-expanded="false"><svg class="ai dd-caret" aria-hidden="true"><use href="#i-caret-down"/></svg>明细数据</button>
+        <div class="dd ant-dropdown" role="menu">{% for d in datasets %}{{ item('/data/' ~ d.key, d.title.split('（')[0]) }}{% endfor %}</div></div>{% endif %}
       {% if can_request_nav %}<div class="mi {{ 'on' if P.startswith('/exemptions') or P.startswith('/exclusions') }}"><button type="button" aria-haspopup="true" aria-expanded="false"><svg class="ai dd-caret" aria-hidden="true"><use href="#i-caret-down"/></svg>督导申请</button>
         <div class="dd ant-dropdown" role="menu"><a href="/exemptions/new" class="{{ 'cur' if P=='/exemptions/new' }}">申请修正结果</a><a href="/exclusions/new" class="{{ 'cur' if P=='/exclusions/new' }}">申请剔除</a><a href="/exemptions/mine" class="{{ 'cur' if P=='/exemptions/mine' }}">我的申请</a></div></div>{% endif %}
-      {% if is_admin %}<div class="mi {{ 'on' if P.startswith('/admin') or P.startswith('/settings') }}"><button type="button" aria-haspopup="true" aria-expanded="false"><svg class="ai dd-caret" aria-hidden="true"><use href="#i-caret-down"/></svg>管理{% if pending_exemptions %}<span class="badge-n">{{ pending_exemptions }}</span>{% endif %}</button>
+      {% if can_view_admin %}<div class="mi {{ 'on' if P.startswith('/admin') or P.startswith('/settings') }}"><button type="button" aria-haspopup="true" aria-expanded="false"><svg class="ai dd-caret" aria-hidden="true"><use href="#i-caret-down"/></svg>管理{% if pending_exemptions %}<span class="badge-n">{{ pending_exemptions }}</span>{% endif %}</button>
         <div class="dd ant-dropdown" role="menu">
           <a href="/admin/exemptions" class="{{ 'cur' if P.startswith('/admin/exemptions') }}">修正结果 / 剔除审批{% if pending_exemptions %}<span class="badge-n">{{ pending_exemptions }}</span>{% endif %}</a>
-          <a href="/admin/users" class="{{ 'cur' if P.startswith('/admin/users') }}">用户管理</a><a href="https://oa-m-hero.41box.com/admin/accounts" id="hub-accounts-link">账号管理（新增账号 / 开通系统）</a><hr>
+          {% if is_global_admin %}<a href="/admin/users" class="{{ 'cur' if P.startswith('/admin/users') }}">用户管理</a><a href="https://oa-m-hero.41box.com/admin/accounts" id="hub-accounts-link">账号管理（新增账号 / 开通系统 / 角色）</a>{% endif %}<hr>
           <a href="/settings/spare-parts" class="{{ 'cur' if P.startswith('/settings/spare') }}">备件名单设置</a>
           <a href="/settings/exclusion-rules" class="{{ 'cur' if P.startswith('/settings/excl') }}">剔除规则</a></div></div>{% endif %}
       <span class="sp"></span>
       {% if user %}<div class="mi right {{ 'on' if P.startswith('/account') }}"><button type="button" aria-haspopup="true" aria-expanded="false"><svg class="ai" aria-hidden="true"><use href="#i-user"/></svg>{{ user.display_name }}<svg class="ai dd-caret" aria-hidden="true"><use href="#i-caret-down"/></svg></button>
-        <div class="dd ant-dropdown" role="menu"><div class="who">{{ {'admin':'管理员','supervisor':'督导'}.get(user.role,'查看者') }}{% if user.auth_source and user.auth_source != 'local' %} · 单点登录{% endif %}</div>
+        <div class="dd ant-dropdown" role="menu"><div class="who">{{ {'admin':('超级管理员' if is_global_admin else '本系统超级管理员'),'readonly_admin':'只读管理员','supervisor':'督导'}.get(user.role,'用户') }}{% if user.auth_source and user.auth_source != 'local' %} · 单点登录{% endif %}</div>
           {% if can_change_password %}<a href="/account/password" class="{{ 'cur' if P.startswith('/account') }}">修改密码</a><hr>{% endif %}
           {% if account_url %}<a id="sso-account-link" href="{{ account_url }}" target="_blank" rel="noopener">账号设置</a>{% endif %}
-          {% if is_admin %}<a id="user-menu-accounts" href="https://oa-m-hero.41box.com/admin/accounts">账号管理（管理员）</a><a href="/admin/users" class="{{ 'cur' if P.startswith('/admin/users') }}">用户管理</a>{% endif %}<hr>
+          {% if is_global_admin %}<a id="user-menu-accounts" href="https://oa-m-hero.41box.com/admin/accounts">账号管理（超级管理员）</a><a href="/admin/users" class="{{ 'cur' if P.startswith('/admin/users') }}">用户管理</a>{% endif %}<hr>
           <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="lnk" type="submit"><svg class="ai" aria-hidden="true"><use href="#i-logout"/></svg>退出登录</button></form></div></div>{% endif %}
     </nav></div></header>
   <button type="button" class="nav-backdrop" id="nav-backdrop" tabindex="-1" aria-hidden="true" aria-label="关闭菜单"></button>
@@ -204,6 +204,7 @@
   {% set parent_url = '/admin/users' if P.startswith('/admin/users/') else '/admin/exemptions' if P.startswith('/admin/exemptions/') else '/settings/spare-parts' if P.startswith('/settings/spare-parts/') else '/stores' if P.startswith('/stores/') else '/' %}
   {% set parent_label = '用户管理' if P.startswith('/admin/users/') else '审批列表' if P.startswith('/admin/exemptions/') else '备件名单设置' if P.startswith('/settings/spare-parts/') else '门店指标' if P.startswith('/stores/') else '首页' %}
   <div class="container"{% if P not in ['/', '/login'] %} data-ds-back="{{ parent_url }}{% if date %}?date={{ date }}{% endif %}" data-ds-back-label="{{ parent_label }}"{% endif %}>
+    {% if user and user.role == 'readonly_admin' and (P.startswith('/admin') or P.startswith('/settings')) %}<div class="ant-alert ant-alert-info" id="readonly-banner"><span class="ant-alert-icon"><svg class="ai" aria-hidden="true"><use href="#i-info-circle"/></svg></span><div class="ant-alert-content">你是只读管理员：可以查看全部管理页和导出，不能审批、修改设置或管理账号。</div></div>{% endif %}
     {% block body %}{% endblock %}
     <footer class="ant-page-footer">
       {% if date %}快照 {{ date }}{% endif %}{% if snap.ingested_at %} · 数据载入 {{ snap.ingested_at }}{% endif %}{% if stores_synced_at %} · 门店清单同步 {{ stores_synced_at }}{% endif %}
@@ -236,5 +237,12 @@ document.querySelectorAll('table.sortable').forEach(function(t){
 <script>{{ ds_cards|safe }}</script>
 {# 交互反馈：Button loading / 页面 Spin / 上传进度 / message 轻提示 #}
 <script>{{ ds_feedback|safe }}</script>
+{% if user and user.role == 'readonly_admin' %}<script>
+document.querySelectorAll('form[method="post"]').forEach(function (f) {
+  var a = f.getAttribute('action') || '';
+  if (/^\/(logout|account\/password|admin\/preview)/.test(a)) return;
+  f.querySelectorAll('button,input[type=submit]').forEach(function (b) { b.disabled = true; b.title = '只读管理员不能修改'; });
+});
+</script>{% endif %}
 </body>
 </html>

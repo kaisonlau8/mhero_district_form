@@ -59,6 +59,9 @@ REQUESTER = ["/export/exemptions/new.xlsx?indicator=second_service", "/export/ex
 def test_all_exports_open_for_allowed_roles(env):
     for u in ANY_LOGIN:
         for who in ("admin", "sup1", "view1"):
+            if who == "view1" and u in ("/export/quality.xlsx", "/export/stores.xlsx"):
+                assert env[who].get(u).status_code == 403   # 用户只看汇总
+                continue
             wb(env[who].get(u))
     for u in ADMIN_ONLY:
         wb(env["admin"].get(u))
@@ -66,7 +69,7 @@ def test_all_exports_open_for_allowed_roles(env):
         for who in ("admin", "sup1"):
             wb(env[who].get(u))
     wb(env["admin"].get(f"/export/stores/{env['code']}.xlsx"))
-    wb(env["view1"].get(f"/export/stores/{env['code']}.xlsx"))
+    assert env["view1"].get(f"/export/stores/{env['code']}.xlsx").status_code == 403   # 用户只看汇总
 
 
 def test_permissions(env, tmp_path):
@@ -148,7 +151,7 @@ def test_admin_exports_content(env):
     assert heads(wb(env["admin"].get("/export/admin/exclusion-rules.xlsx")))[:2] == ["#", "数据集"]
     assert heads(wb(env["admin"].get("/export/admin/spare-settings.xlsx")), 1)[0] == "版本"
     uid = connect(env["path"]).execute("SELECT id FROM users WHERE username='sup1'").fetchone()[0]
-    assert heads(wb(env["admin"].get(f"/export/admin/users/{uid}/stores.xlsx")))[:2] == ["手工", "门店"]
+    assert heads(wb(env["admin"].get(f"/export/admin/users/{uid}/stores.xlsx")))[:2] == ["门店", "门店编码"]
 
 
 def test_buttons_on_pages(env):

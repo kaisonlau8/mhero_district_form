@@ -91,22 +91,17 @@ def test_filters_and_pagination(client):
 
 
 def test_masking_by_permission(app_env, client, viewer):
-    j = viewer.get("/api/data/task").json()
-    assert j["masked"] is True
-    first = j["rows"][0]
-    assert first["vin"] == "LDP**********6610" and first["owner_name"] != "王晓华"
-    assert "LDP29H925TM016610" not in viewer.get("/data/task").text
-    wb = load_workbook(io.BytesIO(viewer.get("/export/data/task.xlsx").content))
-    assert "LDP29H925TM016610" not in [c.value for r in wb.active.iter_rows() for c in r]
-    # 管理员默认完整；单独授予 full_detail 的查看者也完整
+    # 用户（viewer）只看汇总：明细页 / 明细接口 / 明细导出一律 403（不论 full_detail）
+    for u in ("/api/data/task", "/data/task", "/export/data/task.xlsx", "/data/task?token=x"):
+        assert viewer.get(u).status_code == 403, u
+    assert viewer.get("/api/data/task", headers={"X-Reportdb-Token": "x"}).status_code == 403
+    assert viewer.get("/").status_code == 200
+    # 管理员完整
     ok = client.get("/api/data/task").json()
     assert ok["masked"] is False and ok["rows"][0]["vin"] == "LDP29H925TM016610"
     aud = TestClient(create_app(app_env))
     login(aud, "auditor", "auditor-password-1")
-    assert aud.get("/api/data/task").json()["masked"] is False
-    # 不再支持口令参数
-    assert viewer.get("/api/data/task", headers={"X-Reportdb-Token": "x"}).json()["masked"] is True
-    assert viewer.get("/data/task?token=x").status_code == 200 and "LDP29H925TM016610" not in viewer.get("/data/task?token=x").text
+    assert aud.get("/api/data/task").status_code == 403
 
 
 def test_interaction_feedback_markup(anon, client):
