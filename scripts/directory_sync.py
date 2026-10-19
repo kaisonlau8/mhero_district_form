@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -68,6 +69,60 @@ def _parse_user(value: Any) -> tuple[str, str]:
     return "", ""
 
 
+_MANAGER_NAME_FIELD = re.compile(r"^门店售后业务负责人([1-4])?$")
+_MANAGER_PHONE_FIELD = re.compile(r"^售后业务负责人手机号([1-4])?$")
+
+
+def _manager_slots(fields: dict[str, Any]) -> list[dict[str, str]]:
+    """解析 1..4 号售后业务负责人（兼容无编号旧字段，视为 1 号），按槽位顺序去重。
+
+    字段名忽略空白（「门店售后业务负责人 1」=「门店售后业务负责人1」），同名别名取非空值。
+    1 号槽位：编号字段（人或手机号任一非空）整体优先；编号字段全空时才整体使用旧字段，
+    不把两个人的姓名/open_id/手机号拼在一起。
+    去重键：有 open_id 用 open_id，否则用姓名；重复时把缺的手机号/open_id 补到先出现的那条上。
+    """
+    users: dict[tuple[int, bool], tuple[str, str]] = {}
+    phones: dict[tuple[int, bool], str] = {}
+    for raw_key, value in (fields or {}).items():
+        key = re.sub(r"\s+", "", str(raw_key or ""))
+        m = _MANAGER_NAME_FIELD.match(key)
+        if m:
+            slot_key = (int(m.group(1) or 1), bool(m.group(1)))
+            name, open_id = _parse_user(value)
+            if (name or open_id) and slot_key not in users:
+                users[slot_key] = (name, open_id)
+            continue
+        m = _MANAGER_PHONE_FIELD.match(key)
+        if m:
+            slot_key = (int(m.group(1) or 1), bool(m.group(1)))
+            phone = _normalize_phone(value)
+            if phone and slot_key not in phones:
+                phones[slot_key] = phone
+    managers: list[dict[str, str]] = []
+    index: dict[str, dict[str, str]] = {}
+    for slot in range(1, 5):
+        numbered = (slot, True)
+        use = numbered
+        if slot == 1 and numbered not in users and numbered not in phones:
+            use = (1, False)
+        name, open_id = users.get(use, ("", ""))
+        phone = phones.get(use, "")
+        if not name and not open_id and not phone:
+            continue
+        dedupe_key = open_id or name
+        if dedupe_key and dedupe_key in index:
+            kept = index[dedupe_key]
+            kept["phone"] = kept["phone"] or phone
+            kept["open_id"] = kept["open_id"] or open_id
+            kept["name"] = kept["name"] or name
+            continue
+        person = {"name": name, "phone": phone, "open_id": open_id}
+        if dedupe_key:
+            index[dedupe_key] = person
+        managers.append(person)
+    return managers
+
+
 def _fetch_records() -> list[dict]:
     app_token, table_id, view_id = _directory_config()
     records: list[dict] = []
@@ -127,10 +182,9 @@ def sync_directory() -> dict:
         if not code:
             continue
         sup_name, sup_open_id = _parse_user(fields.get("督导"))
-        mgr_name, mgr_open_id = _parse_user(fields.get("门店售后业务负责人"))
-        mgr_phone = _normalize_phone(fields.get("售后业务负责人手机号"))
+        managers = _manager_slots(fields)
         name = _field_text(fields.get("店名称") or fields.get("门店名称"))
-        if not mgr_name and not mgr_open_id and not mgr_phone:
+        if not managers:
             missing.append(f"{code} {name}".strip())
         stores.append(
             {
@@ -145,11 +199,8 @@ def sync_directory() -> dict:
                     "phone": _normalize_phone(fields.get("督导手机号")),
                     "open_id": sup_open_id,
                 },
-                "service_manager": {
-                    "name": mgr_name,
-                    "phone": mgr_phone,
-                    "open_id": mgr_open_id,
-                },
+                "service_manager": dict(managers[0]) if managers else {"name": "", "phone": "", "open_id": ""},
+                "service_managers": managers,
             }
         )
     if not stores:

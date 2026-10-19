@@ -22,7 +22,7 @@ def enabled() -> bool:
 
 
 def region_mode() -> str:
-    """store=按门店表（多维表格）归属区域并剔除不在表内的门店（默认，正式口径）；
+    """store=门店表（多维表格）决定参与考核范围，区域只取 DMS 导出（为空记「无区域」；默认，正式口径）；
     source=沿用 DMS「大区」列（等同旧模板字面行为）——仅作隐藏的诊断/对账开关，页面与文档不推荐。"""
     mode = os.getenv("REPORTDB_REGION_MODE", "store").strip().lower()
     return mode if mode in {"store", "source"} else "store"
