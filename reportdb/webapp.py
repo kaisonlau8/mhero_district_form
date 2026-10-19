@@ -29,7 +29,7 @@ from . import daily_report as daily_mod
 from . import exclusions as excl_mod
 from . import exemptions as ex_mod
 from . import spare as spare_mod
-from .auth import AuthError, get_backend, service
+from .auth import AuthError, get_backend, service, sso_sync
 from .forbidden_page import DEFAULT_HUB_URL, render_no_access
 from .auth.oidc import STATE_COOKIE
 from .masking import mask_row, mask_vin
@@ -756,6 +756,8 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
     # ---- 管理员：用户
     @app.get("/admin/users", response_class=HTMLResponse)
     def admin_users(request: Request, msg: str = "", err: str = "", region: str = "", conn=Depends(get_conn), user=Depends(admin_required)):
+        if backend.name == "oidc":      # 打开页面时自动从统一登录补齐账号（节流 60 秒；Casdoor 不可达时静默跳过）
+            sso_sync.maybe_sync(conn_factory, account_bridge(), backend, min_interval=60)
         users = [dict(r) for r in conn.execute(
             "SELECT id,username,display_name,role,full_detail,disabled,auth_source,created_at,last_login,failed_count,locked_until,supervisor_name FROM users ORDER BY id")]
         for u in users:
@@ -790,6 +792,52 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
                 br = None
             app.state._bridge_cache = br
         return app.state._bridge_cache
+
+    @app.post("/admin/users/sync-sso")
+    def admin_users_sync_sso(csrf: str = Form(""), conn=Depends(get_conn), user=Depends(admin_required)):
+        """「从 SSO 同步」：把统一登录里能进入本系统的账号全部补进用户列表（默认不分配门店），已有账号同步显示名 / 身份。"""
+        check_csrf(user, csrf)
+        if backend.name != "oidc":
+            return _back("/admin/users", err="当前不是单点登录模式，无需同步")
+        br = account_bridge()
+        if br is None:
+            return _back("/admin/users", err="账号服务未配置，无法从 SSO 同步")
+        try:
+            snap = br.snapshot()
+        except Exception as exc:  # noqa: BLE001
+            return _back("/admin/users", err=f"读取统一登录账号失败：{str(exc)[:120]}")
+        try:
+            st = sso_sync.sync_users(conn, snap, backend, actor=user.username)
+        except Exception as exc:  # noqa: BLE001
+            return _back("/admin/users", err=f"从 SSO 同步失败：{str(exc)[:120]}")
+        msg = (f"已从 SSO 同步：统一登录账号 {st['casdoor']} 个，可进入本系统 {st['eligible']} 个；"
+               f"新增 {len(st['created'])} 个{('（' + '、'.join(st['created']) + '）') if st['created'] else ''}，"
+               f"更新 {len(st['updated'])} 个，停用 {len(st['disabled'])} 个")
+        if st["case_conflicts"]:
+            msg += f"；{len(st['case_conflicts'])} 个账号与本地账号只差大小写，未合并（{'、'.join(st['case_conflicts'])}）"
+        if st["local_without_access"]:
+            msg += f"；另有 {len(st['local_without_access'])} 个本地账号在统一登录里已无本系统权限（未删除，登录会被拒）"
+        return _back("/admin/users", msg=msg)
+
+    def _sso_sync_loop():
+        """后台定时同步（默认每小时；REPORTDB_SSO_SYNC_INTERVAL=0 关闭），保证新建账号无需管理员操作也会出现在用户列表。"""
+        try:
+            interval = float(os.getenv("REPORTDB_SSO_SYNC_INTERVAL", "3600") or 0)
+        except ValueError:
+            interval = 3600.0
+        if interval <= 0:
+            return
+        time.sleep(min(30.0, interval))
+        while True:
+            try:
+                sso_sync.maybe_sync(conn_factory, account_bridge(), backend, min_interval=0)
+            except Exception:  # noqa: BLE001
+                pass
+            time.sleep(interval)
+
+    if backend.name == "oidc":
+        import threading as _th
+        _th.Thread(target=_sso_sync_loop, name="reportdb-sso-sync", daemon=True).start()
 
     @app.post("/admin/preview/{uid}/start")
     def preview_start(uid: int, csrf: str = Form(""), conn=Depends(get_conn), user=Depends(admin_required)):
