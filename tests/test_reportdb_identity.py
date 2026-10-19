@@ -98,14 +98,13 @@ def test_oidc_level_change_syncs_casdoor_and_guards(oidc_app):
     c, f, db = oidc_app
     t = csrf_of(c)
     conn = connect(db); uid = service.get_user(conn, "sup1")["id"]; bid = service.get_user(conn, "boss")["id"]; conn.close()
-    r = c.post(f"/admin/users/{uid}/update", data={"role": "admin", "action": "save", "csrf": t}, follow_redirects=False)
-    assert "msg=" in r.headers["location"] and "sup1" in f.roles["mhero-admin"] and "sup1" not in f.roles["mhero-supervisor"]
-    r = c.post(f"/admin/users/{uid}/update", data={"role": "viewer", "action": "save", "csrf": t}, follow_redirects=False)
-    assert "err=" in r.headers["location"]                              # viewer does not exist under SSO
-    r = c.post(f"/admin/users/{bid}/update", data={"role": "supervisor", "action": "save", "csrf": t}, follow_redirects=False)
-    assert "err=" in r.headers["location"] and "boss" in f.roles["mhero-admin"]       # cannot demote self
-    r = c.post(f"/admin/users/{uid}/update", data={"action": "toggle", "csrf": t}, follow_redirects=False)
-    assert f.users["sup1"]["isForbidden"] is True
+    # 统一登录下身份 / 停用只在黄页「账号管理」里改；这里只剩解锁
+    for data in ({"role": "admin", "action": "save"}, {"role": "viewer", "action": "save"}, {"action": "toggle"}):
+        r = c.post(f"/admin/users/{uid}/update", data={**data, "csrf": t}, follow_redirects=False)
+        assert "err=" in r.headers["location"] and "%E9%BB%84%E9%A1%B5" in r.headers["location"]   # 黄页
+    assert "sup1" in f.roles["mhero-supervisor"] and "sup1" not in f.roles["mhero-admin"] and not f.users["sup1"].get("isForbidden")
+    r = c.post(f"/admin/users/{uid}/update", data={"action": "unlock", "csrf": t}, follow_redirects=False)
+    assert "msg=" in r.headers["location"]
 
 
 def test_oidc_without_bridge_refuses_instead_of_diverging(oidc_app):
@@ -188,7 +187,8 @@ def test_import_dry_run_changes_nothing_and_apply_is_idempotent(tmp_path, monkey
     assert PW not in open(tmp_path / "a.log").read()
     c = connect(db)
     r1 = imp.apply_reportdb(c, f_people); r2 = imp.apply_reportdb(c, f_people)
-    assert r1 == {"new_users": 3, "store_links": 5} and r2 == {"new_users": 0, "store_links": 0}
+    assert r1 == {"new_users": 3, "store_links": 5} and r2 == {"new_users": 0, "store_links": 5}   # store_links 只统计飞书匹配数
+    assert c.execute("SELECT COUNT(*) FROM user_stores").fetchone()[0] == 0                       # 不再写手工分配
     assert c.execute("SELECT role,supervisor_name,auth_source FROM users WHERE username='13800000008'").fetchone()[:] == ("supervisor", "庚", "oidc")
     with pytest.raises(acc.AccountError):
         svc.create_bulk("import", "abc", "x", PW, "supervisor", [])

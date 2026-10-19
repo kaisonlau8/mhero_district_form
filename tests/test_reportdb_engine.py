@@ -118,7 +118,7 @@ def test_supervisor_sees_everything_unmasked_viewer_masked(web):
     sup, view, adm = web["sup1"], web["view1"], web["admin"]
     j = sup.get("/api/data/second-service?size=50").json()
     assert j["total"] == 4 and j["masked"] is False and {r["store_name"] for r in j["rows"]} >= {D1, D2}
-    assert view.get("/api/data/second-service").json()["masked"] is True
+    assert view.get("/api/data/second-service").status_code == 403   # 用户只看汇总
     s = sup.get("/api/tables/summary").json()
     assert len(s["blocks"]) >= 6
     # 能申请剔除（自己的店），不能越权（别人的店在后台被拒）
@@ -171,7 +171,9 @@ def test_daily_report_endpoint_and_layout(web):
     assert not [c.value for ws in wb for row in ws.iter_rows() for c in row if isinstance(c.value, str) and c.value.startswith("=")]
     assert wb["总表"]["A1"].value == "首保实施率"
     # 含明细：viewer 脱敏，督导不脱敏
-    for who, masked in (("view1", True), ("sup1", False)):
+    # 用户（viewer）只看汇总：含明细版 403；督导不脱敏
+    assert web["view1"].get(f"/export/daily-report.xlsx?date={SNAP1}&detail=1").status_code == 403
+    for who, masked in (("sup1", False),):
         wb = load_workbook(io.BytesIO(web[who].get(f"/export/daily-report.xlsx?date={SNAP1}&detail=1").content))
         assert "首保" in wb.sheetnames
         vins = [row[0].value for row in wb["首保"].iter_rows(min_row=2)]
@@ -383,7 +385,11 @@ def test_home_sorted_by_rank_and_clickable(web):
 
 
 def test_home_secondary_area(web):
-    html = web["view1"].get(f"/?date={SNAP1}").text
+    view = web["view1"].get(f"/?date={SNAP1}").text
+    # 用户只看汇总：没有明细入口、透明度区和管理链接
+    assert "<details class=\"qa\"" not in view and "/data/" not in view.split("ant-chip-group-label")[-1]
+    assert "/admin/users" not in view and "/settings/exclusion-rules" not in view
+    html = web["sup1"].get(f"/?date={SNAP1}").text
     # 次要区域：明细链接、透明度默认折叠；管理链接只对管理员
     assert "<details class=\"qa\">" in html and "<details class=\"qa\" open" not in html
     assert "/admin/users" not in html and "/settings/exclusion-rules" not in html
@@ -409,9 +415,10 @@ def _nav(html):
 def test_nav_hierarchy_by_role(web):
     v = _nav(web["view1"].get(f"/tables/summary?date={SNAP1}").text)
     assert 'class="brand"' in v and ">区域报表<" in v and "自建库" not in v
-    for t in ("首页", "报表", "明细数据", "日报下载", "总表", "区域指标", "直营店指标", "常备件备库率"):
+    for t in ("首页", "报表", "日报下载", "总表", "区域指标", "直营店指标", "常备件备库率"):
         assert t in v
-    assert v.count('aria-haspopup="true"') == 3   # 报表 / 明细数据 / 用户菜单
+    assert "明细数据" not in v and "门店指标" not in v   # 用户只看汇总
+    assert v.count('aria-haspopup="true"') == 2   # 报表 / 用户菜单
     assert "排序" not in v and "督导申请" not in v and ">管理<" not in v and "/admin/" not in v and "/settings/" not in v
     assert 'class="mi on"' in v and "报表</button>" in v   # 当前所在分组高亮
     assert v.count('class="cur"') == 1 and 'aria-current="page"' in v and "退出登录" in v and "修改密码" in v

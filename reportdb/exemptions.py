@@ -122,16 +122,26 @@ def history(conn, ex_id: int) -> list[dict]:
 
 
 # ----------------------------------------------------------------------------- 督导范围
+SUPERVISOR_STORES_SQL = ("SELECT code,name,region FROM stores WHERE active=1 AND ("
+                         "(?<>'' AND COALESCE(supervisor_phone,'')=?) OR (?<>'' AND lower(COALESCE(supervisor,''))=lower(?)))")
+
+
+def supervisor_stores(conn, username: str, supervisor_name: str) -> list:
+    """督导负责（可申请）的门店：只看多维表格联络表的「督导」字段——督导手机号 = 账号名（手机号），或督导姓名 = 账号的督导姓名。
+    不再有手工分配（2026-10-19 决定）。"""
+    phone = (username or "").strip() if re.fullmatch(r"1\d{10}", (username or "").strip()) else ""
+    sup = (supervisor_name or "").strip()
+    return conn.execute(SUPERVISOR_STORES_SQL, (phone, phone, sup, sup)).fetchall()
+
+
 def scope_for(conn, user) -> dict[str, set[str]] | None:
-    """None=不受限（admin / viewer）；督导=其负责门店：stores.supervisor 与其 supervisor_name 相同的启用门店 ∪ 管理员手工分配。"""
+    """None=不受限（管理员 / 只读管理员 / 用户——后两者本来就不能申请）；督导=多维表格「督导」字段匹配到的启用门店。
+    查看不受此限制（督导看全国全部明细），只决定能对哪些行提交申请。"""
     if user.role != "supervisor":
         return None
     codes: set[str] = set()
     names: set[str] = set()
-    sup = (getattr(user, "supervisor_name", "") or "").strip()
-    q = ("SELECT code,name FROM stores WHERE active=1 AND ((?<>'' AND lower(COALESCE(supervisor,''))=lower(?)) "
-         "OR code IN (SELECT store_code FROM user_stores WHERE user_id=?))")
-    for r in conn.execute(q, (sup, sup, user.id)):
+    for r in supervisor_stores(conn, user.username, getattr(user, "supervisor_name", "") or ""):
         codes.add(r["code"].casefold())
         names.add(r["name"].casefold())
     return {"codes": codes, "names": names}

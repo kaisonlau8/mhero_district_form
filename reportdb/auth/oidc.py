@@ -40,6 +40,14 @@ def _http_json(url: str, data: dict | None = None, headers: dict | None = None, 
         return json.loads(resp.read().decode())
 
 
+def _override(username: str) -> str | None:
+    try:
+        from mhero_auth.roles import override_for
+    except Exception:  # noqa: BLE001 — 共享登录组件不可用：没有单独角色
+        return None
+    return override_for(username, "report")
+
+
 def _csv(name: str) -> set[str]:
     return {x.strip() for x in os.getenv(name, "").split(",") if x.strip()}
 
@@ -92,17 +100,22 @@ class OidcBackend(AuthBackend):
             v = info.get(k) or []
             groups |= {(g.get("name") if isinstance(g, dict) else str(g)) for g in (v if isinstance(v, list) else [v])}
         is_admin = username in _csv("REPORTDB_OIDC_ADMIN_USERS") or bool(groups & _csv("REPORTDB_OIDC_ADMIN_GROUPS"))
-        full = is_admin or bool(groups & _csv("REPORTDB_OIDC_FULL_DETAIL_GROUPS"))
+        is_ro = bool(groups & (_csv("REPORTDB_OIDC_READONLY_ADMIN_GROUPS") or {"mhero-readonly-admin"}))
         is_sup = username in _csv("REPORTDB_OIDC_SUPERVISOR_USERS") or bool(groups & _csv("REPORTDB_OIDC_SUPERVISOR_GROUPS"))
-        role = "admin" if is_admin else ("supervisor" if is_sup else "viewer")  # admin 优先
+        role = "admin" if is_admin else ("readonly_admin" if is_ro else ("supervisor" if is_sup else "viewer"))  # 统一身份（admin 优先）
+        if not is_admin:        # 黄页「账号管理」里给本系统单独设的角色（覆盖统一身份；全局超级管理员不可被覆盖）
+            ov = _override(username)
+            if ov:
+                role = {"user": "viewer"}.get(ov, ov)
+        full = role in ("admin", "readonly_admin", "supervisor") or bool(groups & _csv("REPORTDB_OIDC_FULL_DETAIL_GROUPS"))
         if os.getenv("REPORTDB_OIDC_REQUIRE_ROLE", "0").strip().lower() in ("1", "true", "yes", "on") and role == "viewer":
             # 统一登录只有 督导(supervisor) / 管理员(admin) 两种角色；没有被授予任何一个的账号不建本地用户、不发会话
             raise AuthError("你的账号没有访问本系统的权限，请联系管理员。", 403, str(info.get("displayName") or info.get("name") or username))
         if os.getenv("MHERO_AUTH_REQUIRE_APP", os.getenv("REPORTDB_OIDC_REQUIRE_APP", "0")).strip().lower() in ("1", "true", "yes", "on"):
             # 统一账号管理：只有被授予 mhero-app-report（或全局管理员 mhero-admin）的账号才能进入本系统
-            if "mhero-app-report" not in groups and "mhero-admin" not in groups and not is_admin:
+            if "mhero-app-report" not in groups and "mhero-admin" not in groups and not is_admin and not is_ro:
                 raise AuthError("你的账号没有开通「区域报表」的访问权限，请联系管理员。", 403, str(info.get("displayName") or info.get("name") or username))
-        return Identity(username, str(info.get("displayName") or info.get("name") or username), role, full, "oidc")
+        return Identity(username, str(info.get("displayName") or info.get("name") or username), role, full, "oidc", global_admin=is_admin)
 
     def complete_login(self, conn, request):
         params = request.query_params

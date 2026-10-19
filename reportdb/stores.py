@@ -89,7 +89,8 @@ def upsert_stores(
                      r.get("city"), r.get("district"), source, _now(), code),
                 )
                 if "supervisor" in r:
-                    conn.execute("UPDATE stores SET supervisor=? WHERE code=?", (_sup_name(r.get("supervisor")), code))
+                    conn.execute("UPDATE stores SET supervisor=?, supervisor_phone=? WHERE code=?",
+                                 (_sup_name(r.get("supervisor")), _sup_phone(r), code))
                 updated += 1
             else:
                 max_seq += 1
@@ -100,7 +101,8 @@ def upsert_stores(
                      r.get("district"), max_seq, source, _now()),
                 )
                 if "supervisor" in r:
-                    conn.execute("UPDATE stores SET supervisor=? WHERE code=?", (_sup_name(r.get("supervisor")), code))
+                    conn.execute("UPDATE stores SET supervisor=?, supervisor_phone=? WHERE code=?",
+                                 (_sup_name(r.get("supervisor")), _sup_phone(r), code))
                 added += 1
         if authoritative and seen:
             cur = conn.execute(
@@ -113,6 +115,17 @@ def upsert_stores(
     set_meta(conn, "stores_source", source)
     return {"added": added, "updated": updated, "deactivated": deactivated, "active_not_in_bitable": missing,
             "total": conn.execute("SELECT COUNT(*) FROM stores WHERE active=1").fetchone()[0]}
+
+
+def _sup_phone(r: dict) -> str | None:
+    """多维表格「督导手机号」→ 11 位手机号（去掉 +86 / 空格）；目录缓存里 supervisor 是 {name, phone, open_id}。"""
+    raw = r.get("supervisor_phone")
+    if raw is None and isinstance(r.get("supervisor"), dict):
+        raw = r["supervisor"].get("phone")
+    digits = re.sub(r"\D", "", str(raw or ""))
+    if digits.startswith("86") and len(digits) == 13:
+        digits = digits[2:]
+    return digits if re.fullmatch(r"1\d{10}", digits) else None
 
 
 def sync_from_directory_json(conn: sqlite3.Connection, path: Path | None = None, **kw) -> dict[str, int]:
@@ -144,6 +157,7 @@ def sync_from_bitable(conn: sqlite3.Connection, **kw) -> dict[str, int]:
             "city": ds._field_text(fields.get("门店市")),
             "district": ds._field_text(fields.get("门店区")),
             "supervisor": (ds._parse_user(fields.get("督导")) or (None,))[0],
+            "supervisor_phone": ds._field_text(fields.get("督导手机号")),
         })
     if not stores:
         raise StoreSyncAborted("参与考核特约店清单未返回有效门店，已放弃同步，保留现有门店表")

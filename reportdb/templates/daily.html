@@ -8,7 +8,7 @@
   </div>
   <div class="ant-page-header-actions">
     <a class="ant-btn ant-btn-primary" href="/export/daily-report.xlsx?date={{ date }}"><svg class="ai" aria-hidden="true"><use href="#i-download"/></svg>下载 {{ date }} 日报</a>
-    <a class="ant-btn" href="/export/daily-report.xlsx?date={{ date }}&detail=1"><svg class="ai" aria-hidden="true"><use href="#i-file-excel"/></svg>含明细 sheet{% if not authorized_detail %}（VIN/姓名按权限脱敏）{% endif %}</a>
+    {% if not summary_only %}<a class="ant-btn" href="/export/daily-report.xlsx?date={{ date }}&detail=1"><svg class="ai" aria-hidden="true"><use href="#i-file-excel"/></svg>含明细 sheet{% if not authorized_detail %}（VIN/姓名按权限脱敏）{% endif %}</a>{% endif %}
   </div>
 </header>
 

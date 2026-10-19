@@ -159,8 +159,13 @@ def test_supervisor_scope_enforced(env):
     # 按行号也不能越权
     b1 = c.execute("SELECT row_no FROM first_service WHERE snapshot_date=? AND vin=?", (SNAP1, vin_of("first_service", "B1"))).fetchone()[0]
     assert ex.request_exemptions(c, env.sup1, "first_service", SNAP1, row_nos=[b1], category="其他", reason="x")["created"] == []
-    # 手工分配门店后可申请；管理员不受限
+    # 手工分配已停用：塞 user_stores 也不生效
     c.execute("INSERT INTO user_stores(user_id,store_code) SELECT ?, code FROM stores WHERE name=?", (env.sup1.id, D2)); c.commit()
+    assert ex.request_exemptions(c, env.sup1, "first_service", SNAP1, row_nos=[b1], category="其他", reason="x")["created"] == []
+    # 飞书联络表把 D2 的「督导」改成他（按手机号匹配）后可申请；管理员不受限
+    c.execute("UPDATE users SET username='13800000001' WHERE id=?", (env.sup1.id,))
+    c.execute("UPDATE stores SET supervisor='别人', supervisor_phone='13800000001' WHERE name=?", (D2,)); c.commit()
+    env.sup1.username = "13800000001"
     assert len(ex.request_exemptions(c, env.sup1, "first_service", SNAP1, row_nos=[b1], category="其他", reason="x")["created"]) == 1
     assert ex.scope_for(c, env.admin) is None
     # 无督导姓名、无分配 → 空范围
@@ -260,8 +265,8 @@ def test_web_workflow(web):
     html = sup.get("/data/first-service").text
     assert D2 in html and 'name="reason_' not in html and 'name="pick_' not in html and "我的申请明细" not in html   # 明细页只读
     assert 'name="kind"' not in html and "/exemptions/new?indicator=first_service" in html
-    assert view.get("/api/data/first-service").json()["masked"] is True
-    assert view.get("/exemptions/new").status_code == 403 and "/exemptions/new" not in view.get("/data/first-service").text
+    assert view.get("/api/data/first-service").status_code == 403 and view.get("/data/first-service").status_code == 403   # 用户只看汇总
+    assert view.get("/exemptions/new").status_code == 403
     new = sup.get("/exemptions/new?indicator=first_service").text
     assert "申请修正结果" in new and "我的申请明细（修正结果）" in new and "修正结果：把这辆车" in new and 'name="kind" value="exclude"' not in new
     assert new.count('name="reason_') == 1 and 'name="pick_' not in new and new.count('提交申请</button>') == 1   # 只有 D1 的 A1(结果为否)；已完成的、别人门店的都没有
@@ -308,9 +313,10 @@ def test_admin_assigns_stores_and_role(web):
     assert page.status_code == 200 and D1 in page.text
     code2 = conn_code(web["db"], D2)
     r = adm.post(f"/admin/users/{sid}/stores", data={"supervisor_name": "张督导", "codes": code2, "csrf": tok(adm, f"/admin/users/{sid}/stores")}, follow_redirects=False)
-    assert r.status_code == 303
+    assert r.status_code == 303 and "msg=" in r.headers["location"]
     html = web["sup1"].get("/exemptions/new?indicator=first_service").text
-    assert html.count('name="reason_') > 1 and D2 in html  # 手工分配后 D2 的行也出现在申请列表
+    assert html.count('name="reason_') == 1   # 手工分配已停用：只按飞书「督导」匹配
+    assert 'name="codes"' not in page.text and "飞书" in page.text
 
 
 def conn_code(db, name):

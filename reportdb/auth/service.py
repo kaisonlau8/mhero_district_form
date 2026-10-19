@@ -22,7 +22,7 @@ LOCK_SECONDS = 15 * 60
 IP_WINDOW = 5 * 60
 IP_MAX_FAILS = 10
 SESSION_COOKIE = "reportdb_session"
-ROLES = ("admin", "supervisor", "viewer")
+ROLES = ("admin", "readonly_admin", "supervisor", "viewer")
 
 
 def _iters() -> int:
@@ -263,16 +263,16 @@ def provision_external(conn: sqlite3.Connection, ident: Identity) -> sqlite3.Row
     u = get_user(conn, ident.username)
     with conn:
         if u is None:
-            conn.execute("INSERT INTO users(username,display_name,role,full_detail,auth_source,created_at,created_by,last_login,supervisor_name)"
-                         " VALUES (?,?,?,?,?,?,?,?,?)",
+            conn.execute("INSERT INTO users(username,display_name,role,full_detail,auth_source,created_at,created_by,last_login,supervisor_name,global_admin)"
+                         " VALUES (?,?,?,?,?,?,?,?,?,?)",
                          (ident.username, ident.display_name, ident.role, int(ident.full_detail), ident.auth_source,
-                          _now(), "oidc", _now(), ident.display_name if ident.role == "supervisor" else None))
+                          _now(), "oidc", _now(), ident.display_name if ident.role == "supervisor" else None, int(ident.global_admin)))
         else:
             if u["disabled"]:
                 raise AuthError("账号已被停用")
-            conn.execute("UPDATE users SET display_name=?, role=?, full_detail=?, last_login=?, "
+            conn.execute("UPDATE users SET display_name=?, role=?, full_detail=?, last_login=?, global_admin=?, "
                          "supervisor_name=COALESCE(supervisor_name, ?) WHERE id=?",
-                         (ident.display_name or u["display_name"], ident.role, int(ident.full_detail), _now(),
+                         (ident.display_name or u["display_name"], ident.role, int(ident.full_detail), _now(), int(ident.global_admin),
                           ident.display_name if ident.role == "supervisor" else None, u["id"]))
     return get_user(conn, ident.username)
 

@@ -147,7 +147,7 @@ def test_audit_fixes_case_conflict_disable_without_access_role_change_resets_det
     conn = connect(db)
     assert service.get_user(conn, "Mixed")["role"] == "supervisor"                        # not promoted via NOCASE match
     u5 = service.get_user(conn, "13700000005")
-    assert u5["role"] == "supervisor" and u5["full_detail"] == 0                           # admin detail flag recomputed
+    assert u5["role"] == "supervisor" and u5["full_detail"] == 1                           # detail flag recomputed (督导看全部明细)
     assert conn.execute("SELECT COUNT(*) FROM sessions WHERE user_id=?", (uid5,)).fetchone()[0] == 0   # old session revoked
     conn.close()
     f.roles["mhero-app-report"].discard("13700000001"); f.users["13700000001"]["isForbidden"] = True    # lost access AND disabled

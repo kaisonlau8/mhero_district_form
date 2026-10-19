@@ -12,7 +12,7 @@
 {% if err %}<div class="ant-alert ant-alert-error"><span class="ant-alert-icon"><svg class="ai" aria-hidden="true"><use href="#i-close-circle"/></svg></span><div class="ant-alert-content">{{ err }}</div></div>{% endif %}
 
 {% if not manages %}<div class="ant-card"><div class="ant-card-body">
-  <details class="hint" style="margin:0"><summary>说明</summary><p class="muted">当前使用单点登录（{{ backend_name }}）：账号与初始密码在统一账号服务里管理{% if hub_accounts_url %}（<a href="{{ hub_accounts_url }}" target="_blank" rel="noopener">首页「账号管理」</a>：新建账号、开通系统、重置密码）{% endif %}；这里可以选择身份（管理员 / 督导，会同步到 Casdoor）、给督导分配负责的门店 / 区域，并可「以某位督导身份」只读预览。统一登录里新建 / 开通的账号会自动出现在下面（打开本页时、以及每小时自动同步；也可点右上角「从 SSO 同步」立即同步），默认不分配门店，在这里调整即可。</p></details>
+  <details class="hint" style="margin:0"><summary>说明</summary><p class="muted">当前使用单点登录（{{ backend_name }}）：账号与初始密码在统一账号服务里管理{% if hub_accounts_url %}（<a href="{{ hub_accounts_url }}" target="_blank" rel="noopener">首页「账号管理」</a>：新建账号、开通系统、重置密码）{% endif %}；身份（超级管理员 / 只读管理员 / 督导 / 用户）和各系统单独角色都在黄页「账号管理」里设置（只限全局超级管理员）；督导可申请的门店只按飞书联络表「督导」字段自动匹配；这里可「以某位督导身份」只读预览。统一登录里新建 / 开通的账号会自动出现在下面（打开本页时、以及每小时自动同步；也可点右上角「从 SSO 同步」立即同步），默认不分配门店，在这里调整即可。</p></details>
 </div></div>{% endif %}
 
 <div class="ant-card">
@@ -24,20 +24,21 @@
     <td data-label="用户"><b>{{ u.username }}</b>{% if u.display_name and u.display_name!=u.username %} <span class="muted">{{ u.display_name }}</span>{% endif %}<br><span class="muted">{{ u.auth_source }} · 创建 {{ u.created_at }}</span></td>
     <td data-label="角色 / 权限">
       {% if u.role=='supervisor' %}<div class="muted" style="margin-bottom:4px">督导姓名：{{ u.supervisor_name or '-' }} · 负责 {{ u.scope_n }} 家门店{% if u.scope_regions %}（{{ u.scope_regions }}）{% endif %}</div>{% endif %}
-      <form method="post" action="/admin/users/{{ u.id }}/update" class="ant-filter-bar" style="padding:0;gap:8px"><input type="hidden" name="csrf" value="{{ csrf }}">
+      {% if not manages %}<span class="ant-tag">{{ {'admin':'超级管理员','readonly_admin':'只读管理员','supervisor':'督导'}.get(u.role,'用户') }}</span>{% if u.global_admin %} <span class="ant-tag ant-tag-processing">全局</span>{% endif %}
+      {% else %}<form method="post" action="/admin/users/{{ u.id }}/update" class="ant-filter-bar" style="padding:0;gap:8px"><input type="hidden" name="csrf" value="{{ csrf }}">
         <select class="ant-select" name="role" aria-label="角色">{% if manages or u.role=='viewer' %}<option value="viewer" {% if u.role=='viewer' %}selected{% endif %}>查看者</option>{% endif %}<option value="supervisor" {% if u.role=='supervisor' %}selected{% endif %}>督导</option><option value="admin" {% if u.role=='admin' %}selected{% endif %}>管理员</option></select>
         <label class="ant-checkbox"><input type="checkbox" name="full_detail" value="1" {% if u.full_detail %}checked{% endif %}> 完整明细</label>
-        <button class="ant-btn ant-btn-sm" name="action" value="save"><svg class="ai" aria-hidden="true"><use href="#i-save"/></svg>保存</button></form></td>
+        <button class="ant-btn ant-btn-sm" name="action" value="save"><svg class="ai" aria-hidden="true"><use href="#i-save"/></svg>保存</button></form>{% endif %}</td>
     <td data-label="状态">{% if u.disabled %}<span class="ant-tag ant-tag-warning">已停用</span>{% elif u.locked %}<span class="ant-tag ant-tag-error">已锁定</span>{% else %}<span class="ant-tag ant-tag-success">正常</span>{% endif %}
       <form method="post" action="/admin/users/{{ u.id }}/update" style="margin-top:4px"><input type="hidden" name="csrf" value="{{ csrf }}">
-        <button class="ant-btn ant-btn-sm {{ '' if u.disabled else 'ant-btn-danger' }}" name="action" value="toggle">{{ '启用' if u.disabled else '停用' }}</button>
+        {% if manages %}<button class="ant-btn ant-btn-sm {{ '' if u.disabled else 'ant-btn-danger' }}" name="action" value="toggle">{{ '启用' if u.disabled else '停用' }}</button>{% endif %}
         {% if u.locked or u.failed_count %}<button class="ant-btn ant-btn-sm" name="action" value="unlock"><svg class="ai" aria-hidden="true"><use href="#i-key"/></svg>解锁</button>{% endif %}</form></td>
     <td data-label="最近登录">{{ u.last_login or '-' }}</td>
     <td data-label="重置密码">{% if manages and u.auth_source=='local' %}<form method="post" action="/admin/users/{{ u.id }}/password"><input type="hidden" name="csrf" value="{{ csrf }}">
       <input class="ant-input" style="width:100%;min-width:150px" type="password" name="password" placeholder="新密码（≥10位）" autocomplete="new-password" minlength="10" required>
       <button class="ant-btn ant-btn-sm" style="margin-top:4px"><svg class="ai" aria-hidden="true"><use href="#i-key"/></svg>重置</button></form>{% else %}<span class="muted">—</span>{% endif %}</td>
     <td data-label="操作">{% if u.role=='supervisor' %}<div class="ant-flex">
-      <a class="ant-btn ant-btn-sm" href="/admin/users/{{ u.id }}/stores"><svg class="ai" aria-hidden="true"><use href="#i-shop"/></svg>分配门店 / 区域</a>
+      <a class="ant-btn ant-btn-sm" href="/admin/users/{{ u.id }}/stores"><svg class="ai" aria-hidden="true"><use href="#i-shop"/></svg>查看可申请门店（飞书匹配）</a>
       {% if not u.disabled %}<form method="post" action="/admin/preview/{{ u.id }}/start"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="ant-btn ant-btn-sm" title="只读，不能提交任何内容"><svg class="ai" aria-hidden="true"><use href="#i-eye"/></svg>以该督导身份预览</button></form>{% endif %}
     </div>{% else %}<span class="muted">—</span>{% endif %}</td>
   </tr>{% else %}<tr><td colspan="6"><div class="ant-empty"><div class="ant-empty-image"><svg class="ai" aria-hidden="true"><use href="#i-inbox"/></svg></div><div class="ant-empty-title">没有用户</div></div></td></tr>{% endfor %}</tbody></table></div>

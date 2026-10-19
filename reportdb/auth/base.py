@@ -21,9 +21,10 @@ class AuthError(Exception):
 class Identity:
     username: str
     display_name: str = ""
-    role: str = "viewer"          # admin | viewer
+    role: str = "viewer"          # admin | readonly_admin | supervisor | viewer(=用户，只看汇总)
     full_detail: bool = False
     auth_source: str = "local"    # local | oidc
+    global_admin: bool = False    # 统一登录的全局超级管理员（mhero-admin）：唯一能管账号 / 权限
 
 
 class AuthBackend(ABC):

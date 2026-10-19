@@ -116,7 +116,7 @@ def _migrate_v2(conn: sqlite3.Connection) -> None:
 
 
 V3_DDL = """
-CREATE TABLE IF NOT EXISTS user_stores (            -- 管理员手工给督导分配的门店（并集于 stores.supervisor 匹配）
+CREATE TABLE IF NOT EXISTS user_stores (            -- 已停用（2026-10-19）：督导门店只按多维表格「督导」匹配；表保留但不再读写
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     store_code TEXT NOT NULL,
     PRIMARY KEY (user_id, store_code)
@@ -161,6 +161,8 @@ def _migrate_v3(conn: sqlite3.Connection) -> None:
     conn.executescript(V3_DDL)
     _add_col(conn, "stores", "supervisor", "TEXT")            # 多维表格「督导」
     _add_col(conn, "users", "supervisor_name", "TEXT")        # 督导账号对应的督导姓名（匹配 stores.supervisor）
+    _add_col(conn, "users", "global_admin", "INTEGER NOT NULL DEFAULT 0")   # 统一登录全局超级管理员（唯一能管账号 / 权限）
+    _add_col(conn, "stores", "supervisor_phone", "TEXT")      # 多维表格「督导手机号」（与统一登录账号名=手机号匹配）
 
 
 def _migrate_v4(conn: sqlite3.Connection) -> None:
