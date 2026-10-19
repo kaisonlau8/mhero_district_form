@@ -204,6 +204,7 @@ pytest：`tests/test_reportdb_parity.py`（每项约 40 秒，`REPORTDB_SKIP_PAR
 * **审计**：表 `exemption_log` 记录每次状态变更（谁、何时、从什么状态到什么状态、意见），数据库触发器禁止修改和删除（只追加）；`audit_log` 另记用户与设置操作。
 * **透明度**：明细行标「已豁免」；首页「已豁免」表和 `/api/quality.exemptions` 给出每个指标「因豁免而多计入分子的行数/VIN 数」。
 * **管理员账号**：`python -m reportdb.users create-admin --username admin` 创建的 `admin` 就是管理员角色（拥有审批权和完整明细）。仓库和数据库里**不含**任何预置账号/密码，密码在 dfms 上设置。
+* **SSO 账号同步**（`reportdb/auth/sso_sync.py`）：统一登录（Casdoor）里能进入本系统的账号会自动补进 `users` 表，不必等对方先登录：打开「用户管理」时自动同步（节流 60 秒）、后台每小时同步一次（`REPORTDB_SSO_SYNC_INTERVAL` 秒，0 关闭）、页面右上角「从 SSO 同步」立即同步。规则与登录相同（复用 `OidcBackend.map_identity`）：新账号身份取 Casdoor（管理员 / 督导），不分配门店；已有 oidc 账号只同步显示名 / 身份，Casdoor 停用则本地停用并踢下线（只停不启）；身份变化时明细权限按新身份重算并踢下线；只差大小写的账号不合并；本地账号（auth_source=local）不受影响；已无权限的账号不删除，只在同步结果里提示。需要 `MHERO_ADMIN_CRED_FILE` + `MHERO_ADMIN_API_BASE`（与身份同步共用）。
 * **OIDC/Casdoor**：`REPORTDB_OIDC_SUPERVISOR_GROUPS`（或 `_SUPERVISOR_USERS`）把 Casdoor 角色/用户映射为督导，`ADMIN_*` 优先；督导的负责门店按其显示名匹配多维表格「督导」。
 * 表：`exemptions`、`exemption_log`、`user_stores`，`stores.supervisor`、`users.supervisor_name`（schema v3，迁移自动执行）。
 

@@ -5,14 +5,14 @@
     <h1>用户管理</h1>
     <div class="ant-page-header-sub">登录方式：{{ backend_name }}</div>
   </div>
-  <div class="ant-page-header-actions">{% set xl_url = "/export/admin/users.xlsx" %}{% set xl_fixed = false %}{% include "_export_btn.html" %}</div>
+  <div class="ant-page-header-actions">{% if backend_name == 'oidc' %}<form method="post" action="/admin/users/sync-sso" style="display:inline"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="ant-btn" type="submit" title="把统一登录（SSO）里能进入本系统的账号全部补进列表（默认不分配门店）">从 SSO 同步</button></form>{% endif %}{% set xl_url = "/export/admin/users.xlsx" %}{% set xl_fixed = false %}{% include "_export_btn.html" %}</div>
 </header>
 
 {% if msg %}<div class="ant-alert ant-alert-success"><span class="ant-alert-icon"><svg class="ai" aria-hidden="true"><use href="#i-check-circle"/></svg></span><div class="ant-alert-content">{{ msg }}</div></div>{% endif %}
 {% if err %}<div class="ant-alert ant-alert-error"><span class="ant-alert-icon"><svg class="ai" aria-hidden="true"><use href="#i-close-circle"/></svg></span><div class="ant-alert-content">{{ err }}</div></div>{% endif %}
 
 {% if not manages %}<div class="ant-card"><div class="ant-card-body">
-  <details class="hint" style="margin:0"><summary>说明</summary><p class="muted">当前使用单点登录（{{ backend_name }}）：账号与初始密码在统一账号服务里管理{% if hub_accounts_url %}（<a href="{{ hub_accounts_url }}" target="_blank" rel="noopener">首页「账号管理」</a>：新建账号、开通系统、重置密码）{% endif %}；这里可以选择身份（管理员 / 督导，会同步到 Casdoor）、给督导分配负责的门店 / 区域，并可「以某位督导身份」只读预览。</p></details>
+  <details class="hint" style="margin:0"><summary>说明</summary><p class="muted">当前使用单点登录（{{ backend_name }}）：账号与初始密码在统一账号服务里管理{% if hub_accounts_url %}（<a href="{{ hub_accounts_url }}" target="_blank" rel="noopener">首页「账号管理」</a>：新建账号、开通系统、重置密码）{% endif %}；这里可以选择身份（管理员 / 督导，会同步到 Casdoor）、给督导分配负责的门店 / 区域，并可「以某位督导身份」只读预览。统一登录里新建 / 开通的账号会自动出现在下面（打开本页时、以及每小时自动同步；也可点右上角「从 SSO 同步」立即同步），默认不分配门店，在这里调整即可。</p></details>
 </div></div>{% endif %}
 
 <div class="ant-card">
