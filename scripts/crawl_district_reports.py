@@ -41,6 +41,7 @@ from dfmc_browser_utils import (  # noqa: E402
     hard_refresh_dms,
     release_export_lock,
 )
+from pipeline_fallback import format_crawl_error  # noqa: E402
 from time_utils import beijing_now, beijing_strftime, ensure_beijing_tz  # noqa: E402
 
 ensure_beijing_tz()
@@ -450,6 +451,7 @@ def crawl(
 
     files: dict[str, str] = {}
     status = "unknown"
+    error_text = ""
 
     lock = None
     try:
@@ -510,7 +512,8 @@ def crawl(
             finally:
                 release_export_lock(lock, owner=CRAWLER_OWNER, plugin_root=PLUGIN_ROOT)
     except Exception as exc:
-        print(f"Fatal error: {exc}")
+        error_text = format_crawl_error(exc)
+        print(f"Fatal error: {error_text}")
         status = "fatal_error"
         try:
             release_export_lock(
@@ -533,6 +536,7 @@ def crawl(
         "quarter": quarter,
         "files": files,
         "fileCount": len(files),
+        "error": error_text,
     }
     manifest_path = out_dir / "crawl_manifest.json"
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
