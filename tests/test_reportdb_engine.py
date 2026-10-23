@@ -577,9 +577,9 @@ def test_detail_filters_server_side_and_sticky(web):
     rows = ex.request_exemptions(c, env_sup(c), "first_service", SNAP1, vins=[vin_of("first_service", "A1")], reason="r")
     ex.review(c, type("A", (), {"role": "admin", "username": "admin"})(), rows["created"], "approve")
     assert adm.get(f"/api/data/first-service?date={SNAP1}&decision=exempt").json()["total"] == 1
-    page = adm.get(f"/data/first-service?date={SNAP1}").text
+    page = adm.get(f"/data/first-service?date={SNAP1}&decision=exempt").text
     sel = page.split('name="decision"', 1)[1].split("</select>", 1)[0]
-    assert "已修正" not in sel and "已剔除" not in sel and 'value="exempt"' not in sel and 'value="excluded"' not in sel
+    assert 'value="exempt" selected' in sel and ">已修正</option>" in sel and ">已剔除</option>" in sel
     assert '<span class="ant-tag ant-tag-success">已修正</span>' in page
 
 
@@ -605,12 +605,12 @@ def test_completion_where_sql_task_vs_others():
 
 
 def test_task_done_filter_excludes_pending_and_dropdown(web):
-    """招揽：已完成排除待处理，未完成只有待处理。各明细下拉只有全部/已完成/未完成。"""
+    """招揽：已完成排除待处理，未完成只有待处理。下拉为全部/已完成/未完成/已修正/已剔除。"""
     adm = web["admin"]
     for key in ("task", "first-service", "second-service", "new-policy", "renewal"):
         values, labels = _decision_options(adm.get(f"/data/{key}?date={SNAP1}").text)
-        assert values == ["", "done", "todo"], key
-        assert labels == ["全部", "已完成", "未完成"], key
+        assert values == ["", "done", "todo", "exempt", "excluded"], key
+        assert labels == ["全部", "已完成", "未完成", "已修正", "已剔除"], key
         assert "（" not in "".join(labels)
 
     c = connect(web["db"])
