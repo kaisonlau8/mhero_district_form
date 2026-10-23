@@ -361,13 +361,11 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         if in_scope_only and ds.has_region:
             where.append("in_scope=1")
         ind = next((i for i in ex_mod.INDICATORS.values() if i.ds_key == ds.key), None)
-        if decision and ind:   # 决定列筛选：done 已完成 / todo 未完成 / exempt 已豁免 / excluded 已剔除
-            if decision == "done":
-                where.append(f"COALESCE({ind.flag_col},'')=?")
-                args.append(ind.hit)
-            elif decision == "todo":
-                where.append(f"COALESCE({ind.flag_col},'')<>?")
-                args.append(ind.hit)
+        if decision and ind:   # done 已完成 / todo 未完成；exempt、excluded 为旧查询值，界面不再提供
+            clause = ex_mod.completion_where(ind, decision)
+            if clause:
+                where.append(clause[0])
+                args.extend(clause[1])
             elif decision == "exempt":
                 where.append(f"upper(trim(vin)) IN ({ex_mod.active_vin_sql(ind.key)})")
                 args += [ind.key, date, date]

@@ -33,10 +33,12 @@ class Indicator:
     key: str
     table: str
     ds_key: str
-    flag_col: str      # 决定分子的列
-    hit: str           # 该列等于此值才进分子
+    flag_col: str      # 决定分子计数的列
+    hit: str           # 该列等于此值才进分子计数。招揽的 hit 是「待处理」（未招揽），不是「已完成」
     title: str
     meaning: str       # 「豁免」在该指标上的含义（界面文案）
+    # 只反转明细「完成情况」筛选。实施率不变：招揽的未招揽数仍是 flag=hit。
+    hit_is_incomplete: bool = False
 
     @property
     def flag_label(self) -> str:
@@ -44,9 +46,27 @@ class Indicator:
         return f"「{col}」=「{self.hit}」的行数"
 
 
+def completion_where(ind: Indicator, decision: str) -> tuple[str, list] | None:
+    """明细「完成情况」的 WHERE 片段（不含 AND）。非 done/todo 返回 None。
+
+    招揽（hit_is_incomplete，hit=待处理）：
+      done → COALESCE(task_status,'')<>'待处理'
+      todo → COALESCE(task_status,'')='待处理'
+    首保 / 二保 / 新保 / 续保（hit=是）：
+      done → COALESCE(flag,'')=hit
+      todo → COALESCE(flag,'')<>hit
+    """
+    if decision not in ("done", "todo"):
+        return None
+    equals_hit = (decision == "todo") if ind.hit_is_incomplete else (decision == "done")
+    op = "=" if equals_hit else "<>"
+    return f"COALESCE({ind.flag_col},''){op}?", [ind.hit]
+
+
 INDICATORS: dict[str, Indicator] = {i.key: i for i in (
     Indicator("task", "task_items", "task", "task_status", "待处理", "招揽实施率",
-              "该 VIN 的招揽任务按「任务状态=待处理」同样计入分子（即视为已招揽实施）"),
+              "该 VIN 的招揽任务按「任务状态=待处理」同样计入分子（即视为已招揽实施）",
+              hit_is_incomplete=True),
     Indicator("first_service", "first_service", "first-service", "done", "是", "首保实施率",
               "把该 VIN 的「是否首保」按「是」计入分子（视为已首保）"),
     Indicator("second_service", "second_service", "second-service", "done", "是", "二保实施率",
