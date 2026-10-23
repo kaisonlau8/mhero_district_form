@@ -288,7 +288,7 @@ def test_web_workflow(web):
     # 汇总表、明细标记、透明度
     t = sup.get("/api/tables/direct-stores").json()
     assert t["blocks"][0]["rows"][0][2] == 2
-    assert "已修正" in sup.get("/data/first-service").text
+    assert '<span class="ant-tag ant-tag-success">已修正</span>' in sup.get("/data/first-service").text
     q = adm.get("/api/quality").json()
     assert q["exemptions"]["first_service"]["rows"] == 1 and "已修正" in adm.get("/").text
     assert "修正结果 / 剔除审批" in adm.get("/").text

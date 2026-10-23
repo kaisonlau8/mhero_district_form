@@ -577,6 +577,98 @@ def test_detail_filters_server_side_and_sticky(web):
     rows = ex.request_exemptions(c, env_sup(c), "first_service", SNAP1, vins=[vin_of("first_service", "A1")], reason="r")
     ex.review(c, type("A", (), {"role": "admin", "username": "admin"})(), rows["created"], "approve")
     assert adm.get(f"/api/data/first-service?date={SNAP1}&decision=exempt").json()["total"] == 1
+    page = adm.get(f"/data/first-service?date={SNAP1}").text
+    sel = page.split('name="decision"', 1)[1].split("</select>", 1)[0]
+    assert "已修正" not in sel and "已剔除" not in sel and 'value="exempt"' not in sel and 'value="excluded"' not in sel
+    assert '<span class="ant-tag ant-tag-success">已修正</span>' in page
+
+
+def _decision_options(html: str) -> tuple[list[str], list[str]]:
+    sel = html.split('name="decision"', 1)[1].split("</select>", 1)[0]
+    values = re.findall(r'<option\b[^>]*\bvalue="([^"]*)"', sel)
+    labels = re.findall(r"<option\b[^>]*>(.*?)</option>", sel)
+    return values, labels
+
+
+def test_completion_where_sql_task_vs_others():
+    """招揽的 hit 是未完成；其余指标的 hit 是已完成。实施率口径不走这条。"""
+    task = ex.INDICATORS["task"]
+    assert task.hit_is_incomplete is True and task.hit == "待处理"
+    assert ex.completion_where(task, "done") == ("COALESCE(task_status,'')<>?", ["待处理"])
+    assert ex.completion_where(task, "todo") == ("COALESCE(task_status,'')=?", ["待处理"])
+    assert ex.completion_where(task, "exempt") is None
+    for key in ("first_service", "second_service", "new_policy", "renewal"):
+        ind = ex.INDICATORS[key]
+        assert ind.hit_is_incomplete is False and ind.hit == "是"
+        assert ex.completion_where(ind, "done") == (f"COALESCE({ind.flag_col},'')=?", ["是"])
+        assert ex.completion_where(ind, "todo") == (f"COALESCE({ind.flag_col},'')<>?", ["是"])
+
+
+def test_task_done_filter_excludes_pending_and_dropdown(web):
+    """招揽：已完成排除待处理，未完成只有待处理。各明细下拉只有全部/已完成/未完成。"""
+    adm = web["admin"]
+    for key in ("task", "first-service", "second-service", "new-policy", "renewal"):
+        values, labels = _decision_options(adm.get(f"/data/{key}?date={SNAP1}").text)
+        assert values == ["", "done", "todo"], key
+        assert labels == ["全部", "已完成", "未完成"], key
+        assert "（" not in "".join(labels)
+
+    c = connect(web["db"])
+    for vin, status in (
+        (vin_of("task", "A1"), "预约失败"),
+        (vin_of("task", "A2"), "待处理"),
+        (vin_of("task", "B1"), "处理中"),
+        (vin_of("task", "Z1"), "暂存"),
+    ):
+        n = c.execute(
+            "UPDATE task_items SET task_status=? WHERE snapshot_date=? AND upper(trim(vin))=?",
+            (status, SNAP1, vin),
+        ).rowcount
+        assert n == 1, vin
+    src = dict(c.execute(
+        "SELECT * FROM task_items WHERE snapshot_date=? AND upper(trim(vin))=?",
+        (SNAP1, vin_of("task", "A1")),
+    ).fetchone())
+    src["row_no"] = c.execute("SELECT COALESCE(MAX(row_no),0)+1 FROM task_items WHERE snapshot_date=?", (SNAP1,)).fetchone()[0]
+    src["vin"] = "LDPNEWSUCCESS0000001"
+    src["task_status"] = "预约成功"
+    cols = list(src)
+    c.execute(
+        f"INSERT INTO task_items ({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",
+        [src[col] for col in cols],
+    )
+    c.commit()
+
+    done = adm.get(f"/api/data/task?date={SNAP1}&decision=done&size=50").json()
+    todo = adm.get(f"/api/data/task?date={SNAP1}&decision=todo&size=50").json()
+    allj = adm.get(f"/api/data/task?date={SNAP1}&size=50").json()
+    assert todo["total"] == 1 and {r["task_status"] for r in todo["rows"]} == {"待处理"}
+    assert "待处理" not in {r["task_status"] for r in done["rows"]}
+    assert {r["task_status"] for r in done["rows"]} == {"预约失败", "处理中", "暂存", "预约成功"}
+    assert done["total"] + todo["total"] == allj["total"] == 5
+    exported = load_workbook(io.BytesIO(adm.get(f"/export/data/task.xlsx?date={SNAP1}&decision=done").content))
+    exported_status = [r[6] for r in exported.active.iter_rows(min_row=2, values_only=True)]
+    assert exported_status and "待处理" not in exported_status
+
+    # 实施率不变：未招揽数仍是「待处理」。D1=预约失败+待处理+预约成功，D2=处理中；暂存那辆不在门店表。
+    task_block = next(b for b in calc.compute(c, SNAP1)["direct-stores"].blocks if b.key == "task")
+    by_store = {r[0]: r for r in task_block.rows}
+    assert by_store[D1][:4] == [D1, 3, 1, pytest.approx(2 / 3)]
+    assert by_store[D2][:4] == [D2, 1, 0, 1.0]
+    c.close()
+
+    for key in ("first-service", "second-service", "new-policy", "renewal"):
+        done = adm.get(f"/api/data/{key}?date={SNAP1}&decision=done&size=50").json()
+        todo = adm.get(f"/api/data/{key}?date={SNAP1}&decision=todo&size=50").json()
+        allj = adm.get(f"/api/data/{key}?date={SNAP1}&size=50").json()
+        assert done["total"] > 0 and todo["total"] > 0, key
+        assert all(r["done"] == "是" for r in done["rows"]), key
+        assert all((r["done"] or "") != "是" for r in todo["rows"]), key
+        assert done["total"] + todo["total"] == allj["total"], key
+
+    page = adm.get(f"/data/task?date={SNAP1}&decision=done").text
+    assert 'value="done" selected' in page or 'value="done"  selected' in page
+    assert "已完成（" not in page
 
 
 def test_region_filter_on_every_filter_page(web):

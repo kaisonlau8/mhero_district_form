@@ -137,7 +137,7 @@ def test_two_separate_pages_and_flow(web):
     r = adm.post("/admin/exemptions/review", data={"action": "approve", "ids": eid, "csrf": tok(adm, "/admin/exemptions")}, follow_redirects=False)
     assert "msg=" in r.headers["location"]
     # 批准后：该车在首保明细标「已剔除」，不再出现在两个申请页，首保分母 -1
-    assert "已剔除" in sup.get("/data/first-service").text
+    assert '<span class="ant-tag ant-tag-warning">已剔除</span>' in sup.get("/data/first-service").text
     assert f'name="xreason_{v}"' not in sup.get("/exclusions/new").text
     assert adm.get("/api/tables/direct-stores").json()["blocks"][0]["rows"][0][1] == 1
     assert "我的申请明细" in sup.get("/exemptions/new?indicator=first_service").text
