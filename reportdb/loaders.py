@@ -88,10 +88,10 @@ def load_aligned(role: str, path: Path) -> list[list[Any]]:
     if role == "stock":
         return normalize_stock_rows(body, header=rows[0] if rows else None)
     if role == "first_service":
-        return normalize_first_service_rows(rows)
+        return normalize_first_service_rows(body)
     if role == "renewal_backlog":
-        return normalize_backlog_rows(rows)
-    return [list(r) for r in rows]
+        return normalize_backlog_rows(body)
+    return [list(r) for r in body]
 
 
 def load_directory_sources(directory: Path) -> tuple[dict[str, list[list[Any]]], dict[str, str]]:

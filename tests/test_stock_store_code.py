@@ -284,3 +284,34 @@ def test_stock_detail_search_region_and_quality(conn, tmp_path):
     assert "门店编码" in header and "实际可用" in header
     body = list(book.active.iter_rows(min_row=2, values_only=True))
     assert body and NANNING_CODE in body[0] and RENAMED in body[0]
+
+
+def test_load_directory_sources_drops_header_for_every_role(tmp_path):
+    """7 份源表都带表头。非库存数据集不能把表头当成明细行。"""
+    from app.processor import SOURCE_SPECS
+    from reportdb.loaders import load_directory_sources
+
+    sentinel = "列头不应入库"
+    sheets = {
+        "门店备件库存导出20261113.xlsx": [HEADERS_22, _row22()],
+        "保养提醒任务列表20261113.xlsx": [[sentinel, "门店编码"], ["1", "DATA-TASK"]],
+        "首保实施率20261113.xlsx": [[sentinel, "大区", None, None, None, None, None, "是否首保", "实际首保日期"], ["LVIN", "华南"]],
+        "二保实施率20261113.xlsx": [[sentinel, "大区"], ["LVIN2", "华南"]],
+        "新保投保率20261113.xlsx": [[sentinel, "大区"], ["LVIN3", "华南"]],
+        "续保投保率20261113.xlsx": [[sentinel, "大区"], ["LVIN4", "华南"]],
+        "去年同期交付未新保车辆20261113.xlsx": [[sentinel, "交付门店大区"], ["LVIN5", "华南", "C5", "交付店", "属性", "2026-10"]],
+    }
+    for name, rows in sheets.items():
+        (tmp_path / name).write_bytes(_xlsx([("Sheet1", rows)]))
+
+    data, files = load_directory_sources(tmp_path)
+    assert set(files) == {spec.key for spec in SOURCE_SPECS}
+    ingested = [cell for key, rows in data.items() if key != "_origin_renewal" for row in rows for cell in row]
+    assert sentinel not in ingested
+    assert [len(data[key]) for key in ("stock", "task", "first-service", "second-service", "new-policy")] == [1, 1, 1, 1, 1]
+    assert len(data["renewal"]) == 2 and data["_origin_renewal"] == ["renewal", "backlog"]
+    assert data["stock"][0][1] == RENAMED and data["stock"][0][2] == PART and data["stock"][0][12] == 7
+    assert data["task"][0][0] == "1" and data["task"][0][1] == "DATA-TASK"
+    assert data["first-service"][0][0] == "LVIN" and data["first-service"][0][7] == "否"
+    backlog = next(row for row in data["renewal"] if row[0] == "LVIN5")
+    assert backlog[4] == "属性" and backlog[5] is None and backlog[6] == "2026-10"
