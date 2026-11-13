@@ -55,7 +55,11 @@ def build_daily_report(conn, snap: str, *, include_detail: bool = False, full_de
         for ds in DATASETS:
             ws = wb.create_sheet(ds.template_sheet)
             cols = [c for c, _ in ds.columns]
-            ws.append([lab for _, lab in ds.columns])
+            heads = [lab for _, lab in ds.columns]
+            if ds.key == "stock":
+                cols.append("store_code")
+                heads.append("门店编码")
+            ws.append(heads)
             where = " AND in_scope=1" if ds.has_region else ""
             for r in conn.execute(f"SELECT {','.join(cols)} FROM {ds.table} WHERE snapshot_date=?{where} ORDER BY row_no", (snap,)):
                 d = mask_row(ds, dict(r), full_detail)

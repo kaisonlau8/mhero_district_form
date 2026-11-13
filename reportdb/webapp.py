@@ -78,6 +78,42 @@ _TPL.env.filters["ds_wbr_filename"] = ds_wbr_filename
 from starlette.staticfiles import StaticFiles as _StaticFiles
 
 
+def stock_store_options(conn, date: str, region: str) -> list[str]:
+    """库存页门店下拉：导出行里的简称，以及编码能对上的门店表名称。"""
+    match = calc.stock_matches_store_sql("s", "t")
+    if region:
+        rows = conn.execute(
+            f"""SELECT DISTINCT s.store_name FROM stock_items s
+                WHERE s.snapshot_date=? AND s.store_name IS NOT NULL AND (
+                    (trim(COALESCE(s.store_code,''))='' AND lower(trim(s.store_name)) IN
+                        (SELECT lower(trim(name)) FROM stores WHERE active=1 AND region=?))
+                    OR (trim(COALESCE(s.store_code,''))<>'' AND EXISTS (
+                        SELECT 1 FROM stores t WHERE t.active=1 AND t.region=?
+                        AND lower(trim(t.code))=lower(trim(s.store_code))))
+                )
+                UNION
+                SELECT t.name FROM stores t
+                WHERE t.active=1 AND t.region=? AND EXISTS (
+                    SELECT 1 FROM stock_items s WHERE s.snapshot_date=? AND {match}
+                )
+                ORDER BY 1""",
+            (date, region, region, region, date),
+        )
+    else:
+        rows = conn.execute(
+            f"""SELECT DISTINCT s.store_name FROM stock_items s
+                WHERE s.snapshot_date=? AND s.store_name IS NOT NULL
+                UNION
+                SELECT t.name FROM stores t
+                WHERE t.active=1 AND EXISTS (
+                    SELECT 1 FROM stock_items s WHERE s.snapshot_date=? AND {match}
+                )
+                ORDER BY 1""",
+            (date, date),
+        )
+    return [r[0] for r in rows if r[0]]
+
+
 def create_app(db_path: str | Path | None = None) -> FastAPI:
     app = FastAPI(title="区域报表", docs_url=None, redoc_url=None, openapi_url=None)
     app.mount("/ds/brand", _StaticFiles(directory=str(_DS_DIR / "brand")), name="mhero-brand")
@@ -384,23 +420,39 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         if region and ds.has_region:
             where.append("region=?")
             args.append(region)
-        elif region and ds.store_name_col:   # 没有 region 列的数据集（库存）：按门店表的归属区域
+        elif region and ds.key == "stock":
+            where.append(
+                "EXISTS (SELECT 1 FROM stores t WHERE t.active=1 AND t.region=? AND "
+                + calc.stock_matches_store_sql(ds.table, "t") + ")"
+            )
+            args.append(region)
+        elif region and ds.store_name_col:   # 没有 region 列、也没有门店编码的数据集：按门店简称
             where.append(f"lower({ds.store_name_col}) IN (SELECT lower(name) FROM stores WHERE active=1 AND region=?)")
             args.append(region)
-        if store and ds.store_name_col:
+        if store and ds.key == "stock":
+            where.append(
+                f"({ds.store_name_col}=? OR lower(trim(COALESCE(store_code,'')))=lower(trim(?)) "
+                "OR (trim(COALESCE(store_code,''))<>'' AND lower(trim(store_code)) IN "
+                "(SELECT lower(trim(code)) FROM stores WHERE active=1 AND name=?)))"
+            )
+            args.extend([store, store, store])
+        elif store and ds.store_name_col:
             where.append(f"{ds.store_name_col}=?")
             args.append(store)
         if origin and ds.key == "renewal":
             where.append("origin=?")
             args.append(origin)
-        cols = ["row_no"] + [c for c, _ in ds.columns] + (["region"] if ds.has_region else []) + (
-            ["origin"] if ds.key == "renewal" else []) + (["part_key"] if False else [])
+        cols = ["row_no"] + [c for c, _ in ds.columns] + (["store_code"] if ds.key == "stock" else []) + (
+            ["region"] if ds.has_region else []) + (["origin"] if ds.key == "renewal" else []) + (
+            ["part_key"] if False else [])
         order = sort if sort in cols else "row_no"
         sql_from = f" FROM {ds.table} WHERE " + " AND ".join(where)
         return sql_from + f" ORDER BY {order} {'DESC' if desc else 'ASC'}, row_no", args
 
     def labels_for(ds: Dataset) -> list[tuple[str, str]]:
         cols = list(ds.columns)
+        if ds.key == "stock":
+            cols.insert(2, ("store_code", "门店编码"))
         if ds.has_region:
             cols.append(("region", "归属区域"))
         if ds.key == "renewal":
@@ -538,12 +590,14 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         for r in rows:
             r["_req"] = st.get(ex_mod.vin_key(r.get("vin")))
         reg_sql, reg_args = "", []
-        if region:   # 门店下拉随区域联动
-            reg_sql, reg_args = ((" AND region=?", [region]) if ds.has_region else
-                                 (f" AND lower({ds.store_name_col}) IN (SELECT lower(name) FROM stores WHERE active=1 AND region=?)", [region]))
-        stores_list = [x[0] for x in conn.execute(
-            f"SELECT DISTINCT {ds.store_name_col} FROM {ds.table} WHERE snapshot_date=? AND {ds.store_name_col} IS NOT NULL{reg_sql} ORDER BY 1",
-            (ctx["date"], *reg_args))] if ds.store_name_col else []
+        if region and ds.has_region:   # 门店下拉随区域联动
+            reg_sql, reg_args = (" AND region=?", [region])
+        if ds.key == "stock":
+            stores_list = stock_store_options(conn, ctx["date"], region)
+        else:
+            stores_list = [x[0] for x in conn.execute(
+                f"SELECT DISTINCT {ds.store_name_col} FROM {ds.table} WHERE snapshot_date=? AND {ds.store_name_col} IS NOT NULL{reg_sql} ORDER BY 1",
+                (ctx["date"], *reg_args))] if ds.store_name_col else []
         params = {"date": ctx["date"], "q": q, "region": region, "store": store, "origin": origin, "size": size,
                   "decision": decision, "scope_only": scope_only or ""}
 
@@ -667,17 +721,21 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
                 f"GROUP BY 1 ORDER BY c DESC LIMIT 50", (date,))]
             out[ds.key] = {"title": ds.title, "rows": tot, "excluded_rows": ex, "in_scope_rows": tot - ex,
                            "excluded_stores": stores}
-        stock_tot = conn.execute("SELECT COUNT(DISTINCT store_name) FROM stock_items WHERE snapshot_date=?", (date,)).fetchone()[0]
+        match = calc.stock_matches_store_sql("s", "t")
+        stock_tot = conn.execute(
+            "SELECT COUNT(*) FROM (SELECT DISTINCT CASE WHEN trim(COALESCE(store_code,''))<>'' "
+            "THEN 'c:'||lower(trim(store_code)) ELSE 'n:'||lower(trim(COALESCE(store_name,''))) END AS k "
+            "FROM stock_items WHERE snapshot_date=?) WHERE k NOT IN ('c:','n:')", (date,)).fetchone()[0]
         stock_hit = conn.execute(
-            "SELECT COUNT(DISTINCT s.store_name) FROM stock_items s JOIN stores t ON lower(t.name)=lower(s.store_name) AND t.active=1 "
-            "WHERE s.snapshot_date=?", (date,)).fetchone()[0]
+            f"SELECT COUNT(*) FROM stores t WHERE t.active=1 AND EXISTS ("
+            f"SELECT 1 FROM stock_items s WHERE s.snapshot_date=? AND {match})", (date,)).fetchone()[0]
         out["exemptions"] = ex_mod.flipped_counts(conn, date)
         out["exclusions"] = excl_mod.excluded_counts(conn, date)
         out["exclusion_rules"] = excl_mod.list_rules(conn)
         out["stock"] = {"title": "门店备件库存", "stores_in_stock": stock_tot, "stores_matched_to_store_table": stock_hit,
                         "active_stores_without_stock": conn.execute(
-                            "SELECT COUNT(*) FROM stores t WHERE t.active=1 AND NOT EXISTS (SELECT 1 FROM stock_items s "
-                            "WHERE s.snapshot_date=? AND lower(s.store_name)=lower(t.name))", (date,)).fetchone()[0]}
+                            f"SELECT COUNT(*) FROM stores t WHERE t.active=1 AND NOT EXISTS ("
+                            f"SELECT 1 FROM stock_items s WHERE s.snapshot_date=? AND {match})", (date,)).fetchone()[0]}
         return out
 
     @app.get("/login", response_class=HTMLResponse)

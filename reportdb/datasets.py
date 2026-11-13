@@ -43,10 +43,12 @@ DATASETS: tuple[Dataset, ...] = (
             ("category", "备件分类"), ("velocity", "备件流速"), ("stock_amount", "库存金额"),
             ("is_replacement", "是否替换件"),
         ),
+        store_code_col="store_code",
         store_name_col="store_name",
-        search_cols=("store_name", "part_no", "part_name"),
+        search_cols=("store_name", "store_code", "part_no", "part_name"),
         has_region=False,
-        notes="M 列（实际可用）归一化为数字；非数字保留原文，SUMIFS 忽略。",
+        notes="按表头读取 21 列或 22 列（含门店编码）导出；实际可用写成数字，非数字保留原文。"
+              "备库率在有门店编码时按编码匹配门店表（简称变了也算），编码为空才按门店简称。",
     ),
     Dataset(
         key="task",
@@ -154,6 +156,7 @@ def ddl(ds: Dataset) -> str:
     extra = []
     if ds.key == "stock":
         extra.append("part_key TEXT")
+        extra.append("store_code TEXT")  # 不在模板 A–U 里；22 列导出才有，历史行为空
     if ds.has_region:
         extra.append("region TEXT")
         extra.append("in_scope INTEGER NOT NULL DEFAULT 0")  # 1=门店在门店表（多维表格）内，计入指标
@@ -166,4 +169,5 @@ def ddl(ds: Dataset) -> str:
         idx.append(f"CREATE INDEX IF NOT EXISTS idx_{ds.table}_region ON {ds.table}(snapshot_date, region);")
     if ds.key == "stock":
         idx.append("CREATE INDEX IF NOT EXISTS idx_stock_items_part ON stock_items(snapshot_date, part_key);")
+        idx.append("CREATE INDEX IF NOT EXISTS idx_stock_items_code ON stock_items(snapshot_date, store_code);")
     return f"CREATE TABLE IF NOT EXISTS {ds.table} (\n    {body}\n) WITHOUT ROWID;\n" + "\n".join(idx)

@@ -56,6 +56,16 @@ def detect_file_role(filename: str) -> str | None:
     return None
 
 
+def _worksheet_for(workbook, filename: str):
+    """库存导出优先读「网点备件库存查询*」；其它文件仍用活动表。"""
+    normalized = normalize_filename(filename)
+    if "门店备件库存导出" in normalized:
+        for name in workbook.sheetnames:
+            if "网点备件库存查询" in name:
+                return workbook[name]
+    return workbook.active
+
+
 def load_rows_from_workbook(content: bytes, filename: str) -> list[tuple]:
     try:
         workbook = load_workbook(BytesIO(content), read_only=True, data_only=False)
@@ -63,7 +73,7 @@ def load_rows_from_workbook(content: bytes, filename: str) -> list[tuple]:
         raise ReportBuildError(f"无法读取文件：{filename}") from exc
 
     try:
-        worksheet = workbook.active
+        worksheet = _worksheet_for(workbook, filename)
         try:
             worksheet.reset_dimensions()
         except Exception:
@@ -110,17 +120,117 @@ def has_meaningful_value(value: object) -> bool:
     return True
 
 
-def normalize_stock_rows(rows: Iterable[tuple]) -> list[list[object]]:
-    normalized_rows: list[list[object]] = []
+# 模板「备件库存明细」A–U。门店编码不插入这些列，避免 SUMIFS 的 B/C/M 错位。
+STOCK_CANONICAL_HEADERS: tuple[str, ...] = (
+    "序号", "门店简称", "备件号", "备件名称", "适用车型", "仓库", "库位",
+    "正常采购价", "现金成本价", "返利成本价", "成本价", "销售价", "实际可用",
+    "计量单位", "账面库存", "理论可用", "不良品库存", "备件分类", "备件流速",
+    "库存金额", "是否替换件",
+)
+STOCK_CODE_HEADER = "门店编码"
+_STOCK_AVAILABLE_INDEX = STOCK_CANONICAL_HEADERS.index("实际可用")
+_STOCK_HEADER_MARKERS = frozenset({"门店简称", "备件号", "实际可用"})
+
+
+def clean_store_code(value: object) -> str | None:
+    """门店编码：去首尾空白；空串视为没有编码（历史行）。保留原大小写，匹配时再忽略大小写。"""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, float) and value == int(value):
+        value = int(value)
+    text = str(value).strip()
+    return text or None
+
+
+def _stock_header_index(header: Iterable[object] | None) -> dict[str, int] | None:
+    if header is None:
+        return None
+    index: dict[str, int] = {}
+    for i, cell in enumerate(header):
+        if cell is None:
+            continue
+        name = str(cell).strip()
+        if name and name not in index:
+            index[name] = i
+    if not _STOCK_HEADER_MARKERS.issubset(index):
+        return None
+    return index
+
+
+def _header_cell(row: list[object], index: dict[str, int], name: str) -> object:
+    pos = index.get(name)
+    if pos is None or pos >= len(row):
+        return None
+    return row[pos]
+
+
+def _align_stock_by_header(row: Iterable[object], index: dict[str, int]) -> list[object]:
+    current = list(row)
+    aligned = [_header_cell(current, index, name) for name in STOCK_CANONICAL_HEADERS]
+    aligned.append(clean_store_code(_header_cell(current, index, STOCK_CODE_HEADER)))
+    aligned[_STOCK_AVAILABLE_INDEX] = parse_numeric_text(aligned[_STOCK_AVAILABLE_INDEX])
+    return aligned
+
+
+def _align_stock_positional(row: Iterable[object]) -> list[object]:
+    """已对齐的 21 列（可选第 22 列是门店编码）。没有表头时不能猜 22 列原始导出的列位移。"""
+    current = list(row)
+    code = clean_store_code(current[21]) if len(current) > 21 else None
+    current = current[:21]
+    if len(current) < 21:
+        current.extend([None] * (21 - len(current)))
+    current.append(code)
+    current[_STOCK_AVAILABLE_INDEX] = parse_numeric_text(current[_STOCK_AVAILABLE_INDEX])
+    return current
+
+
+def normalize_stock_rows(rows: Iterable[tuple], header: Iterable[object] | None = None) -> list[list[object]]:
+    """按表头把库存导出收成模板 A–U，门店编码附在第 22 列（没有则为空）。
+
+    同时认 22 列（含「门店编码」）和 21 列旧导出。表头可单独传入，也可以是 rows 的第一行。
+    没有表头时按旧位置处理：M 列（下标 12）是「实际可用」。
+    """
+    pending = [list(row) for row in rows]
+    header_index = _stock_header_index(header)
+    if header_index is None and pending:
+        header_index = _stock_header_index(pending[0])
+        if header_index is not None:
+            pending = pending[1:]
+    if header_index is None:
+        return [_align_stock_positional(row) for row in pending]
+    return [_align_stock_by_header(row, header_index) for row in pending]
+
+
+def template_code_to_name(workbook) -> dict[str, str]:
+    """常备件备库率 B=经销商编码、C=名称（数据从第 5 行起）。键为去空白、忽略大小写的编码。"""
+    if "常备件备库率" not in getattr(workbook, "sheetnames", []):
+        return {}
+    worksheet = workbook["常备件备库率"]
+    found: dict[str, str] = {}
+    for code, name in worksheet.iter_rows(min_row=5, min_col=2, max_col=3, values_only=True):
+        key = clean_store_code(code)
+        if not key or name is None:
+            continue
+        text = str(name).strip()
+        if text:
+            found[key.casefold()] = text
+    return found
+
+
+def stock_rows_for_excel(rows: Iterable[Iterable[object]], code_to_name: dict[str, str]) -> list[list[object]]:
+    """写回模板前只保留 A–U。编码能对上经销商时，把 B 列改成模板里的名称，原有 SUMIFS 才不会因简称变更变成 0。"""
+    prepared: list[list[object]] = []
     for row in rows:
         current = list(row)
+        code = clean_store_code(current[21]) if len(current) > 21 else None
+        current = current[:21]
         if len(current) < 21:
             current.extend([None] * (21 - len(current)))
-
-        # 门店备件库存导出的 M 列需要写成数字，相关公式才会参与计算。
-        current[12] = parse_numeric_text(current[12])
-        normalized_rows.append(current)
-    return normalized_rows
+        official = code_to_name.get(code.casefold()) if code else None
+        if official:
+            current[1] = official
+        prepared.append(current)
+    return prepared
 
 
 def normalize_first_service_rows(rows: Iterable[tuple]) -> list[list[object]]:
@@ -215,6 +325,7 @@ def build_report(
             "新保": "new_policy",
         }
 
+        dealer_names = template_code_to_name(workbook)
         for sheet_name, source_key in direct_sheet_sources.items():
             if sheet_name not in workbook.sheetnames:
                 raise ReportBuildError(f"模板缺少工作表：{sheet_name}")
@@ -224,7 +335,10 @@ def build_report(
             data_rows = source_rows[1:]
 
             if source_key == "stock":
-                data_rows = normalize_stock_rows(data_rows)
+                data_rows = stock_rows_for_excel(
+                    normalize_stock_rows(data_rows, header=source_rows[0] if source_rows else None),
+                    dealer_names,
+                )
             elif source_key == "first_service":
                 data_rows = normalize_first_service_rows(data_rows)
 

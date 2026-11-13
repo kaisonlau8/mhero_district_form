@@ -42,16 +42,19 @@ def reference_values(data: dict[str, list[list[Any]]], region_map: Callable[[Any
     from openpyxl.worksheet.formula import ArrayFormula
 
     from app.excel_values import flatten_formulas_to_values
+    from app.processor import stock_rows_for_excel, template_code_to_name
 
     wb = load_workbook(config.TEMPLATE_PATH, data_only=False)
+    dealer_names = template_code_to_name(wb)
     for ds in DATASETS:
         ws = wb[ds.template_sheet]
         if ws.max_row > 1:
             ws.delete_rows(2, ws.max_row - 1)
         names = [c for c, _ in ds.columns]
-        ci = names.index(ds.store_code_col) if ds.store_code_col else None
+        ci = names.index(ds.store_code_col) if ds.store_code_col and ds.store_code_col in names else None
         ni = names.index(ds.store_name_col) if ds.store_name_col else None
-        for row in data[ds.key]:
+        source_rows = stock_rows_for_excel(data[ds.key], dealer_names) if ds.key == "stock" else data[ds.key]
+        for row in source_rows:
             row = list(row) + [None] * (len(names) - len(row))
             row = row[: len(names)]
             row = [None if v == "" else v for v in row]

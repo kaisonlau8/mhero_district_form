@@ -14,6 +14,7 @@ if str(config.PROJECT_ROOT) not in sys.path:
 
 from app.processor import (  # noqa: E402  复用，保证与 Excel 路径同一套规则
     SOURCE_SPECS,
+    clean_store_code,
     detect_file_role,
     load_rows_from_workbook,
     normalize_backlog_rows,
@@ -81,10 +82,11 @@ def find_source_files(directory: Path) -> dict[str, Path]:
 
 
 def load_aligned(role: str, path: Path) -> list[list[Any]]:
-    """role → 去掉表头、做完归一化、与模板列对齐的行。"""
-    rows = load_rows_from_workbook(Path(path).read_bytes(), Path(path).name)[1:]
+    """role → 去掉表头、做完归一化、与模板列对齐的行。库存另在行尾带门店编码（旧表为空）。"""
+    rows = load_rows_from_workbook(Path(path).read_bytes(), Path(path).name)
+    body = rows[1:]
     if role == "stock":
-        return normalize_stock_rows(rows)
+        return normalize_stock_rows(body, header=rows[0] if rows else None)
     if role == "first_service":
         return normalize_first_service_rows(rows)
     if role == "renewal_backlog":
@@ -142,22 +144,28 @@ def to_db_rows(ds: Dataset, aligned: list[list[Any]], *, region_lookup=None, ori
     extra: list[str] = []
     if ds.key == "stock":
         extra.append("part_key")
+        extra.append("store_code")
     if ds.has_region:
         extra.extend(["region", "in_scope"])
     if ds.key == "renewal":
         extra.append("origin")
-    code_i = names.index(ds.store_code_col) if ds.store_code_col else None
+    code_i = names.index(ds.store_code_col) if ds.store_code_col and ds.store_code_col in names else None
     name_i = names.index(ds.store_name_col) if ds.store_name_col else None
     part_i = names.index("part_no") if ds.key == "stock" else None
     out = []
     for row_no, raw in enumerate(aligned, 1):
-        r = [clean(v) for v in _pad(raw, ncols)]
+        raw_list = list(raw)
+        stock_code = None
+        if ds.key == "stock":
+            stock_code = clean_store_code(raw_list[21]) if len(raw_list) > 21 else None
+        r = [clean(v) for v in _pad(raw_list, ncols)]
         if ds.key == "stock":
             r[names.index("available_qty")] = parse_numeric_text(r[names.index("available_qty")])
             r = [v if not isinstance(v, (int, float)) or isinstance(v, bool) else v for v in r]
         tail: list[Any] = []
         if ds.key == "stock":
             tail.append(part_key(r[part_i]))
+            tail.append(stock_code)
         if ds.has_region:
             reg, scope = region_lookup(r[code_i], r[name_i], r[names.index("src_region")]) if region_lookup else (None, 0)
             tail.extend([reg, scope])
