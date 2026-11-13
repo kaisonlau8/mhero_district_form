@@ -141,7 +141,10 @@ def preview(conn: sqlite3.Connection, parts: list[dict[str, Any]], snap: str | N
         info.update(rows=parts, matched=None, unmatched=None, coverage=None, trial=None)
         return info
     rows_by_key = {r[0]: (r[1], r[2]) for r in conn.execute(
-        "SELECT part_key, COUNT(*), COUNT(DISTINCT store_name) FROM stock_items WHERE snapshot_date=? GROUP BY part_key", (snap,))}
+        "SELECT part_key, COUNT(*), COUNT(DISTINCT CASE "
+        "WHEN trim(COALESCE(store_code,''))<>'' THEN lower(trim(store_code)) "
+        "ELSE lower(trim(COALESCE(store_name,''))) END) "
+        "FROM stock_items WHERE snapshot_date=? GROUP BY part_key", (snap,))}
     spare = calc.spare_matrix(conn, snap, parts=parts)
     store_n = len(spare["rows"])
     have = {}

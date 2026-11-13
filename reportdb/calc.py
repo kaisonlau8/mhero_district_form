@@ -77,8 +77,30 @@ def _get(d: dict[str, list[int]], key: str) -> tuple[int, int]:
     return (v[0], v[1]) if v else (0, 0)
 
 
+def _fold(value: Any) -> str:
+    """门店编码 / 简称比较键：去首尾空白、忽略大小写。"""
+    if value is None:
+        return ""
+    return str(value).strip().casefold()
+
+
+def stock_matches_store_sql(stock: str = "s", store: str = "t") -> str:
+    """库存行归属门店：有门店编码时只认编码；编码为空才按门店简称。比较去空白、不区分大小写。"""
+    code = f"lower(trim(COALESCE({stock}.store_code,'')))"
+    name = f"lower(trim(COALESCE({stock}.store_name,'')))"
+    store_code = f"lower(trim(COALESCE({store}.code,'')))"
+    store_name = f"lower(trim(COALESCE({store}.name,'')))"
+    return (
+        f"(({code}<>'' AND {code}={store_code})"
+        f" OR ({code}='' AND {name}<>'' AND {name}={store_name}))"
+    )
+
+
 def spare_matrix(conn: sqlite3.Connection, snap: str, parts: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-    """门店×备件矩阵。parts 缺省取快照当天生效的名单版本（spare_lists）；传入则用于上传预览试算。"""
+    """门店×备件矩阵。parts 缺省取快照当天生效的名单版本（spare_lists）；传入则用于上传预览试算。
+
+    有门店编码的库存只按 stores.code 归集（简称与门店表不一致也算）；编码为空才按门店简称。
+    """
     list_meta = None
     if parts is None:
         from .spare import list_for_date
@@ -89,19 +111,31 @@ def spare_matrix(conn: sqlite3.Connection, snap: str, parts: list[dict[str, Any]
     else:
         parts = [dict(p, sort_order=i) for i, p in enumerate(parts, 1)]
     stores = [dict(r) for r in conn.execute("SELECT * FROM stores WHERE active=1 ORDER BY seq, code")]
-    sums: dict[tuple[str, str], float] = defaultdict(float)
+    by_code = {_fold(s["code"]): s["code"] for s in stores if _fold(s["code"])}
+    code_sums: dict[tuple[str, str], float] = defaultdict(float)
+    name_sums: dict[tuple[str, str], float] = defaultdict(float)
     for r in conn.execute(
-        "SELECT store_name, part_key, SUM(CASE WHEN typeof(available_qty) IN ('integer','real') THEN available_qty "
-        "ELSE 0 END) AS q FROM stock_items WHERE snapshot_date=? AND store_name IS NOT NULL AND part_key IS NOT NULL "
-        "GROUP BY store_name, part_key", (snap,)):
-        sums[(r["store_name"].casefold(), r["part_key"])] += r["q"] or 0
+        "SELECT store_code, store_name, part_key, SUM(CASE WHEN typeof(available_qty) IN ('integer','real') "
+        "THEN available_qty ELSE 0 END) AS q FROM stock_items WHERE snapshot_date=? AND part_key IS NOT NULL "
+        "GROUP BY store_code, store_name, part_key", (snap,)):
+        qty = r["q"] or 0
+        code = _fold(r["store_code"])
+        if code:
+            canon = by_code.get(code)
+            if canon:
+                code_sums[(canon, r["part_key"])] += qty
+            continue
+        name = _fold(r["store_name"])
+        if name:
+            name_sums[(name, r["part_key"])] += qty
     pkeys = [part_key(p["code"]) for p in parts]
     counted_idx = [i for i, p in enumerate(parts) if p["counted"]]
     rows = []
     for seq, s in enumerate(stores, 1):
+        name_key = _fold(s["name"])
         vals = []
         for pk in pkeys:
-            v = sums.get(((s["name"] or "").casefold(), pk), 0)
+            v = code_sums.get((s["code"], pk), 0) + name_sums.get((name_key, pk), 0)
             vals.append(int(v) if float(v) == int(v) else v)
         pos = sum(1 for i in counted_idx if vals[i] > 0)
         rate = pos / len(counted_idx) if counted_idx else None

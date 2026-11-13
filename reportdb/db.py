@@ -266,8 +266,18 @@ def _migrate_v7(conn: sqlite3.Connection) -> None:
     conn.execute("DELETE FROM user_stores")                    # 手工分配停用（部署前已备份数据库）
 
 
+def _migrate_v8(conn: sqlite3.Connection) -> None:
+    """库存明细增加门店编码。已有库原位补列；空编码的历史行继续按门店简称匹配。"""
+    _add_col(conn, "stock_items", "store_code", "TEXT")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_stock_items_code ON stock_items(snapshot_date, store_code)")
+
+
 # 迁移列表：下标+1 == user_version。只追加，不改旧条目。元素可以是 SQL 脚本或 callable(conn)。
-MIGRATIONS: list = [CORE_DDL + "\n" + "\n".join(ddl(d) for d in DATASETS), _migrate_v2, _migrate_v3, _migrate_v4, _migrate_v5, _migrate_v6, _migrate_v7]
+MIGRATIONS: list = [
+    CORE_DDL + "\n" + "\n".join(ddl(d) for d in DATASETS),
+    _migrate_v2, _migrate_v3, _migrate_v4, _migrate_v5, _migrate_v6, _migrate_v7, _migrate_v8,
+]
+SCHEMA_VERSION = len(MIGRATIONS)
 
 
 def connect(path: str | Path | None = None) -> sqlite3.Connection:
