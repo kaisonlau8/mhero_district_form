@@ -36,11 +36,11 @@
   .varea { display: flex; align-items: flex-end; gap: 10px; }
   .vgroup { flex: 1; min-width: 0; text-align: center; }
   .vpair { display: flex; align-items: flex-end; justify-content: center; gap: 10px; height: 230px; }
-  .vslot { position: relative; width: 54px; height: 100%; }
+  .vslot { position: relative; width: 68px; height: 100%; }
   .vbar { position: absolute; left: 6px; right: 6px; bottom: 0; border-radius: 4px 4px 0 0; min-height: 2px; z-index: 1; }
   .vbar.now { background: #1677ff; }
   .vbar.prev { background: #fa8c16; }
-  .vval { position: absolute; left: 0; right: 0; text-align: center; font-size: 12px; line-height: 14px; font-weight: 700; color: #262626; z-index: 2; }
+  .vval { position: absolute; left: -6px; right: -6px; text-align: center; font-size: 12px; line-height: 14px; font-weight: 700; color: #262626; z-index: 2; white-space: nowrap; }
   .vname { margin-top: 8px; font-size: 16px; font-weight: 700; }
   .gmiss { position: absolute; left: 0; right: 0; bottom: 4px; color: #8c8c8c; font-size: 13px; }
   .vpct { margin-top: 2px; font-size: 15px; }
@@ -97,8 +97,7 @@
 {% macro bars(panel, field, title, unit) %}
 <div class="bar-chart" data-chart="{{ field }}">
   <h3>{{ title }}</h3>
-  <div class="legend"><span class="sw now"></span>本期 <span class="sw prev"></span>对比期</div>
-  <p class="axis-note">横轴是区域</p>
+  <div class="legend"><span class="sw now"></span>{{ panel.series_current }} <span class="sw prev"></span>{{ panel.series_base }}</div>
   <div class="vplot">
     <div class="varea">
       {% for row in panel.rows if row.region != '全国' %}
@@ -108,14 +107,14 @@
             {% if row[field].region_current_bar is not none %}
             {% set cur_h = (row[field].region_current_bar * 0.78)|round(1) %}
             <span class="vval" style="bottom: calc({{ cur_h }}% + 4px)">{{ row[field].current }}</span>
-            <i class="vbar now" style="height: {{ cur_h }}%" title="本期 {{ row[field].current }} {{ unit }}" data-value="{{ row[field].current }}"></i>
+            <i class="vbar now" style="height: {{ cur_h }}%" title="{{ panel.series_current }} {{ row[field].current }} {{ unit }}" data-value="{{ row[field].current }}"></i>
             {% else %}<span class="gmiss">未导入</span>{% endif %}
           </div>
           <div class="vslot">
             {% if row[field].region_base_bar is not none %}
             {% set base_h = (row[field].region_base_bar * 0.78)|round(1) %}
             <span class="vval" style="bottom: calc({{ base_h }}% + 4px)">{{ row[field].base }}</span>
-            <i class="vbar prev" style="height: {{ base_h }}%" title="对比期 {{ row[field].base }} {{ unit }}" data-value="{{ row[field].base }}"></i>
+            <i class="vbar prev" style="height: {{ base_h }}%" title="{{ panel.series_base }} {{ row[field].base }} {{ unit }}" data-value="{{ row[field].base }}"></i>
             {% else %}<span class="gmiss">未导入</span>{% endif %}
           </div>
         </div>
@@ -130,14 +129,14 @@
 
 {% macro board(panel) %}
 {% set nation = panel.rows | selectattr('region', 'equalto', '全国') | first %}
-<p class="when">本期 {{ panel.current.start }} 至 {{ panel.current.end }}　对比期 {{ panel.base.start }} 至 {{ panel.base.end }}</p>
+<p class="when">{{ panel.series_current }} {{ panel.current.start }} 至 {{ panel.current.end }}　{{ panel.series_base }} {{ panel.base.start }} 至 {{ panel.base.end }}</p>
 {% if nation %}
 <div class="hero-cards">
-  {% for field, title, unit in (('orders', '收款工单数', '单'), ('output', '总产值', '元'), ('vehicles', '车辆数', '辆')) %}
+  {% for field, title, unit in (('orders', '收款工单数', '单'), ('output', '总产值', '千元'), ('vehicles', '车辆数', '辆')) %}
   <div class="hero-card" data-card="{{ field }}">
     <div class="k">全国 {{ title }}（{{ unit }}）</div>
     <div class="num" title="{{ nation[field].current }} {{ unit }}">{{ nation[field].current }}</div>
-    <div class="sub">对比期 {{ nation[field].base }}　<span class="{{ 'up' if nation[field].change.startswith('+') else ('down' if nation[field].change.startswith('-') else 'flat') }}">{{ nation[field].change }}</span></div>
+    <div class="sub">{{ panel.series_base }} {{ nation[field].base }}　<span class="{{ 'up' if nation[field].change.startswith('+') else ('down' if nation[field].change.startswith('-') else 'flat') }}">{{ nation[field].change }}</span></div>
     <div class="k">{{ unit }}</div>
   </div>
   {% endfor %}
@@ -147,8 +146,8 @@
 {% endif %}
 {% if panel.reconcile %}<div class="ant-alert ant-alert-warning"><div class="ant-alert-content">{{ panel.reconcile.warning }}</div></div>{% endif %}
 {{ bars(panel, 'orders', '各区收款工单数（单）', '单') | safe }}
-{{ bars(panel, 'output', '各区总产值（元）', '元') | safe }}
-{{ bars(panel, 'vehicles', '各区车辆数（辆）', '辆') | safe }}
+{{ bars(panel, 'output', '各区总产值（千元）', '千元') | safe }}
+{{ bars(panel, 'vehicles', '各区来厂车辆数（去重）', '辆') | safe }}
 {% endmacro %}
 
 {% if not view or view in ('quarter', 'year') %}
@@ -192,7 +191,6 @@
     <article class="metric-card">
       <h3>{{ metric.title }}</h3>
       <p class="natline">全国 {{ nation.rate_text }}　橙线是全国</p>
-      <p class="axis-note">横轴是区域</p>
       <div class="mplot">
         <div class="marea">
           {% if nation.rate is not none %}<i class="nhline" style="bottom: {{ (nation.rate * 78)|round(1) }}%" title="全国 {{ nation.rate_text }}"></i>{% endif %}

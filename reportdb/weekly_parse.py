@@ -222,7 +222,7 @@ def parse_operation_xlsx(blob: bytes) -> dict:
         quality.append(f"工时+备件+其他为 {parts_sum}，汇总总产值 {totals['总产值']}，差额 {totals['总产值'] - parts_sum}。保留汇总行，不改写。")
     else:
         quality.append("总产值取汇总行，与工时+备件+其他一致。")
-    quality.append("总产值单位为元（2026-11-20 确认），按导出的数值展示。是否含税未注明。")
+    quality.append("总产值源数据单位为元（2026-11-20 确认）。页面按千元展示，保留两位小数。是否含税未注明。")
     return {
         "sheet_name": sheet,
         "header": header,

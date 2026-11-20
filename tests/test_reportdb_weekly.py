@@ -128,6 +128,18 @@ def test_operation_uses_summary_and_does_not_add_vehicles():
     assert "regions" not in got
 
 
+def test_output_thousand_display_does_not_change_rate():
+    from reportdb.weekly_parse import change
+    from reportdb.weekly_report import _fmt, _fmt_change
+
+    assert _fmt(Decimal("6402712.72"), money=True) == "6,402.71"
+    assert _fmt(Decimal("631854.40"), money=True) == "631.85"
+    raw = _fmt_change(change(Decimal("1500.49"), Decimal("1000")))
+    rounded = _fmt_change(change(Decimal("1.50") * 1000, Decimal("1.00") * 1000))
+    assert raw == "+50.05%"
+    assert rounded == "+50.00%"
+
+
 def test_region_operation_normalizes_name():
     from reportdb.weekly_parse import parse_operation_xlsx
 
@@ -384,7 +396,9 @@ def test_indicators_use_summary_and_operation_stays_on_receipt_export(conn):
     orders = next(r for r in op["quarter"]["rows"] if r["region"] == "全国")
     assert orders["orders"]["current"] == "15"
     assert orders["vehicles"]["current"] == "9"
-    assert orders["output"]["current"] == "120.00"
+    assert orders["output"]["current"] == "0.12"
+    assert orders["output"]["current_yuan"] == "120.00"
+    assert orders["labor"] == "0.04"
     assert page["indicators"]["metrics"][0]["cells"][0]["num"] != 15
     stored = json.loads(conn.execute(
         "SELECT summary_json FROM weekly_imports WHERE kind='operation' AND compare_role='quarter' AND scope='全国'"
@@ -521,22 +535,28 @@ def test_weekly_page_nav_and_roles(conn, tmp_path):
     assert "来自DMS收款报表" in qchunk
     assert 'data-chart="vehicles"' in qchunk
     assert 'data-value="142"' in qchunk
-    assert "各区总产值（元）" in qchunk
+    assert "各区总产值（千元）" in qchunk
+    assert "48,840.00" in qchunk
     assert "各区收款工单数（单）" in qchunk
-    assert "各区车辆数（辆）" in qchunk
+    assert "各区来厂车辆数（去重）" in qchunk
+    assert "上季度同期" in qchunk
+    assert "对比期" not in qchunk
+    assert "横轴" not in qchunk
     assert "金额单位未注明" not in qchunk
     assert "vbar now" in qchunk
     assert "折线" not in demo_q.text
     assert "calc.compute" not in qchunk
     demo_y = admin.get("/reports/weekly/demo", params={"view": "year"})
     assert "2025-01-01" in demo_y.text and "2025-11-20" in demo_y.text
+    ychunk = demo_y.text.split('id="shot-year"', 1)[1].split("<details", 1)[0]
+    assert "去年同期" in ychunk and "对比期" not in ychunk and "141,050.00" in ychunk
     demo_i = admin.get("/reports/weekly/demo", params={"view": "indicators"})
     ichunk = demo_i.text.split('id="shot-kpi"', 1)[1].split("<details", 1)[0]
     assert "使用系统计算结果" in ichunk
     assert "暂无数据" in ichunk
     assert "mbar bad" in ichunk
     assert "nhline" in ichunk
-    assert "横轴是区域" in ichunk
+    assert "横轴" not in ichunk
     assert "calc.compute" not in ichunk
     assert "980" not in again
 

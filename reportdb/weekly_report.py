@@ -98,7 +98,7 @@ def import_operation(conn, blob: bytes, *, week_start: str, period_start: str, p
         "field_sources": {
             "orders": "收款工单数，取该文件汇总行，不把业务类型明细相加",
             "vehicles": "车辆数，取该文件汇总行的去重值，不跨业务类型或区域相加",
-            "output": "总产值，取该文件汇总行，单位元",
+            "output": "总产值，取该文件汇总行，源数据单位元，页面按千元展示",
         },
     }
     return _save(conn, blob, {
@@ -268,7 +268,7 @@ def _operation_section(active, week: str, scopes: list[str], known: list[str]) -
         "title": "经营数据：季度环比 / 年度同比",
         "imported": quarter["imported"] or year["imported"],
         "source": "dms_service_operation_receipt",
-        "note": "收款工单数、总产值、车辆数只来自 DMS 服务经营报表「收款 · 日报」导出的汇总行，不用总表自算结果代替。收款工单数按收款时间统计已收款工单，含仅备件销售，不是严格来厂台次。车辆数用汇总行去重值，不跨业务类型或区域相加。总产值单位为元（2026-11-20 确认），按导出的数值展示。是否含税未注明。环比、同比只按对应期间的这些导出值计算。",
+        "note": "收款工单数、总产值、车辆数只来自 DMS 服务经营报表「收款 · 日报」导出的汇总行，不用总表自算结果代替。收款工单数按收款时间统计已收款工单，含仅备件销售，不是严格来厂台次。车辆数用汇总行去重值，不跨业务类型或区域相加。总产值源数据单位为元（2026-11-20 确认），页面按千元展示，保留两位小数。涨跌按原始元计算。是否含税未注明。环比、同比只按对应期间的这些导出值计算。",
         "quarter": quarter,
         "year": year,
     }
@@ -306,14 +306,20 @@ def _compare_panel(active, week: str, scopes: list[str], known: list[str], span:
         if mismatch:
             base_vals = None
         row = {"region": scope, "imported": current is not None and aligned, "period_mismatch": mismatch}
+        row["yuan"] = {key: _s(val) for key, val in cur_vals.items()} if cur_vals else {}
         for field in ("orders", "output", "vehicles"):
             cur = None if cur_vals is None else cur_vals[field]
             bas = None if base_vals is None else base_vals[field]
-            row[field] = {
-                "current": _fmt(cur, money=field == "output"),
-                "base": _fmt(bas, money=field == "output"),
+            money = field == "output"
+            cell = {
+                "current": _fmt(cur, money=money),
+                "base": _fmt(bas, money=money),
                 "change": "不可比" if mismatch else _fmt_change(change(cur, bas)),
             }
+            if money:
+                cell["current_yuan"] = "" if cur is None else _s(cur)
+                cell["base_yuan"] = "" if bas is None else _s(bas)
+            row[field] = cell
         if cur_vals is None:
             row.update(labor="未导入", parts="未导入", other="未导入")
         else:
@@ -350,8 +356,8 @@ def _compare_panel(active, week: str, scopes: list[str], known: list[str], span:
         "default_note": windows["default_note"] if windows else "",
         "label_current": windows.get("label_current", "") if windows else "",
         "label_base": windows.get("label_base", "") if windows else "",
-        "series_current": "本季" if span == "quarter" else "本年",
-        "series_base": "上季" if span == "quarter" else "去年",
+        "series_current": "本季度" if span == "quarter" else "本年度",
+        "series_base": "上季度同期" if span == "quarter" else "去年同期",
         "change_label": "季度环比" if span == "quarter" else "年度同比",
         "current": period,
         "base": base_period,
@@ -370,13 +376,18 @@ def _attach_pair_bars(rows: list[dict]) -> None:
         _paint_bars(regional, field, "region_current_bar", "region_base_bar")
 
 
+def _bar_source(cell: dict, side: str):
+    raw = cell.get(f"{side}_yuan")
+    text = raw if raw not in (None, "") else cell[side]
+    if text in {None, "", "未导入", "不可比"}:
+        return None
+    return Decimal(str(text).replace(",", ""))
+
+
 def _paint_bars(rows: list[dict], field: str, cur_key: str, base_key: str) -> None:
     pairs = []
     for row in rows:
-        pairs.append((
-            None if row[field]["current"] in {"未导入", "不可比", ""} else Decimal(row[field]["current"]),
-            None if row[field]["base"] in {"未导入", "不可比", ""} else Decimal(row[field]["base"]),
-        ))
+        pairs.append((_bar_source(row[field], "current"), _bar_source(row[field], "base")))
     peak = max((value for pair in pairs for value in pair if value is not None and value > 0), default=None)
     for row, (cur, bas) in zip(rows, pairs):
         row[field][cur_key] = _bar_width(cur, peak)
@@ -413,12 +424,10 @@ def _reconcile(national, rows, known: list[str]) -> dict:
     sums = {}
     gaps = {}
     for field, money in (("orders", False), ("output", True), ("labor", True), ("parts", True), ("other", True)):
-        if field in {"labor", "parts", "other"}:
-            total = sum((_parse_shown(by_region[region][field]) for region in counted), Decimal(0))
-        elif field == "orders":
+        if field == "orders":
             total = sum((_parse_shown(by_region[region]["orders"]["current"]) for region in counted), Decimal(0))
         else:
-            total = sum((_parse_shown(by_region[region]["output"]["current"]) for region in counted), Decimal(0))
+            total = sum((Decimal((by_region[region].get("yuan") or {}).get(field) or "0") for region in counted), Decimal(0))
         base = national_values[field]
         sums[field] = _fmt(total, money=money)
         gaps[field] = _fmt(base - total, money=money)
@@ -428,7 +437,7 @@ def _reconcile(national, rows, known: list[str]) -> dict:
         mismatch_text = " 区间与全国不一致、未纳入对账：" + "、".join(mismatched) + "。"
     warning = (
         f"已导入区域收款工单数合计 {sums['orders']}，全国 {_fmt(national_values['orders'])}，差额 {gaps['orders']}。"
-        f"总产值差额 {gaps['output']}。未导入区域：{missing_text}。差额保留，不摊分。"
+        f"总产值差额 {gaps['output']} 千元。未导入区域：{missing_text}。差额保留，不摊分。"
         f"车辆数取各自汇总行，不跨区域加总，不做对平。{mismatch_text}"
     )
     return {
@@ -587,10 +596,10 @@ def _fmt(value: Decimal | None, *, money: bool = False) -> str:
     if value is None:
         return "未导入"
     if money:
-        quant = value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        if value == quant:
-            return f"{quant:.2f}"
-        return format(value, "f")
+        quant = (value / Decimal(1000)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        sign = "-" if quant < 0 else ""
+        whole, frac = f"{abs(quant):.2f}".split(".")
+        return sign + f"{int(whole):,}.{frac}"
     if value == value.to_integral_value():
         return str(int(value))
     return format(value, "f")
@@ -610,7 +619,7 @@ def _fmt_change(item: dict) -> str:
 def _parse_shown(text: str) -> Decimal:
     if text in {"", "未导入", "不可比"}:
         return Decimal(0)
-    return Decimal(text)
+    return Decimal(text.replace(",", ""))
 
 
 def _week_label(start: str, today: date) -> str:
@@ -661,7 +670,11 @@ def demo_board() -> dict:
     """仅供 /reports/weekly/demo 截图。不写入数据库，也不代替真实周报。"""
     def pair(cur, base, *, money=False):
         c, b = Decimal(str(cur)), Decimal(str(base))
-        return {"current": _fmt(c, money=money), "base": _fmt(b, money=money), "change": _fmt_change(change(c, b))}
+        item = {"current": _fmt(c, money=money), "base": _fmt(b, money=money), "change": _fmt_change(change(c, b))}
+        if money:
+            item["current_yuan"] = _s(c)
+            item["base_yuan"] = _s(b)
+        return item
 
     def panel(series_c, series_b, change_label, current, base, national, regions):
         rows = []
@@ -693,27 +706,27 @@ def demo_board() -> dict:
         }
 
     quarter_regions = [
-        ("华北", 186, 160, "96.40", "88.20", 92, 84),
-        ("华东", 154, 171, "80.10", "91.50", 78, 88),
-        ("华南", 142, 101, "74.80", "55.30", 70, 52),
-        ("华中1", 96, 118, "48.20", "60.40", 46, 58),
-        ("西南", 88, 74, "41.60", "36.10", 40, 35),
-        ("西北", 64, 79, "28.40", "33.70", 31, 39),
-        ("华中2", 42, 51, "18.90", "22.40", 20, 24),
+        ("华北", 186, 160, "9640000", "8820000", 92, 84),
+        ("华东", 154, 171, "8010000", "9150000", 78, 88),
+        ("华南", 142, 101, "7480000", "5530000", 70, 52),
+        ("华中1", 96, 118, "4820000", "6040000", 46, 58),
+        ("西南", 88, 74, "4160000", "3610000", 40, 35),
+        ("西北", 64, 79, "2840000", "3370000", 31, 39),
+        ("华中2", 42, 51, "1890000", "2240000", 20, 24),
     ]
     year_regions = [
-        ("华北", 640, 590, "310.20", "288.40", 310, 290),
-        ("华东", 520, 560, "260.50", "274.10", 250, 268),
-        ("华南", 480, 410, "240.00", "198.60", 230, 190),
-        ("华中1", 300, 340, "150.40", "166.20", 140, 160),
-        ("西南", 260, 230, "120.80", "108.50", 120, 108),
-        ("西北", 180, 210, "86.30", "99.40", 84, 98),
-        ("华中2", 120, 140, "54.10", "62.80", 56, 66),
+        ("华北", 640, 590, "31020000", "28840000", 310, 290),
+        ("华东", 520, 560, "26050000", "27410000", 250, 268),
+        ("华南", 480, 410, "24000000", "19860000", 230, 190),
+        ("华中1", 300, 340, "15040000", "16620000", 140, 160),
+        ("西南", 260, 230, "12080000", "10850000", 120, 108),
+        ("西北", 180, 210, "8630000", "9940000", 84, 98),
+        ("华中2", 120, 140, "5410000", "6280000", 56, 66),
     ]
-    quarter = panel("本季", "上季", "季度环比", ("2026-10-01", "2026-11-20"), ("2026-07-01", "2026-08-20"),
-                    (980, 860, "488.40", "452.10", 470, 438), quarter_regions)
-    year = panel("本年", "去年", "年度同比", ("2026-01-01", "2026-11-20"), ("2025-01-01", "2025-11-20"),
-                 (2860, 2620, "1410.50", "1298.20", 1320, 1240), year_regions)
+    quarter = panel("本季度", "上季度同期", "季度环比", ("2026-10-01", "2026-11-20"), ("2026-07-01", "2026-08-20"),
+                    (980, 860, "48840000", "45210000", 470, 438), quarter_regions)
+    year = panel("本年度", "去年同期", "年度同比", ("2026-01-01", "2026-11-20"), ("2025-01-01", "2025-11-20"),
+                 (2860, 2620, "141050000", "129820000", 1320, 1240), year_regions)
 
     def metric(key, title, national, regions):
         cells = [{"region": "全国", "rate": national, "rate_text": fmt_value(national, PCT0), "sub": "", "below": False, "num": 1, "den": 1}]
