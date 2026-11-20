@@ -170,13 +170,23 @@ def test_reportdb_layout(chromium, audit_site, width):
                       "经营数据应只有当年月经营数据和季度环比，且默认当年月")
                 scroll = page.get_by_role("region", name="当年月经营数据")
                 sheet = scroll.locator("table.month-sheet")
+                text = sheet.inner_text()
                 check(sheet.locator("th.lab").inner_text() == "区域" and sheet.locator("tr.is-nation").count() == 1,
                       "月度表应有固定区域列和全国行")
-                check("12月" not in sheet.inner_text() and "未导入" not in sheet.inner_text(),
+                check(page.locator("#shot-months a[href*='metric=']").count() == 0, "月度不应再切换指标")
+                check("产值（千元）" in text and "收款工单数" in text and "来厂车辆数（去重）" in text,
+                      "打开页面就要同时看到三项名称")
+                nation = sheet.locator("tr.is-nation")
+                check(nation.locator("td[data-metric=output]").first.inner_text() == "18.10"
+                      and nation.locator("td[data-metric=orders]").first.inner_text() == "81"
+                      and nation.locator("td[data-metric=vehicles]").first.inner_text() == "21",
+                      "三项示例值应同时可见")
+                check("示例数据，非实际经营数据" in page.locator(".demo-banner").inner_text(), "示例必须标明不是实际数据")
+                check("12月" not in text and "未导入" not in text,
                       "示例月表不应出现未来月或未导入")
                 check(sheet.locator("td.lab").first.evaluate("el => getComputedStyle(el).position") == "sticky",
                       "月度区域列未固定")
-                check(scroll.evaluate("el => el.scrollWidth > el.clientWidth") == mobile, "月度表未按断点在表内横滚")
+                check(scroll.evaluate("el => el.scrollWidth > el.clientWidth"), "月度三项应在表内横滑")
                 check("年度同比" not in page.content() and page.locator("#shot-year").count() == 0, "月度视图不能恢复年度")
             if path == "/reports/weekly/demo?view=indicators":
                 scroll = page.get_by_role("region", name="服务指标表")

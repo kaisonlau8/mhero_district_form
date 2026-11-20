@@ -578,6 +578,9 @@ def test_weekly_page_nav_and_roles(conn, tmp_path):
     assert "未填写" in shown.text
     assert "weekly-topbar-flat" in shown.text
     assert "shot-months" in shown.text and "shot-quarter" not in shown.text
+    assert "view=months&metric" not in shown.text
+    assert "产值（千元）" in shown.text and "收款工单数" in shown.text and "来厂车辆数（去重）" in shown.text
+    assert "18.10" not in shown.text
     quarter = admin.get("/reports/weekly", params={"week": "2026-11-16", "view": "quarter"})
     assert "2026-10-01" in quarter.text and "2026-08-20" in quarter.text
     assert "实现默认" in quarter.text
