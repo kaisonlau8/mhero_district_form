@@ -2,8 +2,10 @@
 {% block head %}
 <style>
   /* weekly-topbar-flat */
-  body:has(#shot-operation) .topbar { position: static; }
-  body:has(.shot-view) .topbar,
+  @media (min-width: 861px) {
+    body:has(#shot-operation) .topbar { position: static; }
+    body:has(.shot-view) .topbar { display: none !important; }
+  }
   body:has(.shot-view) .ant-page-header,
   body:has(.shot-view) .weekly-edit,
   body:has(.shot-view) .history-card,
@@ -12,7 +14,7 @@
   .board { background: #fff; border: 1px solid #f0f0f0; border-radius: 12px; padding: 20px 22px 16px; margin: 0 0 18px; }
   .board h2 { margin: 0 0 4px; font-size: 28px; }
   .src-line { margin: 0 0 12px; color: #595959; font-size: 16px; }
-  .switch { display: flex; gap: 8px; margin: 0 0 12px; }
+  .switch { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
   .switch a { padding: 6px 14px; border-radius: 16px; background: #f5f5f5; color: #262626; text-decoration: none; font-size: 15px; }
   .switch a.on { background: #1677ff; color: #fff; }
   .when { font-size: 16px; margin: 0 0 14px; }
@@ -42,7 +44,8 @@
   .vbar.prev { background: #fa8c16; }
   .vval { position: absolute; left: -6px; right: -6px; text-align: center; font-size: 12px; line-height: 14px; font-weight: 700; color: #262626; z-index: 2; white-space: nowrap; }
   .vname { margin-top: 8px; font-size: 16px; font-weight: 700; }
-  .gmiss { position: absolute; left: 0; right: 0; bottom: 4px; color: #8c8c8c; font-size: 13px; }
+  .gmiss { color: #595959; font-size: 13px; }
+  .vslot .gmiss { position: absolute; left: 0; right: 0; bottom: 4px; }
   .vpct { margin-top: 2px; font-size: 15px; }
   table.kpi-sheet { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 16px; }
   table.kpi-sheet th, table.kpi-sheet td { border: 1px solid #f0f0f0; padding: 10px 6px; text-align: center; }
@@ -57,8 +60,29 @@
   table.wshot { width: 100%; border-collapse: collapse; font-size: 13px; }
   table.wshot th, table.wshot td { border: 1px solid #f0f0f0; padding: 4px 6px; }
   textarea.note { width: min(420px, 100%); min-height: 44px; }
+  @media (max-width: 860px) {
+    .board { padding: 12px; }
+    .board h2 { font-size: 22px; }
+    .hero-cards { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+    .hero-card { padding: 12px; }
+    .hero-card .num { font-size: 30px; overflow-wrap: anywhere; }
+    .switch a { display: inline-flex; align-items: center; min-height: 44px; }
+    .when span { display: block; }
+    .varea { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 8px; row-gap: 14px; align-items: stretch; }
+    .vgroup { min-width: 0; padding: 6px 4px; border: 1px solid var(--ant-color-split); border-radius: 8px; }
+    .vpair { height: 118px; gap: 4px; }
+    .vslot { flex: 1 1 0; min-width: 0; }
+    .vval { left: 0; right: 0; font-size: 11px; overflow-wrap: anywhere; white-space: normal; }
+    .vname { font-size: 14px; }
+    .metric-scroll { overflow-x: auto; }
+    .metric-scroll > table.kpi-sheet { min-width: 760px; }
+    details.weekly-edit form { display: grid; gap: 6px; margin: 8px 0; }
+    details.weekly-edit textarea { display: block; }
+  }
   @media print {
     .topbar, .ant-header, .weekly-edit, .history-card, .switch { display: none !important; }
+    .metric-scroll { overflow: visible; }
+    .metric-scroll > table.kpi-sheet { min-width: 0; }
   }
 </style>
 {% endblock %}
@@ -121,7 +145,7 @@
 
 {% macro board(panel) %}
 {% set nation = panel.rows | selectattr('region', 'equalto', '全国') | first %}
-<p class="when">{{ panel.series_current }} {{ panel.current.start }} 至 {{ panel.current.end }}　{{ panel.series_base }} {{ panel.base.start }} 至 {{ panel.base.end }}</p>
+<p class="when"><span>{{ panel.series_current }} {{ panel.current.start }} 至 {{ panel.current.end }}</span>　<span>{{ panel.series_base }} {{ panel.base.start }} 至 {{ panel.base.end }}</span></p>
 {% if nation %}
 <div class="hero-cards">
   {% for field, title, unit in (('orders', '收款工单数', '单'), ('output', '总产值', '千元'), ('vehicles', '车辆数', '辆')) %}
@@ -177,7 +201,8 @@
   <h2>服务指标</h2>
   <p class="src-line">使用系统计算结果{% if model.indicators.status == 'ready' %}　数据日期 {{ model.indicators.snapshot_date }}{% endif %}</p>
   {% if model.indicators.status == 'ready' %}
-  <table class="kpi-sheet">
+  <div class="metric-scroll" role="region" aria-label="服务指标表" tabindex="0">
+  <table class="kpi-sheet" data-cards="off">
     <thead>
       <tr>
         <th class="lab">区域</th>
@@ -199,6 +224,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
   {% else %}
   <p class="src-line">待计算</p>
   <p class="reason">原因：未填写</p>
@@ -230,6 +256,7 @@
 <section class="ant-card history-card">
   <div class="ant-card-head"><h2 class="ant-card-head-title">历史</h2></div>
   <div class="ant-card-body">
+    <div class="tw ant-table-wrap" data-ds-primary>
     <table class="wshot">
       <thead><tr><th>周次</th><th>种类</th><th>范围</th><th>期间</th><th>时间</th><th>状态</th><th>文件</th></tr></thead>
       <tbody>
@@ -246,6 +273,7 @@
         {% else %}<tr><td colspan="7" class="gmiss">还没有记录。</td></tr>{% endfor %}
       </tbody>
     </table>
+    </div>
   </div>
 </section>
 {% else %}
