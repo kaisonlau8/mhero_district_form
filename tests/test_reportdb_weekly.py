@@ -757,6 +757,104 @@ def test_summary_response_must_belong_to_this_query(conn, tmp_path):
     assert all(item["idempotent"] for item in second["results"])
 
 
+def test_live_fetch_result_imports_the_same_summary(conn, tmp_path, monkeypatch):
+    import crawl_district_reports as crawl
+    import scripts.weekly_operation_crawl as weekly_script
+    from datetime import datetime
+    from reportdb.weekly_crawl import classify_page_response, past_friday_deadline, run_weekly_crawl
+    from scripts.weekly_operation_crawl import live_fetch
+
+    class Req:
+        def __init__(self, post):
+            self.post_data = post
+
+    class Resp:
+        def __init__(self, status, url, post, body):
+            self.status = status
+            self.url = url
+            self.request = Req(post)
+            self._body = body
+        def json(self):
+            if not isinstance(self._body, dict):
+                raise ValueError("not json")
+            return self._body
+
+    class Page:
+        def __init__(self, mode):
+            self.listeners = []
+            self.mode = mode
+        def on(self, event, fn):
+            self.listeners.append(fn)
+        def remove_listener(self, event, fn):
+            if fn in self.listeners:
+                self.listeners.remove(fn)
+        def emit(self, resp):
+            for fn in list(self.listeners):
+                fn(resp)
+
+    class Form:
+        def __init__(self, page):
+            self.page = page
+            self.values = {}
+        def set_filters(self, filters):
+            self.values = dict(filters)
+        def read_filters(self):
+            return dict(self.values)
+        def query(self):
+            post = json.dumps(self.values, ensure_ascii=False)
+            if self.page.mode == "noise":
+                self.page.emit(Resp(200, "https://m-dms.dfmc.com.cn/ping", "", {"ok": True}))
+                self.page.emit(Resp(200, "https://m-dms.dfmc.com.cn/note", "华东收款日报2026-10-01", {"kind": "summary", "orders": "15", "vehicles": "9", "output": "120.00"}))
+                return
+            self.page.emit(Resp(200, "https://m-dms.dfmc.com.cn/detail", post, {"rows": [{"区域名称": self.values["区域"]}]}))
+            orders, vehicles, output = ("15", "9", "120.00") if self.values["区域"] == "全国" else ("6", "4", "40.00")
+            self.page.emit(Resp(200, "https://m-dms.dfmc.com.cn/summary", post, {"kind": "summary", "orders": orders, "vehicles": vehicles, "output": output}))
+
+    def export(page, output_dir, **kw):
+        blob = national_blob() if "全国" in kw.get("save_prefix", "") else east_blob()
+        path = Path(output_dir) / f"{kw.get('save_prefix', 'x')}{Path(output_dir).joinpath('n').stat().st_mtime_ns if False else len(list(Path(output_dir).glob('*.xlsx')))}.xlsx"
+        path.write_bytes(blob)
+        return path
+
+    monkeypatch.setattr(crawl, "click_export_and_save", export)
+    monkeypatch.setattr(weekly_script, "open_operation_page", lambda page: None)
+    monkeypatch.setattr(weekly_script, "PlaywrightForm", Form)
+
+    filters = {"统计类型": "收款", "报表类型": "日报", "区域": "全国", "业务门店": "", "开始日期": "2026-10-01", "结束日期": "2026-11-20"}
+    assert classify_page_response({"status": 200, "url": "https://x/?q=华东收款日报2026-10-01", "post_data": "", "body": {"kind": "summary", "orders": "15", "vehicles": "9", "output": "120.00"}}, "q", filters) is None
+    swapped = dict(filters)
+    swapped["开始日期"], swapped["结束日期"] = filters["结束日期"], filters["开始日期"]
+    assert classify_page_response({"status": 200, "url": "https://m-dms.dfmc.com.cn/summary", "post_data": json.dumps(swapped, ensure_ascii=False), "body": {"kind": "summary", "orders": "15", "vehicles": "9", "output": "120.00"}}, "q", filters) is None
+    with_store = dict(filters)
+    with_store["业务门店"] = "某店"
+    assert classify_page_response({"status": 200, "url": "https://m-dms.dfmc.com.cn/summary", "post_data": json.dumps(with_store, ensure_ascii=False), "body": {"kind": "summary", "orders": "15", "vehicles": "9", "output": "120.00"}}, "q", filters) is None
+
+    noise = tmp_path / "noise"
+    missed = run_weekly_crawl(conn, as_of="2026-11-20", regions=[], fetch=live_fetch(Page("noise"), noise), output_dir=noise, resume=False)
+    assert missed["complete"] is False
+    assert "汇总响应未观测到" in missed["results"][0]["error"]
+    assert conn.execute("select count(*) from weekly_imports").fetchone()[0] == 0
+
+    out = tmp_path / "chain"
+    first = run_weekly_crawl(conn, as_of="2026-11-20", regions=[], fetch=live_fetch(Page("match"), out), output_dir=out, resume=False)
+    assert first["complete"] is True, first["results"][0].get("error")
+    meta = json.loads((out / "quarter_全国.json").read_text(encoding="utf-8"))
+    assert meta["summary"] == {"orders": "15", "vehicles": "9", "output": "120.00"}
+    assert meta["summary_body_parsed"] is True
+    stored = json.loads(conn.execute(
+        "select summary_json from weekly_imports where scope='全国' and compare_role='quarter' and status='active'"
+    ).fetchone()[0])
+    assert stored["summary"]["orders"] == "15"
+    assert stored["summary"]["vehicles"] == "9"
+    assert stored["summary"]["output"] == "120.00"
+    second = run_weekly_crawl(conn, as_of="2026-11-20", regions=[], fetch=live_fetch(Page("match"), out), output_dir=out, resume=False)
+    assert second["complete"] is True
+    assert all(item["idempotent"] for item in second["results"])
+    assert past_friday_deadline(datetime(2026, 11, 20, 17, 0)) is True
+    assert past_friday_deadline(datetime(2026, 11, 20, 16, 59)) is False
+    assert past_friday_deadline(datetime(2026, 11, 19, 18, 0)) is False
+
+
 def test_refresh_waits_until_lock_is_held_and_is_released_after():
     from reportdb.weekly_crawl import close_owned_session
 

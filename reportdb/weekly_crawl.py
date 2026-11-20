@@ -146,18 +146,28 @@ def confirm_query_responses(expected: dict, query_id: str, responses) -> dict:
 
 
 def classify_page_response(event: dict, query_id: str, expected: dict) -> dict | None:
-    """只把页面自己发出、且请求里带有本次筛选的响应分成明细或汇总。对不上就丢掉。"""
-    request_text = f"{event.get('url') or ''} {event.get('post_data') or ''}"
-    if not _request_has_filters(request_text, expected):
+    """只接受能按字段对上本次筛选的页面响应。值出现在别的字段里不算。"""
+    fields = parse_request_fields(event.get("url") or "", event.get("post_data") or "")
+    if not structured_filters_match(fields, expected):
         return None
-    kind, summary = _kind_from_body(event.get("body"))
+    body = event.get("body")
+    if isinstance(body, dict) and body.get("summary_from") == "detail_sum":
+        return {
+            "query_id": query_id,
+            "kind": "summary",
+            "status": int(event.get("status") or 0),
+            "filters": {key: fields[_compact(key)] for key in expected},
+            "summary_from": "detail_sum",
+            "summary": body.get("summary") or {},
+        }
+    kind, summary = _kind_from_body(body)
     if kind is None:
         return None
     record = {
         "query_id": query_id,
         "kind": kind,
         "status": int(event.get("status") or 0),
-        "filters": dict(expected),
+        "filters": {key: fields[_compact(key)] for key in expected},
         "summary_from": "response_body",
     }
     if kind == "summary":
@@ -165,8 +175,8 @@ def classify_page_response(event: dict, query_id: str, expected: dict) -> dict |
     return record
 
 
-def accept_operation_result(job: dict, got: dict) -> bytes:
-    """本次 Query 的明细响应、汇总响应，以及新下载的 Excel，必须同时对上。"""
+def accept_operation_result(job: dict, got: dict) -> tuple[bytes, dict]:
+    """返回 Excel 字节，以及和这份 Excel 对过账的那次汇总响应。"""
     summary = confirm_query_responses(job.get("filters") or {}, got.get("query_id") or "", got.get("responses"))
     if not got.get("download_is_new"):
         raise WeeklyCrawlError("没有本次新下载的 Excel，不把已有文件当成新导出")
@@ -181,22 +191,35 @@ def accept_operation_result(job: dict, got: dict) -> bytes:
             raise WeeklyCrawlError(
                 f"Excel 的{key}是 {parsed['summary'][key]}，本次汇总响应是 {summary[key]}，不一致，不导入"
             )
-    return blob
+    return blob, {key: summary[key] for key in SUMMARY_KEYS}
 
 
-def prepare_export(form, filters: dict) -> tuple[dict, dict]:
-    """先设筛选并读回，不对就不要查询；查询后再读回，不对就不要导出。"""
+def prepare_filters(form, filters: dict) -> dict:
     form.set_filters(filters)
     before = form.read_filters()
     bad = readback_mismatches(filters, before)
     if bad:
         raise WeeklyCrawlError("查询前筛选不一致：" + "；".join(bad))
+    return before
+
+
+def finish_query(form, filters: dict) -> dict:
     form.query()
     after = form.read_filters()
     bad = readback_mismatches(filters, after)
     if bad:
         raise WeeklyCrawlError("查询后筛选不一致：" + "；".join(bad))
-    return before, after
+    return after
+
+
+def prepare_export(form, filters: dict) -> tuple[dict, dict]:
+    """先设筛选并读回，不对就不要查询；查询后再读回，不对就不要导出。"""
+    return prepare_filters(form, filters), finish_query(form, filters)
+
+
+def past_friday_deadline(now) -> bool:
+    """周五 17:00 及之后不再自动开跑。其他日子不拦人工补跑。"""
+    return now.weekday() == 4 and (now.hour, now.minute) >= (17, 0)
 
 
 def run_weekly_crawl(conn, *, as_of: str | date, regions: list[str], fetch, output_dir: Path,
@@ -217,7 +240,9 @@ def run_weekly_crawl(conn, *, as_of: str | date, regions: list[str], fetch, outp
         previous_bytes = saved.read_bytes() if saved.exists() else None
         last_error = ""
         imported_ok = False
+        attempts_used = 0
         for attempt in range(1, MAX_ATTEMPTS + 1):
+            attempts_used = attempt
             try:
                 got = fetch(job)
                 before = got.get("readback_before")
@@ -226,15 +251,15 @@ def run_weekly_crawl(conn, *, as_of: str | date, regions: list[str], fetch, outp
                 bad += [f"查询后{item}" for item in readback_mismatches(job["filters"], after)]
                 if bad:
                     raise WeeklyCrawlError("筛选读回不一致：" + "；".join(bad))
-                blob = accept_operation_result(job, got)
+                blob, summary = accept_operation_result(job, got)
                 saved.write_bytes(blob)
                 meta_path = output_dir / f"{job['span']}_{job['scope']}.json"
                 meta_path.write_text(json.dumps({
                     "span": job["span"], "scope": job["scope"], "filters": job["filters"],
                     "readback_before": before, "readback_after": after,
-                    "summary": {key: str(got["summary"][key]) for key in SUMMARY_KEYS},
+                    "summary": {key: str(summary[key]) for key in SUMMARY_KEYS},
                     "exported_at": got["exported_at"], "file": saved.name,
-                    "summary_body_parsed": bool(got.get("summary_body_parsed")),
+                    "summary_body_parsed": True,
                 }, ensure_ascii=False, indent=2), encoding="utf-8")
                 imported = import_operation(
                     conn, blob, week_start=_monday(day).isoformat(), span=job["span"],
@@ -266,7 +291,7 @@ def run_weekly_crawl(conn, *, as_of: str | date, regions: list[str], fetch, outp
                     saved.unlink(missing_ok=True)
                 break
         if not imported_ok:
-            manifest["done"][job["key"]] = {"status": "failed", "error": last_error, "attempts": MAX_ATTEMPTS}
+            manifest["done"][job["key"]] = {"status": "failed", "error": last_error, "attempts": attempts_used}
             results.append({**job, "status": "failed", "error": last_error})
         manifest["complete"] = False
         manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -314,19 +339,39 @@ def _same_filter(key: str, want, got) -> bool:
     return _compact(got) == _compact(want)
 
 
-def _request_has_filters(text: str, expected: dict) -> bool:
-    compact = _compact(text)
-    folded = text.replace("/", "-")
+def parse_request_fields(url: str, post_data: str) -> dict | None:
+    """只解析请求自己的字段。不把整段文字里碰巧出现的值当成筛选。"""
+    from urllib.parse import parse_qs, urlparse
+
+    text = (post_data or "").strip()
+    if text.startswith("{"):
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            data = None
+        if isinstance(data, dict):
+            return data
+    if text and "=" in text:
+        parsed = parse_qs(text, keep_blank_values=True)
+        if parsed:
+            return {key: values[0] if isinstance(values, list) else values for key, values in parsed.items()}
+    query = urlparse(url or "").query
+    if query:
+        parsed = parse_qs(query, keep_blank_values=True)
+        if parsed:
+            return {key: values[0] if isinstance(values, list) else values for key, values in parsed.items()}
+    return None
+
+
+def structured_filters_match(fields: dict | None, expected: dict) -> bool:
+    if not isinstance(fields, dict):
+        return False
+    normalized = {_compact(str(key)): value for key, value in fields.items()}
     for key, want in expected.items():
-        if key == "业务门店":
-            if not _blank(want) and _compact(want) not in compact:
-                return False
-            continue
-        if key in {"开始日期", "结束日期"}:
-            if _date_text(want) not in folded and _compact(want) not in compact:
-                return False
-            continue
-        if _compact(want) not in compact:
+        name = _compact(key)
+        if name not in normalized:
+            return False
+        if not _same_filter(key, want, normalized[name]):
             return False
     return True
 

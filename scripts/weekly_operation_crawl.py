@@ -28,6 +28,7 @@ from reportdb.weekly_crawl import (  # noqa: E402
     WeeklyCrawlError,
     close_owned_session,
     describe_plan,
+    past_friday_deadline,
     prepare_export,
     run_weekly_crawl,
 )
@@ -148,11 +149,15 @@ def live_fetch(page, output_dir: Path):
         def on_response(resp):
             seen.append(_event_from_response(resp))
 
-        page.on("response", on_response)
+        attached = False
         try:
-            before_files = {path.name: path.read_bytes() for path in output_dir.glob("*.xls*")}
+            before_files = {item.name: item.read_bytes() for item in output_dir.glob("*.xls*")}
             form = PlaywrightForm(page)
-            readback_before, readback_after = prepare_export(form, job["filters"])
+            from reportdb.weekly_crawl import finish_query, prepare_filters
+            readback_before = prepare_filters(form, job["filters"])
+            page.on("response", on_response)
+            attached = True
+            readback_after = finish_query(form, job["filters"])
             responses = []
             for event in seen:
                 item = classify_page_response(event, query_id, job["filters"])
@@ -186,7 +191,8 @@ def live_fetch(page, output_dir: Path):
                 "download_is_new": fresh_download(before_files, path.name if path else "", content),
             }
         finally:
-            page.remove_listener("response", on_response)
+            if attached:
+                page.remove_listener("response", on_response)
 
     return fetch
 
@@ -246,7 +252,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output-dir", default=str(ROOT / "download" / "weekly"))
     parser.add_argument("--db", default="")
     parser.add_argument("--lock-wait", type=float, default=0)
+    parser.add_argument("--allow-late", action="store_true", help="周五 17:00 之后仍允许人工补跑")
     args = parser.parse_args(argv)
+    if args.live and not args.allow_late and past_friday_deadline(beijing_now()):
+        print("已过周五 17:00，不启动采集，待人工复核。不会连接 DMS。")
+        return 2
     conn = connect(args.db or None)
     migrate(conn)
     if not args.live:
