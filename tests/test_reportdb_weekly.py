@@ -2,7 +2,7 @@
 import io
 import json
 import os
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -437,7 +437,7 @@ def test_collector_plans_without_dms_and_keeps_daily_schedule():
 
     plan = collect_weekly_sources(as_of="2026-11-20", regions=["华东"])
     assert plan["live"] is False and plan["verified_against_dms"] is False
-    assert plan["time"] == "13:30" and plan["weekday"] == "friday"
+    assert plan["time"] == "14:45" and plan["weekday"] == "friday"
     assert [job["span"] for job in plan["jobs"] if job["scope"] == "全国"] == [
         "quarter", "quarter_base", "year", "year_base",
     ]
@@ -450,7 +450,7 @@ def test_collector_plans_without_dms_and_keeps_daily_schedule():
     settings = json.loads((root / "config" / "crawl_settings.json").read_text())
     assert settings["schedule"] == "08:30"
     weekly = json.loads((root / "config" / "weekly_crawl.json").read_text())
-    assert weekly["time"] == "13:30" and weekly["daily_schedule_unchanged"] == "08:30"
+    assert weekly["time"] == "14:45" and weekly["daily_schedule_unchanged"] == "08:30"
     pipeline = (root / "scripts" / "run_pipeline.py").read_text()
     assert "weekly_import" not in pipeline
     assert "weekly_operation_crawl" not in pipeline
@@ -619,7 +619,7 @@ def test_weekly_crawl_imports_serial_and_keeps_partial_failure(conn, tmp_path):
         return _captured(job, blob)
 
     out = tmp_path / "weekly"
-    first = run_weekly_crawl(conn, as_of="2026-11-20", regions=["华东"], fetch=fetch, output_dir=out)
+    first = run_weekly_crawl(conn, as_of="2026-11-20", regions=["华东"], fetch=fetch, output_dir=out, clock=lambda: datetime(2026, 11, 20, 14, 45))
     assert first["complete"] is False
     assert first["failed"] == ["2026-11-20:year_base:华东"]
     assert first["verified_against_dms"] is False
@@ -629,11 +629,11 @@ def test_weekly_crawl_imports_serial_and_keeps_partial_failure(conn, tmp_path):
     ).fetchone()[0]
     assert saved == 7
     calls.clear()
-    second = run_weekly_crawl(conn, as_of="2026-11-20", regions=["华东"], fetch=fetch, output_dir=out)
+    second = run_weekly_crawl(conn, as_of="2026-11-20", regions=["华东"], fetch=fetch, output_dir=out, clock=lambda: datetime(2026, 11, 20, 14, 45))
     assert calls == ["2026-11-20:year_base:华东"] * 3
     assert second["complete"] is False
     calls.clear()
-    later = run_weekly_crawl(conn, as_of="2026-11-27", regions=["华东"], fetch=fetch, output_dir=out)
+    later = run_weekly_crawl(conn, as_of="2026-11-27", regions=["华东"], fetch=fetch, output_dir=out, clock=lambda: datetime(2026, 11, 20, 14, 45))
     assert later["complete"] is False
     assert calls.count("2026-11-27:quarter:全国") == 1
     assert calls.count("2026-11-27:year_base:华东") == 3
@@ -646,6 +646,7 @@ def test_weekly_crawl_imports_serial_and_keeps_partial_failure(conn, tmp_path):
 
     blocked = run_weekly_crawl(
         conn, as_of="2026-11-20", regions=["华东"], fetch=wrong, output_dir=tmp_path / "bad", resume=False,
+        clock=lambda: datetime(2026, 11, 20, 14, 45),
     )
     assert blocked["complete"] is False
     assert "结算" in blocked["results"][0]["error"]
@@ -712,7 +713,7 @@ def test_stale_summary_and_old_file_are_not_imported(conn, tmp_path):
         return got
 
     out = tmp_path / "kept"
-    result = run_weekly_crawl(conn, as_of="2026-11-20", regions=["华东"], fetch=fetch, output_dir=out, resume=False)
+    result = run_weekly_crawl(conn, as_of="2026-11-20", regions=["华东"], fetch=fetch, output_dir=out, resume=False, clock=lambda: datetime(2026, 11, 20, 14, 45))
     assert result["complete"] is False
     failed = [item for item in result["results"] if item["span"] == "year" and item["scope"] == "华东"]
     assert failed and failed[0]["status"] == "failed"
@@ -750,9 +751,9 @@ def test_summary_response_must_belong_to_this_query(conn, tmp_path):
         return _captured(job, blob)
 
     out = tmp_path / "same"
-    first = run_weekly_crawl(conn, as_of="2026-11-20", regions=[], fetch=fetch, output_dir=out, resume=False)
+    first = run_weekly_crawl(conn, as_of="2026-11-20", regions=[], fetch=fetch, output_dir=out, resume=False, clock=lambda: datetime(2026, 11, 20, 14, 45))
     assert first["complete"] is True
-    second = run_weekly_crawl(conn, as_of="2026-11-20", regions=[], fetch=fetch, output_dir=out, resume=False)
+    second = run_weekly_crawl(conn, as_of="2026-11-20", regions=[], fetch=fetch, output_dir=out, resume=False, clock=lambda: datetime(2026, 11, 20, 14, 45))
     assert second["complete"] is True
     assert all(item["idempotent"] for item in second["results"])
 
@@ -830,13 +831,13 @@ def test_live_fetch_result_imports_the_same_summary(conn, tmp_path, monkeypatch)
     assert classify_page_response({"status": 200, "url": "https://m-dms.dfmc.com.cn/summary", "post_data": json.dumps(with_store, ensure_ascii=False), "body": {"kind": "summary", "orders": "15", "vehicles": "9", "output": "120.00"}}, "q", filters) is None
 
     noise = tmp_path / "noise"
-    missed = run_weekly_crawl(conn, as_of="2026-11-20", regions=[], fetch=live_fetch(Page("noise"), noise), output_dir=noise, resume=False)
+    missed = run_weekly_crawl(conn, as_of="2026-11-20", regions=[], fetch=live_fetch(Page("noise"), noise), output_dir=noise, resume=False, clock=lambda: datetime(2026, 11, 20, 14, 45))
     assert missed["complete"] is False
     assert "汇总响应未观测到" in missed["results"][0]["error"]
     assert conn.execute("select count(*) from weekly_imports").fetchone()[0] == 0
 
     out = tmp_path / "chain"
-    first = run_weekly_crawl(conn, as_of="2026-11-20", regions=[], fetch=live_fetch(Page("match"), out), output_dir=out, resume=False)
+    first = run_weekly_crawl(conn, as_of="2026-11-20", regions=[], fetch=live_fetch(Page("match"), out), output_dir=out, resume=False, clock=lambda: datetime(2026, 11, 20, 14, 45))
     assert first["complete"] is True, first["results"][0].get("error")
     meta = json.loads((out / "quarter_全国.json").read_text(encoding="utf-8"))
     assert meta["summary"] == {"orders": "15", "vehicles": "9", "output": "120.00"}
@@ -847,12 +848,42 @@ def test_live_fetch_result_imports_the_same_summary(conn, tmp_path, monkeypatch)
     assert stored["summary"]["orders"] == "15"
     assert stored["summary"]["vehicles"] == "9"
     assert stored["summary"]["output"] == "120.00"
-    second = run_weekly_crawl(conn, as_of="2026-11-20", regions=[], fetch=live_fetch(Page("match"), out), output_dir=out, resume=False)
+    second = run_weekly_crawl(conn, as_of="2026-11-20", regions=[], fetch=live_fetch(Page("match"), out), output_dir=out, resume=False, clock=lambda: datetime(2026, 11, 20, 14, 45))
     assert second["complete"] is True
     assert all(item["idempotent"] for item in second["results"])
+    assert past_friday_deadline(datetime(2026, 11, 20, 16, 57)) is True
     assert past_friday_deadline(datetime(2026, 11, 20, 17, 0)) is True
-    assert past_friday_deadline(datetime(2026, 11, 20, 16, 59)) is False
+    assert past_friday_deadline(datetime(2026, 11, 20, 16, 56)) is False
     assert past_friday_deadline(datetime(2026, 11, 19, 18, 0)) is False
+
+
+def test_friday_window_does_not_start_new_exports_and_keeps_other_schedules(conn, tmp_path):
+    from datetime import datetime
+    from reportdb.weekly_crawl import merge_weekly_schedule, run_weekly_crawl
+
+    original = {"pre_minutes": 3, "entries": [
+        {"id": "district-form", "time": "08:30"},
+        {"id": "accident-evening", "time": "17:00"},
+    ]}
+    merged = merge_weekly_schedule(json.loads(json.dumps(original)))
+    assert merged["entries"][0] == original["entries"][0]
+    assert merged["entries"][1] == original["entries"][1]
+    assert merged["entries"][2]["time"] == "14:45"
+    calls = []
+
+    def fetch(job):
+        calls.append(job["key"])
+        blob = national_blob() if job["scope"] == "全国" else east_blob()
+        return _captured(job, blob)
+
+    stopped = run_weekly_crawl(
+        conn, as_of="2026-11-20", regions=["华东"], fetch=fetch, output_dir=tmp_path / "late",
+        resume=False, clock=lambda: datetime(2026, 11, 20, 16, 57),
+    )
+    assert calls == []
+    assert stopped["complete"] is False
+    assert stopped["gaps"]
+    assert conn.execute("select count(*) from weekly_imports").fetchone()[0] == 0
 
 
 def test_refresh_waits_until_lock_is_held_and_is_released_after():

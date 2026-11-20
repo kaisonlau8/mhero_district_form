@@ -1,10 +1,13 @@
 {
   "schedule_id": "district-form-weekly",
   "weekday": "friday",
-  "time": "13:30",
-  "deadline": "17:00",
-  "check_by": "14:45",
-  "command": "python scripts/weekly_operation_crawl.py --live",
+  "time": "14:45",
+  "timezone": "Asia/Hong_Kong",
+  "stop_new_exports_at": "16:57",
+  "accident_task": "17:00",
+  "accident_pre_minutes": 3,
+  "command": "/home/ubuntu/m-hero-run/venvs/mhero_district_form/bin/python /home/ubuntu/m-hero-prod/mhero_district_form/scripts/weekly_operation_crawl.py --live --db /home/ubuntu/m-hero-run/data/reportdb/reportdb.sqlite3",
   "daily_schedule_unchanged": "08:30",
-  "note": "生产 launchd 和共享 crawl_schedule.json 由现场配置。本文件不改每天 08:30，也不代表已经在 DMS 上跑通。"
+  "install": "deploy/ubuntu-weekly-crawl.sh install --apply",
+  "note": "Ubuntu cron 周五 14:45。16:57 起不再开始新的地区或期间，把锁留给 17:00 事故任务。不改 08:30。真实 DMS 尚未联调。"
 }

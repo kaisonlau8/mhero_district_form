@@ -11,7 +11,9 @@ from .weekly_parse import norm_region, parse_operation_xlsx, quarter_compare, ye
 from .weekly_report import SnapshotConflict, WeeklyImportError, import_operation
 
 SCHEDULE_ID = "district-form-weekly"
-SCHEDULE_TIME = "13:30"
+SCHEDULE_TIME = "14:45"
+ACCIDENT_LOCK_AT = (17, 0)
+ACCIDENT_PRE_MINUTES = 3
 SCHEDULE_WEEKDAY = "friday"
 DMS_BROWSER_DOC = "https://github.com/kaisonlau8/m-hero/blob/main/docs/SHARED_DMS_BROWSER.md"
 SPANS = ("quarter", "quarter_base", "year", "year_base")
@@ -217,15 +219,48 @@ def prepare_export(form, filters: dict) -> tuple[dict, dict]:
     return prepare_filters(form, filters), finish_query(form, filters)
 
 
+def in_accident_prewindow(now) -> bool:
+    """周五 16:57 起是 17:00 事故任务的提前 3 分钟禁区。此时不再开始新的导出。"""
+    cutoff_hour, cutoff_minute = ACCIDENT_LOCK_AT
+    cutoff = cutoff_hour * 60 + cutoff_minute - ACCIDENT_PRE_MINUTES
+    return now.weekday() == 4 and (now.hour * 60 + now.minute) >= cutoff
+
+
 def past_friday_deadline(now) -> bool:
-    """周五 17:00 及之后不再自动开跑。其他日子不拦人工补跑。"""
-    return now.weekday() == 4 and (now.hour, now.minute) >= (17, 0)
+    return in_accident_prewindow(now)
+
+
+def _hong_kong_now():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo("Asia/Hong_Kong")).replace(tzinfo=None)
+
+
+WEEKLY_SCHEDULE_ENTRY = {
+    "id": SCHEDULE_ID,
+    "name": "周报经营",
+    "time": SCHEDULE_TIME,
+    "owners": ["mhero_district_form"],
+    "enabled": True,
+}
+
+
+def merge_weekly_schedule(data: dict) -> dict:
+    """只替换本任务的时刻表项。08:30 和 17:00 的其他条目保持原样。"""
+    if not isinstance(data, dict) or not isinstance(data.get("entries"), list):
+        raise WeeklyCrawlError("共享时刻表缺少 entries，不新建一份，避免盖掉已有任务")
+    entries = [item for item in data["entries"] if item.get("id") != SCHEDULE_ID]
+    entries.append(dict(WEEKLY_SCHEDULE_ENTRY))
+    merged = dict(data)
+    merged["entries"] = entries
+    return merged
 
 
 def run_weekly_crawl(conn, *, as_of: str | date, regions: list[str], fetch, output_dir: Path,
-                     actor: str = "weekly-crawl", resume: bool = True) -> dict:
+                     actor: str = "weekly-crawl", resume: bool = True, clock=None) -> dict:
     """串行调用 fetch。失败的范围记下来，已导入的留下，不把部分成功说成全部完成。"""
     day = _as_date(as_of)
+    clock = clock or _hong_kong_now
     output_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = output_dir / "weekly_manifest.json"
     manifest = _manifest_for(day, manifest_path) if resume else _fresh_manifest(day)
@@ -235,6 +270,12 @@ def run_weekly_crawl(conn, *, as_of: str | date, regions: list[str], fetch, outp
         same_window = previous.get("period_start") == job["period_start"] and previous.get("period_end") == job["period_end"]
         if resume and previous.get("status") == "imported" and same_window:
             results.append({**job, "status": "skipped"})
+            continue
+        if in_accident_prewindow(clock()):
+            results.append({
+                **job, "status": "not_started",
+                "error": "已到周五 16:57，不再开始新的地区或期间。正在进行的请求会做完并释放锁，不会关掉浏览器。",
+            })
             continue
         saved = output_dir / f"{job['span']}_{job['scope']}.xlsx"
         previous_bytes = saved.read_bytes() if saved.exists() else None
@@ -295,15 +336,17 @@ def run_weekly_crawl(conn, *, as_of: str | date, regions: list[str], fetch, outp
             results.append({**job, "status": "failed", "error": last_error})
         manifest["complete"] = False
         manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
-    failed = [item for item in results if item["status"] == "failed"]
+    failed = [item["key"] for item in results if item["status"] not in {"imported", "skipped"}]
     manifest["complete"] = not failed
+    manifest["gaps"] = failed
     manifest["verified_against_dms"] = False
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     return {
         "complete": not failed,
         "verified_against_dms": False,
         "results": results,
-        "failed": [item["key"] for item in failed],
+        "failed": failed,
+        "gaps": failed,
         "schedule_id": SCHEDULE_ID,
         "time": SCHEDULE_TIME,
     }

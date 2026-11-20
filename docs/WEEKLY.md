@@ -9,36 +9,25 @@ python scripts/weekly_operation_crawl.py --as-of 2026-11-20 --regions 华东
 python scripts/weekly_operation_crawl.py --live
 ```
 
-不加 `--live` 只打印计划，不连接 DMS。`--live` 才使用现场已经登录的共享浏览器：先拿共用导出锁（时刻表 id `district-form-weekly`），从报表菜单点「服务经营报表」，设成收款、日报、区域、空门店和起止日期，查询前后把筛选项读回来。成功只认这次点击查询之后，页面自己发出的那一对响应：请求里的筛选和本次一致，一条是明细，一条是汇总，汇总正文里有工单数、车辆数、总产值。旁边的成功响应、上一笔查询、页面上的旧数字，都不能放行。汇总响应没看到，或汇总请求失败，就明确失败并待人工复核，最多再试 2 次。数字和上次一样也可以导入，只要这次响应对得上。不会把旧 Excel 当成新导出，也不会把明细或分月的车辆数加起来。Excel 必须和这次汇总响应一致。已经成功的文件保留。某一份失败不把整个任务说成完成。建议每周五 13:30 开始，以便 14:45 前能看结果，并在 17:00 前结束。生产定时和共享 `crawl_schedule.json` 由现场配置，见 `config/weekly_crawl.json`。真实 DMS 联调还没有做。请求必须带本次的筛选字段，不能只是文字里碰巧出现这些值。汇总响应没对上就失败，待人工复核，不会因为旁边有成功响应就放行。周五 17:00 及之后，`--live` 默认不再启动，除非明确加上 `--allow-late`。这个截止只拦住新的启动，不会中途杀掉已经在跑的进程。
+不加 `--live` 只打印计划，不连接 DMS。`--live` 才使用现场已经登录的共享浏览器：先拿共用导出锁（时刻表 id `district-form-weekly`），从报表菜单点「服务经营报表」，设成收款、日报、区域、空门店和起止日期，查询前后把筛选项读回来。成功只认这次点击查询之后，页面自己发出的那一对响应：请求里的筛选和本次一致，一条是明细，一条是汇总，汇总正文里有工单数、车辆数、总产值。旁边的成功响应、上一笔查询、页面上的旧数字，都不能放行。汇总响应没看到，或汇总请求失败，就明确失败并待人工复核，最多再试 2 次。数字和上次一样也可以导入，只要这次响应对得上。不会把旧 Excel 当成新导出，也不会把明细或分月的车辆数加起来。Excel 必须和这次汇总响应一致。已经成功的文件保留。某一份失败不把整个任务说成完成。生产机是 Ubuntu `dfms-tecent`，不是 Mac。仓库里原来的定时文件是 macOS launchd，网页进程在现场由 supervisor 的 `reportdb-web` 管。周五采集是一次命令，和每天 08:30 的采集一样用 cron，不做成常驻进程，也不改 08:30。
 
-生产定时没有在这台机器上注册，也没有改每天 08:30 的任务。现场要自己做这三步，做完用下面的检查命令核对，不要和 08:30 的流水线混在一起：
+启动时间是每周五 14:45（Asia/Hong_Kong）。16:57 起不再开始新的地区或期间，把锁留给 17:00 事故任务的提前 3 分钟。已经开始的这一次会做完，然后释放锁，不会关掉浏览器。来不及做的范围记成缺口，不把整批说成完成。
+
+请求必须是 JSON 或表单字段，字段名就是页面上的「统计类型、报表类型、区域、业务门店、开始日期、结束日期」。值只出现在别的文字里不算。空门店必须明确出现在请求里。真实 DMS 如果用别的字段名，脚本会失败关闭，需要现场联调后再改，不会去探测接口。
+
+父部署时在生产机执行，本仓库这次没有执行：
 
 ```bash
-# 1. 只增加周五任务，不要改 com.mhero-district-form.pipeline
-cp deploy/com.mhero-district-form.weekly.plist ~/Library/LaunchAgents/
-# 把 plist 里的 python、项目目录、浏览器路径改成这台机器的实际路径
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.mhero-district-form.weekly.plist
-launchctl print gui/$(id -u)/com.mhero-district-form.weekly | head
-
-# 2. 共享时刻表只加这一条。现有代码按每天的钟点避让，不辨星期。
-#    加上之后，每天 13:27 到约 14:15 都会避开强刷，不只是周五。
-#    不改 scripts/dfmc_browser_utils.py 里的默认表，避免动到已经在跑的会话。
-python - << 'PY'
-import json
-from pathlib import Path
-import os
-home = Path(os.environ["DFMC_DMS_SESSION_HOME"]) / ".runtime" / "crawl_schedule.json"
-data = json.loads(home.read_text())
-entry = {"id":"district-form-weekly","name":"周报经营","time":"13:30","owners":["mhero_district_form"],"enabled":True}
-if not any(item.get("id")==entry["id"] for item in data.get("entries",[])):
-    data.setdefault("entries", []).append(entry)
-    home.write_text(json.dumps(data, ensure_ascii=False, indent=2)+"\n")
-print(home)
-PY
-
-# 3. 不带 --live 看计划。确认没有连接 DMS 之后，才在 17:00 前手动试一次 --live。
-python scripts/weekly_operation_crawl.py --as-of 2026-11-20 --regions 华东
+cd /home/ubuntu/m-hero-prod/mhero_district_form
+deploy/ubuntu-weekly-crawl.sh verify
+deploy/ubuntu-weekly-crawl.sh install          # 只打印
+deploy/ubuntu-weekly-crawl.sh install --apply  # 写入 crontab，并只追加时刻表这一条
+deploy/ubuntu-weekly-crawl.sh verify
+# 卸掉时：
+deploy/ubuntu-weekly-crawl.sh uninstall --apply
 ```
+
+`install --apply` 需要当时环境里已有 `DFMC_DMS_SESSION_HOME`，并且共享时刻表文件已经存在。它不新建一份时刻表，也不改 08:30 和 17:00 的条目。现有避让按每天的钟点计算，不辨星期，加上 14:45 之后每天 14:42 到约 15:30 都会避开强刷。
 
 页面：登录后打开「报表 → 猛士周报」。管理员在「导入 Excel」上传。命令行：
 
