@@ -44,21 +44,13 @@
   .vname { margin-top: 8px; font-size: 16px; font-weight: 700; }
   .gmiss { position: absolute; left: 0; right: 0; bottom: 4px; color: #8c8c8c; font-size: 13px; }
   .vpct { margin-top: 2px; font-size: 15px; }
-  .metric-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
-  .metric-card { border: 1px solid #f0f0f0; border-radius: 12px; padding: 12px 14px 10px; }
-  .metric-card h3 { margin: 0; font-size: 18px; }
-  .natline { margin: 2px 0 8px; font-size: 15px; color: #d46b08; font-weight: 700; }
-  .mplot { padding-top: 16px; }
-  .marea { position: relative; display: flex; align-items: flex-end; height: 168px; }
-  .nhline { position: absolute; left: 0; right: 0; border-top: 2px dashed #fa8c16; z-index: 2; }
-  .mslot { position: relative; flex: 1; height: 168px; }
-  .mbar { position: absolute; left: 18%; right: 18%; bottom: 0; border-radius: 4px 4px 0 0; background: #1677ff; min-height: 2px; z-index: 1; }
-  .mbar.bad { background: #cf1322; }
-  .mv { position: absolute; left: 0; right: 0; text-align: center; font-size: 13px; font-weight: 700; color: #262626; z-index: 3; }
-  .mv.down { color: #cf1322; }
-  .mnone { position: absolute; left: 0; right: 0; bottom: 6px; text-align: center; color: #8c8c8c; font-size: 13px; }
-  .mnames { display: flex; margin-top: 8px; }
-  .mnames span { flex: 1; text-align: center; font-size: 15px; font-weight: 700; }
+  table.kpi-sheet { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 16px; }
+  table.kpi-sheet th, table.kpi-sheet td { border: 1px solid #f0f0f0; padding: 10px 6px; text-align: center; }
+  table.kpi-sheet th { background: #fafafa; font-size: 15px; font-weight: 700; }
+  table.kpi-sheet td.lab, table.kpi-sheet th.lab { text-align: left; }
+  table.kpi-sheet tr.is-nation td { background: #e6f4ff; font-weight: 700; }
+  table.kpi-sheet td.bad { color: #cf1322; font-weight: 700; background: #fff1f0; }
+  table.kpi-sheet td.reason { text-align: left; color: #595959; font-size: 14px; font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .reason-line { margin-top: 12px; font-size: 14px; color: #595959; }
   details.weekly-audit, details.weekly-edit { margin: 10px 0 16px; }
   details.weekly-audit summary, details.weekly-edit summary { cursor: pointer; color: #1677ff; }
@@ -185,38 +177,32 @@
   <h2>服务指标</h2>
   <p class="src-line">使用系统计算结果{% if model.indicators.status == 'ready' %}　数据日期 {{ model.indicators.snapshot_date }}{% endif %}</p>
   {% if model.indicators.status == 'ready' %}
-  <div class="metric-grid">
-    {% for metric in model.indicators.metrics %}
-    {% set nation = metric.cells[0] %}
-    <article class="metric-card">
-      <h3>{{ metric.title }}</h3>
-      <p class="natline">全国 {{ nation.rate_text }}　橙线是全国</p>
-      <div class="mplot">
-        <div class="marea">
-          {% if nation.rate is not none %}<i class="nhline" style="bottom: {{ (nation.rate * 78)|round(1) }}%" title="全国 {{ nation.rate_text }}"></i>{% endif %}
-          {% for cell in metric.cells if cell.region != '全国' %}
-          <div class="mslot">
-            {% if cell.rate is not none %}
-            {% set h = (cell.rate * 78)|round(1) %}
-            <b class="mv {{ 'down' if cell.below else '' }}" style="bottom: calc({{ h }}% + 3px)">{{ cell.rate_text }}</b>
-            <i class="mbar {{ 'bad' if cell.below else '' }}" style="height: {{ h }}%" data-rate="{{ cell.rate_text }}" title="{{ cell.region }} {{ cell.rate_text }}"></i>
-            {% else %}<span class="mnone">暂无数据</span>{% endif %}
-          </div>
-          {% endfor %}
-        </div>
-        <div class="mnames">
-          {% for cell in metric.cells if cell.region != '全国' %}<span>{{ cell.region }}</span>{% endfor %}
-        </div>
-      </div>
-    </article>
-    {% endfor %}
-  </div>
+  <table class="kpi-sheet">
+    <thead>
+      <tr>
+        <th class="lab">区域</th>
+        {% for metric in model.indicators.metrics %}<th>{{ metric.title }}</th>{% endfor %}
+        <th>原因</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for cell in model.indicators.metrics[0].cells %}
+      <tr class="{{ 'is-nation' if cell.region == '全国' }}" data-region="{{ cell.region }}">
+        <td class="lab">{{ cell.region }}</td>
+        {% for metric in model.indicators.metrics %}
+        {% set picked = namespace(item=None) %}
+        {% for candidate in metric.cells if candidate.region == cell.region %}{% set picked.item = candidate %}{% endfor %}
+        <td class="{{ 'bad' if picked.item and picked.item.below else '' }}" data-rate="{{ picked.item.rate_text if picked.item else '' }}">{% if not picked.item or picked.item.rate is none %}暂无数据{% else %}{{ picked.item.rate_text }}{% endif %}</td>
+        {% endfor %}
+        <td class="reason" title="{{ model.commentary.get(cell.region, '') }}">{{ model.commentary.get(cell.region, '') or '未填写' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
   {% else %}
   <p class="src-line">待计算</p>
+  <p class="reason">原因：未填写</p>
   {% endif %}
-  {% if model.commentary.values() | select | list %}
-  <p class="reason-line">{% for region, body in model.commentary.items() if body %}{{ region }}：{{ body }}　{% endfor %}</p>
-  {% else %}<p class="reason-line">原因：未填写</p>{% endif %}
   <details class="weekly-audit">
     <summary>计算说明</summary>
     <p>{{ model.indicators.period_note }}</p>

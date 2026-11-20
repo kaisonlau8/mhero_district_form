@@ -37,14 +37,17 @@ class SnapshotConflict(Exception):
     pass
 
 
-def collect_weekly_sources(**_kwargs):
-    """自动采集入口。本轮故意不可用，避免和每日 08:30 抢 DMS 浏览器。"""
-    raise NotImplementedError(
-        "周报尚未启用自动采集。本函数不会登录 DMS，也不会修改 08:30 调度。"
-        "以后若要采集，必须复用 scripts/dfmc_browser_utils.acquire_export_lock，并遵守 "
-        f"{DMS_BROWSER_DOC} 的浏览器锁与错峰，不能与每日流水线并发导出。"
-        "当前请使用 python -m reportdb.weekly_import 或页面上的 Excel 导入。"
-    )
+def collect_weekly_sources(*, as_of: str | None = None, regions: list[str] | None = None, live: bool = False, **_kwargs):
+    """计划周五采集。live=True 也不在这里打开浏览器，现场用 scripts/weekly_operation_crawl.py --live。"""
+    if live:
+        raise RuntimeError(
+            "不要从这里连接 DMS。现场使用 scripts/weekly_operation_crawl.py --live，"
+            f"并遵守 {DMS_BROWSER_DOC} 的共用锁。不能和每天 08:30 同时导出。"
+        )
+    from .weekly_crawl import describe_plan
+    from datetime import date as _date
+    day = _date.fromisoformat(as_of) if as_of else _date.today()
+    return describe_plan(as_of=day, regions=list(regions or []))
 
 
 def import_operation(conn, blob: bytes, *, week_start: str, period_start: str, period_end: str,

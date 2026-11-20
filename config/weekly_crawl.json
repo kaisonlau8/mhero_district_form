@@ -1,0 +1,10 @@
+{
+  "schedule_id": "district-form-weekly",
+  "weekday": "friday",
+  "time": "13:30",
+  "deadline": "17:00",
+  "check_by": "14:45",
+  "command": "python scripts/weekly_operation_crawl.py --live",
+  "daily_schedule_unchanged": "08:30",
+  "note": "生产 launchd 和共享 crawl_schedule.json 由现场配置。本文件不改每天 08:30，也不代表已经在 DMS 上跑通。"
+}

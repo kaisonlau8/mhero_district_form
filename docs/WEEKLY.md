@@ -1,6 +1,15 @@
 # 猛士周报导入
 
-周报和每天 08:30 的 7 张源表不是同一套数。经营比较是季度环比和年度同比，更新频率仍是每周。仓库里不新增定时，也不改原来的 `08:30`。每周五 17:00 前更新本周快照这件事由聊天里的例行通知负责，不在这个项目里排程。
+周报和每天 08:30 的 7 张源表不是同一套数。经营比较是季度环比和年度同比，更新频率仍是每周。每天 08:30 的调度没有改。
+
+周五经营采集入口：
+
+```bash
+python scripts/weekly_operation_crawl.py --as-of 2026-11-20 --regions 华东
+python scripts/weekly_operation_crawl.py --live
+```
+
+不加 `--live` 只打印计划，不连接 DMS。`--live` 才使用现场已经登录的共享浏览器：先拿共用导出锁（时刻表 id `district-form-weekly`），从报表菜单点「服务经营报表」，设成收款、日报、区域、空门店和起止日期，查询前后把筛选项读回来，不对就不要导出。全国和每个现行区域、四个期间串行下载。下到的原始 Excel 再交给现有导入。同一文件再跑不会新增。某一份失败就记失败，不把其余成功说成全部完成。建议每周五 13:30 开始，以便 14:45 前能看结果，并在 17:00 前结束。生产定时和共享 `crawl_schedule.json` 由现场配置，见 `config/weekly_crawl.json`。云端没有跑过真实 DMS，不能把这条脚本当成已经现场验证。
 
 页面：登录后打开「报表 → 猛士周报」。管理员在「导入 Excel」上传。命令行：
 
@@ -46,4 +55,4 @@ python -m reportdb.weekly_import kpi \
 
 督导原因在周报页面手填，开始是空的。
 
-以后如果要自动下载，必须先读 [共享 DMS 浏览器约定](https://github.com/kaisonlau8/m-hero/blob/main/docs/SHARED_DMS_BROWSER.md)，复用现有浏览器锁，并和每天 08:30 的导出错开。现在调用采集函数会直接失败，避免并发导出。
+自动下载必须遵守 [共享 DMS 浏览器约定](https://github.com/kaisonlau8/m-hero/blob/main/docs/SHARED_DMS_BROWSER.md)：共用一把导出锁，和每天 08:30 的导出错开。服务指标仍用系统自己算出的总表，不从 DMS 指标主表导出。

@@ -432,17 +432,28 @@ def test_current_week_without_import_is_blank(conn):
     assert page["operation"]["year"]["current"] is None
 
 
-def test_collector_is_disabled_and_schedule_untouched():
+def test_collector_plans_without_dms_and_keeps_daily_schedule():
     from reportdb.weekly_report import collect_weekly_sources
 
-    with pytest.raises(NotImplementedError, match="SHARED_DMS_BROWSER"):
-        collect_weekly_sources()
+    plan = collect_weekly_sources(as_of="2026-11-20", regions=["华东"])
+    assert plan["live"] is False and plan["verified_against_dms"] is False
+    assert plan["time"] == "13:30" and plan["weekday"] == "friday"
+    assert [job["span"] for job in plan["jobs"] if job["scope"] == "全国"] == [
+        "quarter", "quarter_base", "year", "year_base",
+    ]
+    assert plan["jobs"][0]["filters"]["统计类型"] == "收款"
+    assert plan["jobs"][0]["filters"]["报表类型"] == "日报"
+    assert plan["jobs"][0]["filters"]["业务门店"] == ""
+    with pytest.raises(RuntimeError, match="不要从这里连接 DMS"):
+        collect_weekly_sources(live=True)
     root = Path(__file__).resolve().parent.parent
     settings = json.loads((root / "config" / "crawl_settings.json").read_text())
     assert settings["schedule"] == "08:30"
+    weekly = json.loads((root / "config" / "weekly_crawl.json").read_text())
+    assert weekly["time"] == "13:30" and weekly["daily_schedule_unchanged"] == "08:30"
     pipeline = (root / "scripts" / "run_pipeline.py").read_text()
     assert "weekly_import" not in pipeline
-    assert "collect_weekly_sources" not in pipeline
+    assert "weekly_operation_crawl" not in pipeline
 
 
 def _login(client, username, password):
@@ -554,11 +565,86 @@ def test_weekly_page_nav_and_roles(conn, tmp_path):
     ichunk = demo_i.text.split('id="shot-kpi"', 1)[1].split("<details", 1)[0]
     assert "使用系统计算结果" in ichunk
     assert "暂无数据" in ichunk
-    assert "mbar bad" in ichunk
-    assert "nhline" in ichunk
+    assert "首保实施率" in ichunk and "招揽实施率" in ichunk
+    assert 'class="bad"' in ichunk
+    assert "mbar" not in ichunk
+    assert "到店比上季少" in ichunk
+    assert ichunk.find('data-region="全国"') < ichunk.find('data-region="华北"')
     assert "横轴" not in ichunk
     assert "calc.compute" not in ichunk
     assert "980" not in again
+
+
+def test_weekly_crawl_imports_serial_and_keeps_partial_failure(conn, tmp_path):
+    from reportdb.weekly_crawl import prepare_export, readback_mismatches, run_weekly_crawl
+
+    calls = []
+
+    def fetch(job):
+        calls.append(job["key"])
+        if job["key"] == "year_base:华东":
+            raise RuntimeError("下载超时")
+        blob = national_blob() if job["scope"] == "全国" else east_blob()
+        echoed = dict(job["filters"])
+        echoed["开始日期"] = job["filters"]["开始日期"].replace("-", "/")
+        return {
+            "blob": blob, "exported_at": "2026-11-20 13:40:00",
+            "readback_before": echoed, "readback_after": dict(echoed),
+        }
+
+    out = tmp_path / "weekly"
+    first = run_weekly_crawl(conn, as_of="2026-11-20", regions=["华东"], fetch=fetch, output_dir=out)
+    assert first["complete"] is False
+    assert first["failed"] == ["year_base:华东"]
+    assert first["verified_against_dms"] is False
+    assert (out / "quarter_全国.xlsx").is_file()
+    saved = conn.execute(
+        "SELECT COUNT(*) FROM weekly_imports WHERE kind='operation' AND status='active'"
+    ).fetchone()[0]
+    assert saved == 7
+    calls.clear()
+    second = run_weekly_crawl(conn, as_of="2026-11-20", regions=["华东"], fetch=fetch, output_dir=out)
+    assert calls == ["year_base:华东"]
+    assert second["complete"] is False
+
+    def wrong(job):
+        bad = dict(job["filters"])
+        bad["统计类型"] = "结算"
+        blob = national_blob() if job["scope"] == "全国" else east_blob()
+        return {"blob": blob, "exported_at": "2026-11-20 13:40:00", "readback_before": bad, "readback_after": bad}
+
+    blocked = run_weekly_crawl(
+        conn, as_of="2026-11-20", regions=["华东"], fetch=wrong, output_dir=tmp_path / "bad", resume=False,
+    )
+    assert blocked["complete"] is False
+    assert "结算" in blocked["results"][0]["error"]
+    assert readback_mismatches({"业务门店": ""}, {"业务门店": "请选择", "备注": ""}) == []
+    assert readback_mismatches({"业务门店": ""}, {"业务门店": "", "隐藏条件": "某店"})
+
+    class Form:
+        def __init__(self):
+            self.values = {}
+            self.queries = 0
+        def set_filters(self, filters):
+            self.values = dict(filters)
+            self.values["统计类型"] = "结算"
+        def read_filters(self):
+            return dict(self.values)
+        def query(self):
+            self.queries += 1
+
+    form = Form()
+    with pytest.raises(Exception, match="查询前"):
+        prepare_export(form, {"统计类型": "收款", "报表类型": "日报", "区域": "华东", "业务门店": "", "开始日期": "2026-10-01", "结束日期": "2026-11-20"})
+    assert form.queries == 0
+
+
+def test_weekly_crawl_cli_does_not_open_dms(tmp_path):
+    from scripts.weekly_operation_crawl import main
+
+    code = main(["--db", str(tmp_path / "c.sqlite3"), "--as-of", "2026-11-20", "--regions", "华东",
+                 "--output-dir", str(tmp_path / "out")])
+    assert code == 0
 
 
 def test_cli_import(conn, tmp_path, monkeypatch):
