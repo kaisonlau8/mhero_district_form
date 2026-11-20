@@ -538,12 +538,16 @@ def test_weekly_page_nav_and_roles(conn, tmp_path):
     assert page.status_code == 200
     assert "猛士周报" in page.text
     assert 'href="/reports/weekly"' in page.text
+    assert "当年月经营数据" in page.text and "季度环比" in page.text
+    assert page.text.find("当年月经营数据") < page.text.find("季度环比")
+    assert "服务指标" in page.text
     assert "收款工单数" in page.text
     assert "未导入" in page.text
-    assert "不是严格来厂台次" in page.text
+    quarter_note = viewer.get("/reports/weekly", params={"view": "quarter"})
+    assert "不是严格来厂台次" in quarter_note.text
     assert "万元" not in page.text
     assert "不含税" not in page.text
-    assert "未注明" in page.text
+    assert "未注明" in quarter_note.text
     assert "6402712" not in page.text
     assert viewer.get("/reports/weekly/import").status_code == 403
     admin = TestClient(create_app(db))
@@ -566,16 +570,20 @@ def test_weekly_page_nav_and_roles(conn, tmp_path):
     )
     assert posted.status_code == 303
     shown = admin.get("/reports/weekly", params={"week": "2026-11-16"})
-    assert "经营数据" in shown.text and "季度环比" in shown.text
+    assert "经营数据" in shown.text and "当年月经营数据" in shown.text and "季度环比" in shown.text
+    assert shown.text.find("当年月经营数据") < shown.text.find("季度环比")
+    assert shown.text.find("<h2>经营数据</h2>") < shown.text.find("<h2>服务指标</h2>")
     assert "年度同比" not in shown.text and "shot-year" not in shown.text and "截图：年度" not in shown.text
     assert "来自DMS收款报表" in shown.text
-    assert "2026-10-01" in shown.text and "2026-08-20" in shown.text
-    assert "实现默认" in shown.text
-    assert "上周同进度" not in shown.text and "364" not in shown.text
-    assert ">15<" in shown.text or "15" in shown.text
     assert "未填写" in shown.text
     assert "weekly-topbar-flat" in shown.text
-    shot_op = shown.text.split('id="shot-operation"', 1)[1].split('id="shot-kpi"', 1)[0]
+    assert "shot-months" in shown.text and "shot-quarter" not in shown.text
+    quarter = admin.get("/reports/weekly", params={"week": "2026-11-16", "view": "quarter"})
+    assert "2026-10-01" in quarter.text and "2026-08-20" in quarter.text
+    assert "实现默认" in quarter.text
+    assert "上周同进度" not in quarter.text and "364" not in quarter.text
+    assert ">15<" in quarter.text or "15" in quarter.text
+    shot_op = quarter.text.split('id="shot-operation"', 1)[1].split('id="shot-quarter"', 1)[1]
     shot_kpi = shown.text.split('id="shot-kpi"', 1)[1].split('id="weekly-edit"', 1)[0]
     assert 'class="bar-chart"' in shot_op
     assert "<textarea" not in shot_kpi
@@ -584,7 +592,6 @@ def test_weekly_page_nav_and_roles(conn, tmp_path):
     visible_op = shot_op.split("<details", 1)[0]
     assert "不摊分" not in visible_op
     assert "差额保留" not in visible_op
-    assert "未导入" in visible_op
     assert "不摊分" in shot_op
     link = re.search(r'href="(/reports/weekly/imports/\d+/source.xlsx)"', shown.text)
     assert link

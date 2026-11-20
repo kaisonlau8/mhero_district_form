@@ -64,7 +64,8 @@ def audit_site(conn, tmp_path):
         routes = ["/login", "/", *[f"/tables/{slug}" for slug in (
             "summary", "region-indicators", "direct-stores", "spare-parts")],
             *[f"/data/{key}" for key in data], "/stores", f"/stores/{store}",
-            "/reports/daily", "/reports/weekly?week=2026-11-16", "/reports/weekly/demo",
+            "/reports/daily", "/reports/weekly?week=2026-11-16&view=quarter",
+            "/reports/weekly/demo?view=quarter",
             "/reports/weekly/demo?view=months", "/reports/weekly/demo?view=indicators",
             "/reports/weekly/import", "/account/password", "/exemptions/new", "/exemptions/mine",
             "/exclusions/new", "/settings/exclusion-rules", "/settings/spare-parts",
@@ -150,7 +151,7 @@ def test_reportdb_layout(chromium, audit_site, width):
                 check(sheet.evaluate("el => el.scrollWidth > el.clientWidth"), "总表应仅在表内横滚")
                 check(sheet.locator("tbody tr:first-child td:nth-child(2)").evaluate(
                     "el => getComputedStyle(el).position") == "sticky", "总表区域列未固定")
-            if path == "/reports/weekly/demo":
+            if path == "/reports/weekly/demo?view=quarter":
                 check(page.locator(".vbar").count() > 0, "未覆盖有数据的经营竖柱图")
                 check(page.locator(".vplot").evaluate_all("els => els.every(el => {"
                       "const r = el.getBoundingClientRect(); return r.right <= innerWidth + 1 && "
@@ -161,7 +162,13 @@ def test_reportdb_layout(chromium, audit_site, width):
                     "el => getComputedStyle(el).gridTemplateColumns.split(' ').length")
                     == (1 if mobile else 3), "经营摘要卡列数不符")
             if path == "/reports/weekly/demo?view=months":
-                scroll = page.get_by_role("region", name="月度经营")
+                tabs = page.locator("[data-operation-tabs]")
+                check(tabs.locator("a").count() == 2
+                      and tabs.locator("a").nth(0).inner_text() == "当年月经营数据"
+                      and "on" in (tabs.locator("a").nth(0).get_attribute("class") or "")
+                      and tabs.locator("a").nth(1).inner_text() == "季度环比",
+                      "经营数据应只有当年月经营数据和季度环比，且默认当年月")
+                scroll = page.get_by_role("region", name="当年月经营数据")
                 sheet = scroll.locator("table.month-sheet")
                 check(sheet.locator("th.lab").inner_text() == "区域" and sheet.locator("tr.is-nation").count() == 1,
                       "月度表应有固定区域列和全国行")
@@ -184,7 +191,7 @@ def test_reportdb_layout(chromium, audit_site, width):
                 check(scroll.evaluate("el => { el.scrollLeft = el.scrollWidth; return el.scrollLeft > 0; }")
                       == mobile, "服务指标未按断点仅在大表容器内横滚")
                 scroll.evaluate("el => { el.scrollLeft = 0; }")
-            if path == "/reports/weekly?week=2026-11-16":
+            if path == "/reports/weekly?week=2026-11-16&view=quarter":
                 east = page.locator('#shot-quarter [data-chart="orders"] .vgroup').filter(has_text="华东")
                 check(east.locator('.vbar.prev[data-value="6"]').count() == 1, "未覆盖华东季度对比期")
                 check(page.locator("#shot-year").count() == 0 and "年度同比" not in page.content(),
