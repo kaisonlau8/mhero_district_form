@@ -24,30 +24,41 @@
   .up { color: #389e0d; font-weight: 700; }
   .down { color: #cf1322; font-weight: 700; }
   .flat { color: #595959; font-weight: 700; }
-  .bar-chart { margin: 8px 0 18px; }
-  .bar-chart h3 { margin: 0 0 8px; font-size: 20px; }
-  .legend { font-size: 14px; color: #595959; margin-bottom: 8px; }
+  body:has(.shot-view) .container { padding-left: 12px; padding-right: 12px; }
+  .bar-chart { margin: 8px 0 22px; }
+  .bar-chart h3 { margin: 0 0 6px; font-size: 20px; }
+  .legend { font-size: 15px; color: #595959; margin-bottom: 4px; }
+  .axis-note { margin: 0 0 8px; color: #8c8c8c; font-size: 14px; }
   .sw { display: inline-block; width: 14px; height: 14px; border-radius: 3px; margin-right: 4px; vertical-align: -2px; }
   .sw.now { background: #1677ff; }
   .sw.prev { background: #fa8c16; }
-  .grow { display: grid; grid-template-columns: 72px 1fr 88px; gap: 8px 10px; align-items: center; margin: 0 0 10px; }
-  .gname { font-size: 16px; font-weight: 600; }
-  .gline { display: flex; align-items: center; height: 22px; margin: 3px 0; background: #f5f5f5; border-radius: 4px; overflow: hidden; }
-  .gbar { display: flex; align-items: center; height: 22px; min-width: 36px; border-radius: 4px; color: #fff; font-size: 13px; font-weight: 700; padding: 0 8px; }
-  .gbar.now { background: #1677ff; }
-  .gbar.prev { background: #fa8c16; }
-  .gmiss { color: #8c8c8c; font-size: 14px; padding-left: 8px; }
-  .gpct { font-size: 16px; text-align: right; }
-  .metric-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
-  .metric-card { border: 1px solid #f0f0f0; border-radius: 12px; padding: 12px 14px 8px; }
+  .vplot { padding-top: 4px; }
+  .varea { display: flex; align-items: flex-end; gap: 10px; }
+  .vgroup { flex: 1; min-width: 0; text-align: center; }
+  .vpair { display: flex; align-items: flex-end; justify-content: center; gap: 10px; height: 230px; }
+  .vslot { position: relative; width: 54px; height: 100%; }
+  .vbar { position: absolute; left: 6px; right: 6px; bottom: 0; border-radius: 4px 4px 0 0; min-height: 2px; z-index: 1; }
+  .vbar.now { background: #1677ff; }
+  .vbar.prev { background: #fa8c16; }
+  .vval { position: absolute; left: 0; right: 0; text-align: center; font-size: 12px; line-height: 14px; font-weight: 700; color: #262626; z-index: 2; }
+  .vname { margin-top: 8px; font-size: 16px; font-weight: 700; }
+  .gmiss { position: absolute; left: 0; right: 0; bottom: 4px; color: #8c8c8c; font-size: 13px; }
+  .vpct { margin-top: 2px; font-size: 15px; }
+  .metric-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+  .metric-card { border: 1px solid #f0f0f0; border-radius: 12px; padding: 12px 14px 10px; }
   .metric-card h3 { margin: 0; font-size: 18px; }
-  .natline { margin: 2px 0 8px; font-size: 14px; color: #d46b08; font-weight: 700; }
-  .mrow { display: grid; grid-template-columns: 64px 1fr; gap: 8px; align-items: center; margin: 6px 0; }
-  .mtrack { position: relative; height: 26px; background: #f5f5f5; border-radius: 4px; }
-  .refline { position: absolute; top: -2px; bottom: -2px; width: 0; border-left: 2px dashed #fa8c16; z-index: 1; }
-  .mbar { position: relative; display: flex; align-items: center; height: 26px; border-radius: 4px; background: #1677ff; color: #fff; font-weight: 700; font-size: 13px; padding-left: 6px; z-index: 0; }
+  .natline { margin: 2px 0 8px; font-size: 15px; color: #d46b08; font-weight: 700; }
+  .mplot { padding-top: 16px; }
+  .marea { position: relative; display: flex; align-items: flex-end; height: 168px; }
+  .nhline { position: absolute; left: 0; right: 0; border-top: 2px dashed #fa8c16; z-index: 2; }
+  .mslot { position: relative; flex: 1; height: 168px; }
+  .mbar { position: absolute; left: 18%; right: 18%; bottom: 0; border-radius: 4px 4px 0 0; background: #1677ff; min-height: 2px; z-index: 1; }
   .mbar.bad { background: #cf1322; }
-  .mnone { color: #8c8c8c; font-size: 14px; }
+  .mv { position: absolute; left: 0; right: 0; text-align: center; font-size: 13px; font-weight: 700; color: #262626; z-index: 3; }
+  .mv.down { color: #cf1322; }
+  .mnone { position: absolute; left: 0; right: 0; bottom: 6px; text-align: center; color: #8c8c8c; font-size: 13px; }
+  .mnames { display: flex; margin-top: 8px; }
+  .mnames span { flex: 1; text-align: center; font-size: 15px; font-weight: 700; }
   .reason-line { margin-top: 12px; font-size: 14px; color: #595959; }
   details.weekly-audit, details.weekly-edit { margin: 10px 0 16px; }
   details.weekly-audit summary, details.weekly-edit summary { cursor: pointer; color: #1677ff; }
@@ -83,28 +94,37 @@
 </header>
 {% if msg %}<div class="ant-alert ant-alert-success"><div class="ant-alert-content">{{ msg }}</div></div>{% endif %}
 
-{% macro bars(panel, field, title) %}
+{% macro bars(panel, field, title, unit) %}
 <div class="bar-chart" data-chart="{{ field }}">
   <h3>{{ title }}</h3>
   <div class="legend"><span class="sw now"></span>本期 <span class="sw prev"></span>对比期</div>
-  {% for row in panel.rows if row.region != '全国' %}
-  <div class="grow">
-    <div class="gname">{{ row.region }}</div>
-    <div>
-      <div class="gline">
-        {% if row[field].region_current_bar is not none %}
-        <span class="gbar now" style="width: {{ row[field].region_current_bar }}%" data-value="{{ row[field].current }}">{{ row[field].current }}</span>
-        {% else %}<span class="gmiss">未导入</span>{% endif %}
+  <p class="axis-note">横轴是区域</p>
+  <div class="vplot">
+    <div class="varea">
+      {% for row in panel.rows if row.region != '全国' %}
+      <div class="vgroup">
+        <div class="vpair">
+          <div class="vslot">
+            {% if row[field].region_current_bar is not none %}
+            {% set cur_h = (row[field].region_current_bar * 0.78)|round(1) %}
+            <span class="vval" style="bottom: calc({{ cur_h }}% + 4px)">{{ row[field].current }}</span>
+            <i class="vbar now" style="height: {{ cur_h }}%" title="本期 {{ row[field].current }} {{ unit }}" data-value="{{ row[field].current }}"></i>
+            {% else %}<span class="gmiss">未导入</span>{% endif %}
+          </div>
+          <div class="vslot">
+            {% if row[field].region_base_bar is not none %}
+            {% set base_h = (row[field].region_base_bar * 0.78)|round(1) %}
+            <span class="vval" style="bottom: calc({{ base_h }}% + 4px)">{{ row[field].base }}</span>
+            <i class="vbar prev" style="height: {{ base_h }}%" title="对比期 {{ row[field].base }} {{ unit }}" data-value="{{ row[field].base }}"></i>
+            {% else %}<span class="gmiss">未导入</span>{% endif %}
+          </div>
+        </div>
+        <div class="vname">{{ row.region }}</div>
+        <div class="vpct {{ 'up' if row[field].change.startswith('+') else ('down' if row[field].change.startswith('-') else 'flat') }}">{{ row[field].change }}</div>
       </div>
-      <div class="gline">
-        {% if row[field].region_base_bar is not none %}
-        <span class="gbar prev" style="width: {{ row[field].region_base_bar }}%" data-value="{{ row[field].base }}">{{ row[field].base }}</span>
-        {% else %}<span class="gmiss">未导入</span>{% endif %}
-      </div>
+      {% endfor %}
     </div>
-    <div class="gpct {{ 'up' if row[field].change.startswith('+') else ('down' if row[field].change.startswith('-') else 'flat') }}">{{ row[field].change }}</div>
   </div>
-  {% endfor %}
 </div>
 {% endmacro %}
 
@@ -113,10 +133,10 @@
 <p class="when">本期 {{ panel.current.start }} 至 {{ panel.current.end }}　对比期 {{ panel.base.start }} 至 {{ panel.base.end }}</p>
 {% if nation %}
 <div class="hero-cards">
-  {% for field, title, unit in (('orders', '收款工单数', '单'), ('output', '总产值', '金额单位未注明'), ('vehicles', '车辆数', '辆')) %}
+  {% for field, title, unit in (('orders', '收款工单数', '单'), ('output', '总产值', '元'), ('vehicles', '车辆数', '辆')) %}
   <div class="hero-card" data-card="{{ field }}">
-    <div class="k">全国 {{ title }}</div>
-    <div class="num">{{ nation[field].current }}</div>
+    <div class="k">全国 {{ title }}（{{ unit }}）</div>
+    <div class="num" title="{{ nation[field].current }} {{ unit }}">{{ nation[field].current }}</div>
     <div class="sub">对比期 {{ nation[field].base }}　<span class="{{ 'up' if nation[field].change.startswith('+') else ('down' if nation[field].change.startswith('-') else 'flat') }}">{{ nation[field].change }}</span></div>
     <div class="k">{{ unit }}</div>
   </div>
@@ -126,9 +146,9 @@
 <p class="src-line">全国还没有数。</p>
 {% endif %}
 {% if panel.reconcile %}<div class="ant-alert ant-alert-warning"><div class="ant-alert-content">{{ panel.reconcile.warning }}</div></div>{% endif %}
-{{ bars(panel, 'orders', '各区收款工单数') | safe }}
-{{ bars(panel, 'output', '各区总产值') | safe }}
-{{ bars(panel, 'vehicles', '各区车辆数') | safe }}
+{{ bars(panel, 'orders', '各区收款工单数（单）', '单') | safe }}
+{{ bars(panel, 'output', '各区总产值（元）', '元') | safe }}
+{{ bars(panel, 'vehicles', '各区车辆数（辆）', '辆') | safe }}
 {% endmacro %}
 
 {% if not view or view in ('quarter', 'year') %}
@@ -171,18 +191,25 @@
     {% set nation = metric.cells[0] %}
     <article class="metric-card">
       <h3>{{ metric.title }}</h3>
-      <p class="natline">全国 {{ nation.rate_text }}</p>
-      {% for cell in metric.cells if cell.region != '全国' %}
-      <div class="mrow">
-        <span class="gname">{{ cell.region }}</span>
-        <div class="mtrack">
-          {% if nation.rate is not none %}<i class="refline" style="left: {{ (nation.rate * 100)|round(1) }}%"></i>{% endif %}
-          {% if cell.rate is not none %}
-          <b class="mbar {{ 'bad' if cell.below else '' }}" style="width: {{ (cell.rate * 100)|round(1) }}%" data-rate="{{ cell.rate_text }}">{{ cell.rate_text }}</b>
-          {% else %}<span class="mnone">暂无数据</span>{% endif %}
+      <p class="natline">全国 {{ nation.rate_text }}　橙线是全国</p>
+      <p class="axis-note">横轴是区域</p>
+      <div class="mplot">
+        <div class="marea">
+          {% if nation.rate is not none %}<i class="nhline" style="bottom: {{ (nation.rate * 78)|round(1) }}%" title="全国 {{ nation.rate_text }}"></i>{% endif %}
+          {% for cell in metric.cells if cell.region != '全国' %}
+          <div class="mslot">
+            {% if cell.rate is not none %}
+            {% set h = (cell.rate * 78)|round(1) %}
+            <b class="mv {{ 'down' if cell.below else '' }}" style="bottom: calc({{ h }}% + 3px)">{{ cell.rate_text }}</b>
+            <i class="mbar {{ 'bad' if cell.below else '' }}" style="height: {{ h }}%" data-rate="{{ cell.rate_text }}" title="{{ cell.region }} {{ cell.rate_text }}"></i>
+            {% else %}<span class="mnone">暂无数据</span>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        <div class="mnames">
+          {% for cell in metric.cells if cell.region != '全国' %}<span>{{ cell.region }}</span>{% endfor %}
         </div>
       </div>
-      {% endfor %}
     </article>
     {% endfor %}
   </div>

@@ -521,6 +521,12 @@ def test_weekly_page_nav_and_roles(conn, tmp_path):
     assert "来自DMS收款报表" in qchunk
     assert 'data-chart="vehicles"' in qchunk
     assert 'data-value="142"' in qchunk
+    assert "各区总产值（元）" in qchunk
+    assert "各区收款工单数（单）" in qchunk
+    assert "各区车辆数（辆）" in qchunk
+    assert "金额单位未注明" not in qchunk
+    assert "vbar now" in qchunk
+    assert "折线" not in demo_q.text
     assert "calc.compute" not in qchunk
     demo_y = admin.get("/reports/weekly/demo", params={"view": "year"})
     assert "2025-01-01" in demo_y.text and "2025-11-20" in demo_y.text
@@ -529,6 +535,8 @@ def test_weekly_page_nav_and_roles(conn, tmp_path):
     assert "使用系统计算结果" in ichunk
     assert "暂无数据" in ichunk
     assert "mbar bad" in ichunk
+    assert "nhline" in ichunk
+    assert "横轴是区域" in ichunk
     assert "calc.compute" not in ichunk
     assert "980" not in again
 

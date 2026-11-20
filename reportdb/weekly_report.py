@@ -98,7 +98,7 @@ def import_operation(conn, blob: bytes, *, week_start: str, period_start: str, p
         "field_sources": {
             "orders": "收款工单数，取该文件汇总行，不把业务类型明细相加",
             "vehicles": "车辆数，取该文件汇总行的去重值，不跨业务类型或区域相加",
-            "output": "总产值，取该文件汇总行",
+            "output": "总产值，取该文件汇总行，单位元",
         },
     }
     return _save(conn, blob, {
@@ -268,7 +268,7 @@ def _operation_section(active, week: str, scopes: list[str], known: list[str]) -
         "title": "经营数据：季度环比 / 年度同比",
         "imported": quarter["imported"] or year["imported"],
         "source": "dms_service_operation_receipt",
-        "note": "收款工单数、总产值、车辆数只来自 DMS 服务经营报表「收款 · 日报」导出的汇总行，不用总表自算结果代替。收款工单数按收款时间统计已收款工单，含仅备件销售，不是严格来厂台次。车辆数用汇总行去重值，不跨业务类型或区域相加。金额单位与是否含税源表未注明。环比、同比只按对应期间的这些导出值计算。",
+        "note": "收款工单数、总产值、车辆数只来自 DMS 服务经营报表「收款 · 日报」导出的汇总行，不用总表自算结果代替。收款工单数按收款时间统计已收款工单，含仅备件销售，不是严格来厂台次。车辆数用汇总行去重值，不跨业务类型或区域相加。总产值单位为元（2026-11-20 确认），按导出的数值展示。是否含税未注明。环比、同比只按对应期间的这些导出值计算。",
         "quarter": quarter,
         "year": year,
     }
