@@ -207,27 +207,52 @@ def test_change_missing_and_zero_base():
     assert ok["rate"] == Decimal("0.5")
 
 
-def test_comparable_windows_use_364_days():
-    from reportdb.weekly_parse import comparable_windows
+def test_quarter_and_year_windows():
+    from reportdb.weekly_parse import align_progress, quarter_compare, year_compare
 
-    got = comparable_windows(date(2026, 11, 16), date(2026, 11, 19))
-    assert got["current"] == {"start": date(2026, 11, 16), "end": date(2026, 11, 19)}
-    assert got["wow"] == {"start": date(2026, 11, 9), "end": date(2026, 11, 12)}
-    assert got["yoy"] == {"start": date(2025, 11, 17), "end": date(2025, 11, 20)}
+    q1 = quarter_compare(date(2026, 2, 15))
+    assert q1["current"] == {"start": date(2026, 1, 1), "end": date(2026, 2, 15)}
+    assert q1["base"] == {"start": date(2025, 10, 1), "end": date(2025, 11, 15)}
+    assert q1["label_base"] == "2025Q4"
+    assert "实现默认" in q1["progress_note"]
+    q2 = quarter_compare(date(2026, 5, 20))
+    assert q2["current"] == {"start": date(2026, 4, 1), "end": date(2026, 5, 20)}
+    assert q2["base"] == {"start": date(2026, 1, 1), "end": date(2026, 2, 19)}
+    assert q2["label_base"] == "2026Q1"
+    done = quarter_compare(date(2026, 6, 30))
+    assert done["complete"] is True and done["capped"] is False
+    assert done["current"] == {"start": date(2026, 4, 1), "end": date(2026, 6, 30)}
+    assert done["base"] == {"start": date(2026, 1, 1), "end": date(2026, 3, 31)}
+    assert align_progress(date(2026, 1, 1), date(2026, 3, 31), 90) == (date(2026, 3, 31), True)
+    year = year_compare(date(2026, 11, 20))
+    assert year["current"] == {"start": date(2026, 1, 1), "end": date(2026, 11, 20)}
+    assert year["base"] == {"start": date(2025, 1, 1), "end": date(2025, 11, 20)}
+    leap = year_compare(date(2024, 2, 29))
+    assert leap["base"]["end"] == date(2023, 2, 28)
+    assert "2月28日" in leap["progress_note"]
+    march = year_compare(date(2024, 3, 1))
+    assert march["base"]["end"] == date(2023, 3, 1)
 
 
 def _op_meta(**over):
-    meta = dict(week_start="2026-11-16", period_start="2026-11-16", period_end="2026-11-19",
+    meta = dict(week_start="2026-11-16", span="quarter", period_start="2026-10-01", period_end="2026-11-20",
                 exported_at="2026-11-20 14:25:35", timezone="+08:00", filename="op.xlsx", actor="test")
     meta.update(over)
     return meta
 
 
-def test_cross_week_period_is_rejected(conn):
+def test_week_shaped_and_november_sample_are_rejected(conn):
     from reportdb.weekly_report import WeeklyImportError, import_operation
 
-    with pytest.raises(WeeklyImportError, match="不能当作该周"):
-        import_operation(conn, national_blob(), **_op_meta(period_start="2026-11-01", period_end="2026-11-19"))
+    for span, start, end in (
+        ("quarter", "2026-11-01", "2026-11-19"),
+        ("year", "2026-11-01", "2026-11-19"),
+        ("quarter", "2026-11-16", "2026-11-19"),
+        ("quarter_base", "2026-11-09", "2026-11-12"),
+    ):
+        with pytest.raises(WeeklyImportError, match="都不能当作"):
+            extra = {"as_of": "2026-11-20"} if span.endswith("_base") else {}
+            import_operation(conn, national_blob(), **_op_meta(span=span, period_start=start, period_end=end, **extra))
     assert conn.execute("SELECT COUNT(*) FROM weekly_imports").fetchone()[0] == 0
 
 
@@ -265,11 +290,11 @@ def test_region_gap_is_kept(conn):
     import_operation(conn, national_blob(), **_op_meta())
     import_operation(conn, east_blob(), **_op_meta(filename="east.xlsx"))
     page = build_weekly_page(conn, "2026-11-16", today=date(2026, 11, 20))
-    op = page["operation"]
-    assert op["imported"] is True
-    assert op["periods"]["current"]["end"] == "2026-11-19"
-    assert op["periods"]["wow"]["start"] == "2026-11-09"
-    assert op["periods"]["yoy"]["start"] == "2025-11-17"
+    op = page["operation"]["quarter"]
+    assert page["operation"]["imported"] is True
+    assert op["current"]["start"] == "2026-10-01" and op["current"]["end"] == "2026-11-20"
+    assert op["base"]["start"] == "2026-07-01" and op["base"]["end"] == "2026-08-20"
+    assert "实现默认" in op["progress_note"]
     by = {row["region"]: row for row in op["rows"]}
     assert by["全国"]["orders"]["current"] == "15"
     assert by["华东"]["orders"]["current"] == "6"
@@ -286,7 +311,25 @@ def test_region_gap_is_kept(conn):
     assert "未注明" in dumped
 
 
-def test_wow_zero_base_and_missing(conn):
+def test_blank_role_week_row_is_not_quarter_data(conn):
+    from reportdb.weekly_report import build_weekly_page
+
+    conn.execute(
+        """INSERT INTO weekly_imports(
+               kind, week_start, scope, compare_role, period_start, period_end, exported_at, sha256,
+               revision, status, created_at, quality_json, summary_json, payload)
+           VALUES ('operation','2026-11-16','全国','','2026-11-16','2026-11-19',
+                   '2026-11-20 14:25:35 +08:00','abc',1,'active','2026-11-20',
+                   '[]','{"summary":{"orders":"6246","vehicles":"1","output":"1.00","labor":"1.00","parts":"0.00","other":"0.00"}}',
+                   X'00')"""
+    )
+    conn.commit()
+    page = build_weekly_page(conn, "2026-11-16", today=date(2026, 11, 20))
+    assert page["operation"]["quarter"]["rows"][0]["orders"]["current"] == "未导入"
+    assert "6246" not in json.dumps(page["operation"], ensure_ascii=False)
+
+
+def test_quarter_base_zero_and_year_missing(conn):
     from reportdb.weekly_report import build_weekly_page, import_operation
 
     import_operation(conn, national_blob(), **_op_meta())
@@ -295,13 +338,16 @@ def test_wow_zero_base_and_missing(conn):
         op_row("汇总", "", "", "0", "0", "", "0.00", "0.00", "0.00", "0.00"),
     ])
     import_operation(conn, zero, **_op_meta(
-        week_start="2026-11-09", period_start="2026-11-09", period_end="2026-11-12", filename="prev.xlsx"))
+        span="quarter_base", period_start="2026-07-01", period_end="2026-08-20",
+        as_of="2026-11-20", filename="base.xlsx"))
     page = build_weekly_page(conn, "2026-11-16", today=date(2026, 11, 20))
-    national = next(r for r in page["operation"]["rows"] if r["region"] == "全国")
-    assert national["orders"]["wow"] == "0"
-    assert national["orders"]["wow_change"] == "不可比"
-    assert national["orders"]["yoy"] == "未导入"
-    assert national["orders"]["yoy_change"] == "未导入"
+    national = next(r for r in page["operation"]["quarter"]["rows"] if r["region"] == "全国")
+    assert national["orders"]["current"] == "15"
+    assert national["orders"]["base"] == "0"
+    assert national["orders"]["change"] == "不可比"
+    year = next(r for r in page["operation"]["year"]["rows"] if r["region"] == "全国")
+    assert year["orders"]["current"] == "未导入"
+    assert year["orders"]["change"] == "未导入"
 
 
 def test_blank_region_not_taken_from_store_table(conn):
@@ -346,7 +392,8 @@ def test_current_week_without_import_is_blank(conn):
     text = json.dumps(page, ensure_ascii=False)
     assert "6402712.72" not in text
     assert "6246" not in text
-    assert page["operation"]["periods"] is None
+    assert page["operation"]["quarter"]["current"] is None
+    assert page["operation"]["year"]["current"] is None
 
 
 def test_collector_is_disabled_and_schedule_untouched():
@@ -405,8 +452,8 @@ def test_weekly_page_nav_and_roles(conn, tmp_path):
     posted = admin.post(
         "/reports/weekly/import",
         data={
-            "csrf": csrf, "kind": "operation", "week": "2026-11-16",
-            "period_start": "2026-11-16", "period_end": "2026-11-19",
+            "csrf": csrf, "kind": "operation", "week": "2026-11-16", "span": "quarter",
+            "period_start": "2026-10-01", "period_end": "2026-11-20",
             "exported_at": "2026-11-20 14:25:35", "timezone": "+08:00",
             "stat_type": "收款", "report_type": "日报",
         },
@@ -415,7 +462,10 @@ def test_weekly_page_nav_and_roles(conn, tmp_path):
     )
     assert posted.status_code == 303
     shown = admin.get("/reports/weekly", params={"week": "2026-11-16"})
-    assert "2026-11-09" in shown.text and "2025-11-17" in shown.text
+    assert "经营数据：季度环比 / 年度同比" in shown.text
+    assert "2026-10-01" in shown.text and "2026-08-20" in shown.text
+    assert "实现默认" in shown.text
+    assert "上周同进度" not in shown.text and "364" not in shown.text
     assert ">15<" in shown.text or "15" in shown.text
     assert "未填写" in shown.text
     assert "weekly-topbar-flat" in shown.text
@@ -450,16 +500,16 @@ def test_cli_import(conn, tmp_path, monkeypatch):
     from reportdb.weekly_import import main
 
     code = main([
-        "operation", "--file", str(blob), "--week", "2026-11-16",
-        "--period-start", "2026-11-16", "--period-end", "2026-11-19",
+        "operation", "--file", str(blob), "--week", "2026-11-16", "--span", "quarter",
+        "--period-start", "2026-10-01", "--period-end", "2026-11-20",
         "--exported-at", "2026-11-20 14:25:35", "--actor", "cli",
     ])
     assert code == 0
     row = conn.execute("SELECT scope, status FROM weekly_imports").fetchone()
     assert row["scope"] == "华东" and row["status"] == "active"
     again = main([
-        "operation", "--file", str(blob), "--week", "2026-11-16",
-        "--period-start", "2026-11-16", "--period-end", "2026-11-19",
+        "operation", "--file", str(blob), "--week", "2026-11-16", "--span", "quarter",
+        "--period-start", "2026-10-01", "--period-end", "2026-11-20",
         "--exported-at", "2026-11-20 14:25:35",
     ])
     assert again == 0
@@ -519,11 +569,12 @@ def test_real_samples_parse_and_do_not_bind_as_current_week(conn):
     assert kpi["national"]["first"]["num"] == Decimal("980")
     assert kpi["national"]["first"]["den"] == Decimal("2488")
     assert kpi["regions"]["无区域"]["first"]["den"] == Decimal("1476")
-    with pytest.raises(WeeklyImportError):
-        import_operation(
-            conn, national_bytes, week_start="2026-11-16", period_start="2026-11-01",
-            period_end="2026-11-19", exported_at="2026-11-20 14:25:35", filename="sample.xlsx", actor="test",
-        )
+    for span in ("quarter", "year"):
+        with pytest.raises(WeeklyImportError):
+            import_operation(
+                conn, national_bytes, week_start="2026-11-16", span=span, period_start="2026-11-01",
+                period_end="2026-11-19", exported_at="2026-11-20 14:25:35", filename="sample.xlsx", actor="test",
+            )
     page = build_weekly_page(conn, None, today=date(2026, 11, 20))
     assert page["operation"]["imported"] is False
     assert "6402712.72" not in json.dumps(page, ensure_ascii=False)

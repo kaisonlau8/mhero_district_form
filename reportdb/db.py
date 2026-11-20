@@ -318,11 +318,21 @@ def _migrate_v9(conn: sqlite3.Connection) -> None:
     )
 
 
+def _migrate_v10(conn: sqlite3.Connection) -> None:
+    """经营快照按季度环比 / 年度同比分角色保存。空角色的旧周区间行不参与新比较。"""
+    _add_col(conn, "weekly_imports", "compare_role", "TEXT NOT NULL DEFAULT ''")
+    conn.execute("DROP INDEX IF EXISTS idx_weekly_imports_active")
+    conn.execute(
+        """CREATE UNIQUE INDEX IF NOT EXISTS idx_weekly_imports_active
+           ON weekly_imports(kind, week_start, scope, compare_role) WHERE status='active'"""
+    )
+
+
 # 迁移列表：下标+1 == user_version。只追加，不改旧条目。元素可以是 SQL 脚本或 callable(conn)。
 MIGRATIONS: list = [
     CORE_DDL + "\n" + "\n".join(ddl(d) for d in DATASETS),
     _migrate_v2, _migrate_v3, _migrate_v4, _migrate_v5, _migrate_v6, _migrate_v7, _migrate_v8,
-    _migrate_v9,
+    _migrate_v9, _migrate_v10,
 ]
 SCHEMA_VERSION = len(MIGRATIONS)
 

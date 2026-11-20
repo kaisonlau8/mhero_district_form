@@ -10,7 +10,9 @@
   .chart-legend { font-size:12px; color:#595959; margin-bottom:6px; }
   .swatch { display:inline-block; width:10px; height:10px; border-radius:2px; margin:0 4px 0 8px; vertical-align:-1px; }
   .swatch.orders, .chart-track i.orders { background:#1677ff; }
+  .swatch.base, .chart-track i.base { background:#fa8c16; }
   .swatch.output, .chart-track i.output { background:#13a8a8; }
+  .compare-card + .compare-card { margin-top: 14px; padding-top: 10px; border-top: 1px solid #f0f0f0; }
   .chart-row { display:grid; grid-template-columns:4.2em minmax(80px,1fr) 4.6em minmax(80px,1fr) 6.2em; gap:4px 8px; align-items:center; margin:3px 0; font-size:12px; }
   .chart-name { font-weight:600; }
   .chart-track { background:#f5f5f5; height:14px; border-radius:2px; overflow:hidden; }
@@ -54,78 +56,81 @@
 {% if msg %}<div class="ant-alert ant-alert-success"><div class="ant-alert-content">{{ msg }}</div></div>{% endif %}
 
 <section class="weekly-shot" id="shot-operation">
-  <h2>当周经营数据及同比 / 环比</h2>
-  <p class="weekly-meta">
-    {% if model.operation.periods %}
-    当周 {{ model.operation.periods.current.start }} 至 {{ model.operation.periods.current.end }}（收款 · 日报）。
-    上周同进度 {{ model.operation.periods.wow.start }} 至 {{ model.operation.periods.wow.end }}。
-    去年可比周 {{ model.operation.periods.yoy.start }} 至 {{ model.operation.periods.yoy.end }}。
-    {% else %}
-    本周 {{ model.week_start }} 至 {{ model.week_end }}。经营数据未导入，还不能确定同进度截至日。
-    {% endif %}
-    {% if model.operation.exports %}
-    导出时间：{% for item in model.operation.exports %}{{ item.scope }} {{ item.exported_at }}{% if not loop.last %}；{% endif %}{% endfor %}。
-    {% else %}没有导出时间。{% endif %}
-  </p>
-  <p class="weekly-meta">{{ model.operation.note }}</p>
-  {% if model.operation.reconcile %}<div class="ant-alert ant-alert-warning"><div class="ant-alert-content">{{ model.operation.reconcile.warning }}</div></div>{% endif %}
-  <div class="bar-chart" role="img" aria-label="当周收款工单数与总产值。未导入的区域不画柱，也不当成 0。">
-    <div class="chart-legend"><span class="swatch orders"></span>收款工单数（当周）<span class="swatch output"></span>总产值（当周）</div>
-    {% for row in model.operation.rows %}
-    <div class="chart-row">
-      <span class="chart-name">{{ row.region }}</span>
-      <span class="chart-track">{% if row.orders.bar is not none %}<i class="orders" style="width: {{ row.orders.bar }}%"></i>{% else %}<em>未导入</em>{% endif %}</span>
-      <span class="chart-val">{{ row.orders.current }}</span>
-      <span class="chart-track">{% if row.output.bar is not none %}<i class="output" style="width: {{ row.output.bar }}%"></i>{% else %}<em>未导入</em>{% endif %}</span>
-      <span class="chart-val">{{ row.output.current }}</span>
+  <h2>经营数据：季度环比 / 年度同比</h2>
+  <p class="weekly-meta">更新周 {{ model.week_start }} 至 {{ model.week_end }}。比较的是季度累计和年度累计，不是这一周的工单数。{{ model.operation.note }}</p>
+  {% for key in ('quarter', 'year') %}
+  {% set panel = model.operation[key] %}
+  <article class="compare-card" id="shot-{{ key }}">
+    <h3>{% if key == 'quarter' %}季度累计及季度环比{% else %}年度累计及年度同比{% endif %}</h3>
+    <p class="weekly-meta">
+      {% if panel.current %}
+      {{ panel.series_current }}{% if panel.label_current %} {{ panel.label_current }}{% endif %} {{ panel.current.start }} 至 {{ panel.current.end }}。
+      {{ panel.series_base }}{% if panel.label_base %} {{ panel.label_base }}{% endif %} {{ panel.base.start }} 至 {{ panel.base.end }}。
+      {{ panel.progress_note }}{{ panel.default_note }}
+      {% else %}
+      这一周还没有截止日，{{ panel.change_label }}未导入。
+      {% endif %}
+      {% if panel.exports %}导出时间：{% for item in panel.exports %}{{ item.scope }} {{ item.exported_at }}{% if not loop.last %}；{% endif %}{% endfor %}。{% endif %}
+    </p>
+    {% if panel.reconcile %}<div class="ant-alert ant-alert-warning"><div class="ant-alert-content">{{ panel.reconcile.warning }}</div></div>{% endif %}
+    <div class="bar-chart" role="img" aria-label="{{ panel.change_label }}：收款工单数与总产值。未导入不画柱。">
+      <div class="chart-legend"><span class="swatch orders"></span>{{ panel.series_current }}工单 <span class="swatch base"></span>{{ panel.series_base }}工单</div>
+      {% for row in panel.rows %}
+      <div class="chart-row">
+        <span class="chart-name">{{ row.region }}</span>
+        <span class="chart-track">{% if row.orders.current_bar is not none %}<i class="orders" style="width: {{ row.orders.current_bar }}%"></i>{% else %}<em>未导入</em>{% endif %}</span>
+        <span class="chart-val">{{ row.orders.current }}</span>
+        <span class="chart-track">{% if row.orders.base_bar is not none %}<i class="base" style="width: {{ row.orders.base_bar }}%"></i>{% else %}<em>未导入</em>{% endif %}</span>
+        <span class="chart-val">{{ row.orders.base }}</span>
+      </div>
+      {% endfor %}
+      <div class="chart-legend"><span class="swatch output"></span>{{ panel.series_current }}产值 <span class="swatch base"></span>{{ panel.series_base }}产值</div>
+      {% for row in panel.rows %}
+      <div class="chart-row">
+        <span class="chart-name">{{ row.region }}</span>
+        <span class="chart-track">{% if row.output.current_bar is not none %}<i class="output" style="width: {{ row.output.current_bar }}%"></i>{% else %}<em>未导入</em>{% endif %}</span>
+        <span class="chart-val">{{ row.output.current }}</span>
+        <span class="chart-track">{% if row.output.base_bar is not none %}<i class="base" style="width: {{ row.output.base_bar }}%"></i>{% else %}<em>未导入</em>{% endif %}</span>
+        <span class="chart-val">{{ row.output.base }}</span>
+      </div>
+      {% endfor %}
     </div>
-    {% endfor %}
-  </div>
-  <div style="overflow:auto">
-    <table class="wshot" data-ds-primary>
-      <thead>
-        <tr>
-          <th class="lab" rowspan="2">区域</th>
-          <th colspan="5">收款工单数</th>
-          <th colspan="5">总产值</th>
-          <th colspan="5">车辆数（去重）</th>
-        </tr>
-        <tr>
-          <th>当周</th><th>上周同进度</th><th>环比</th><th>去年可比周</th><th>同比</th>
-          <th>当周</th><th>上周同进度</th><th>环比</th><th>去年可比周</th><th>同比</th>
-          <th>当周</th><th>上周同进度</th><th>环比</th><th>去年可比周</th><th>同比</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in model.operation.rows %}
-        <tr>
-          <td class="lab">{{ row.region }}</td>
-          {% for field in ('orders', 'output', 'vehicles') %}
-          {% set cell = row[field] %}
-          <td class="{{ 'miss' if cell.current == '未导入' else '' }}">{{ cell.current }}</td>
-          <td class="{{ 'miss' if cell.wow == '未导入' else '' }}">{{ cell.wow }}</td>
-          <td class="{{ 'miss' if cell.wow_change in ('未导入', '不可比') else '' }}">{{ cell.wow_change }}</td>
-          <td class="{{ 'miss' if cell.yoy == '未导入' else '' }}">{{ cell.yoy }}</td>
-          <td class="{{ 'miss' if cell.yoy_change in ('未导入', '不可比') else '' }}">{{ cell.yoy_change }}</td>
+    <div style="overflow:auto">
+      <table class="wshot" data-ds-primary>
+        <thead>
+          <tr>
+            <th class="lab">区域</th>
+            <th>{{ panel.series_current }}工单</th><th>{{ panel.series_base }}工单</th><th>{{ panel.change_label }}</th>
+            <th>{{ panel.series_current }}产值</th><th>{{ panel.series_base }}产值</th><th>{{ panel.change_label }}</th>
+            <th>{{ panel.series_current }}车辆</th><th>{{ panel.series_base }}车辆</th><th>{{ panel.change_label }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in panel.rows %}
+          <tr>
+            <td class="lab">{{ row.region }}</td>
+            {% for field in ('orders', 'output', 'vehicles') %}
+            <td class="{{ 'miss' if row[field].current == '未导入' else '' }}">{{ row[field].current }}</td>
+            <td class="{{ 'miss' if row[field].base == '未导入' else '' }}">{{ row[field].base }}</td>
+            <td class="{{ 'miss' if row[field].change in ('未导入', '不可比') else '' }}">{{ row[field].change }}</td>
+            {% endfor %}
+          </tr>
           {% endfor %}
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  <details class="weekly-audit">
-    <summary>来源核对与产值构成</summary>
-    <p class="weekly-meta">总产值取各文件汇总行。工时 + 备件 + 其他与汇总不一致时保留差额，不改写。下面是导入时记下的核对，不参与截图主区域。</p>
-    {% for line in model.operation.quality %}<p class="weekly-meta">{{ line }}</p>{% endfor %}
-    <table class="wshot" data-ds-primary>
-      <thead><tr><th class="lab">区域</th><th>工时</th><th>备件</th><th>其他</th></tr></thead>
-      <tbody>
-        {% for row in model.operation.rows %}
-        <tr><td class="lab">{{ row.region }}</td><td>{{ row.labor }}</td><td>{{ row.parts }}</td><td>{{ row.other }}</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </details>
+        </tbody>
+      </table>
+    </div>
+    <details class="weekly-audit">
+      <summary>来源核对与产值构成</summary>
+      {% for line in panel.quality %}<p class="weekly-meta">{{ line }}</p>{% endfor %}
+      <table class="wshot" data-ds-primary>
+        <thead><tr><th class="lab">区域</th><th>工时</th><th>备件</th><th>其他</th></tr></thead>
+        <tbody>
+          {% for row in panel.rows %}<tr><td class="lab">{{ row.region }}</td><td>{{ row.labor }}</td><td>{{ row.parts }}</td><td>{{ row.other }}</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </details>
+  </article>
+  {% endfor %}
 </section>
 
 <section class="weekly-shot" id="shot-kpi">

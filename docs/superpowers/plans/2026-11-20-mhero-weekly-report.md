@@ -16,7 +16,7 @@
 - 车辆数只用汇总行；全国文件不拆区域；区域与全国对不平保留差额，不摊分。
 - 金额与含税源表未注明，页面不写元、万元、含税。
 - 缺快照显示「未导入」；分母 0 显示「不可比」，不计算涨幅，不把缺数写成 0。
-- 环比减 7 天，同比减 364 天；期间必须完全一致才计算涨幅。
+- 环比是季度环比，同比是年度同比。未结束期间默认同进度（实现默认）。不再减 7 天或 364 天。
 - KPI 达成率是分子/分母加权，禁止平均百分比。DMS 区域空为「无区域」，不查门店表。
 - 门店+周期重复则拒绝加权。不把 774 写死为门店数。
 - 相同文件幂等；不同文件默认拒绝覆盖。
@@ -39,7 +39,7 @@
 - Produces: `parse_operation_xlsx(blob) -> dict`，含 `scope`、`summary`（`orders`/`vehicles`/`output`/`labor`/`parts`/`other` 为 `Decimal`）、`detail_sums`、`business_types`、`quality`
 - Produces: `parse_kpi_xlsx(blob) -> dict`，含 `row_count`、`unique_stores`、`duplicate_groups`、`blank_region_rows`、`periods`、`rollup_ok`、`national`、`regions`
 - Produces: `change(current, base) -> {status, amount, rate}`，`status` 为 `missing` / `zero_base` / `ok`
-- Produces: `comparable_windows(week_start, as_of) -> {current, wow, yoy}`，每项 `{start, end}`
+- Produces: `quarter_compare(as_of)` 与 `year_compare(as_of)`，各含 `current` / `base` 起止日
 
 - [x] **Step 1: Write the failing test**
 

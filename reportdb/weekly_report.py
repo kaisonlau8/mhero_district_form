@@ -11,13 +11,16 @@ from pathlib import Path
 from .auth import service
 from .weekly_parse import (
     METRICS,
-    comparable_windows,
     change,
     norm_region,
     parse_kpi_xlsx,
     parse_operation_xlsx,
+    quarter_compare,
     quarter_span,
+    year_compare,
 )
+
+OPERATION_SPANS = {"quarter", "quarter_base", "year", "year_base"}
 
 DMS_BROWSER_DOC = "https://github.com/kaisonlau8/m-hero/blob/main/docs/SHARED_DMS_BROWSER.md"
 PERIOD_RE = re.compile(r"^(\d{4})年Q([1-4])$")
@@ -48,17 +51,35 @@ def collect_weekly_sources(**_kwargs):
 def import_operation(conn, blob: bytes, *, week_start: str, period_start: str, period_end: str,
                      exported_at: str, timezone: str = "+08:00", stat_type: str = "收款",
                      report_type: str = "日报", scope: str | None = None, filename: str = "",
-                     actor: str = "", allow_revision: bool = False) -> dict:
+                     actor: str = "", allow_revision: bool = False, span: str = "",
+                     as_of: str | None = None) -> dict:
     if stat_type != "收款":
         raise WeeklyImportError("经营周报只接受统计类型「收款」，不接受结算或其他类型")
     if report_type != "日报":
         raise WeeklyImportError("经营周报只接受报表类型「日报」")
+    if span not in OPERATION_SPANS:
+        raise WeeklyImportError("经营比较必须指定 quarter、quarter_base、year 或 year_base。不再按周几天做环比或同比。")
     week = _monday(week_start)
     start, end = _date(period_start), _date(period_end)
-    if start != week or not (week <= end <= week + timedelta(days=6)):
+    compare = quarter_compare if span.startswith("quarter") else year_compare
+    if span in {"quarter", "year"}:
+        if not (week <= end <= week + timedelta(days=6)):
+            raise WeeklyImportError("累计截止日必须落在所选更新周内。周次只表示这次归档，不是比较区间。")
+        windows = compare(end)
+        expect = windows["current"]
+    else:
+        if not as_of:
+            raise WeeklyImportError("对比期必须填写本次更新的截止日 as_of，用来核对同进度窗口")
+        cutoff = _date(as_of)
+        if not (week <= cutoff <= week + timedelta(days=6)):
+            raise WeeklyImportError("截止日必须落在所选更新周内。周次只表示这次归档，不是比较区间。")
+        windows = compare(cutoff)
+        expect = windows["base"]
+    if start != expect["start"] or end != expect["end"]:
         raise WeeklyImportError(
-            f"统计区间 {start.isoformat()} 至 {end.isoformat()} 不是该周周一至周内截至日，不能当作该周同进度快照。"
-            "跨周区间不能绑到某一周。"
+            f"统计区间 {start.isoformat()} 至 {end.isoformat()} 不符合 {span}。"
+            f"按截止日应为 {expect['start'].isoformat()} 至 {expect['end'].isoformat()}。"
+            "周区间、上周同进度、减 364 天，或 11 月 1 日至 19 日，都不能当作季度环比或年度同比。"
         )
     parsed = parse_operation_xlsx(blob)
     file_scope = parsed["scope"]
@@ -77,6 +98,7 @@ def import_operation(conn, blob: bytes, *, week_start: str, period_start: str, p
     }
     return _save(conn, blob, {
         "kind": "operation",
+        "compare_role": span,
         "week_start": week.isoformat(),
         "scope": file_scope,
         "period_start": start.isoformat(),
@@ -138,6 +160,7 @@ def import_kpi(conn, blob: bytes, *, week_start: str, as_of: str, exported_at: s
     }
     return _save(conn, blob, {
         "kind": "kpi",
+        "compare_role": "",
         "week_start": week.isoformat(),
         "scope": "全国",
         "period_start": q_start.isoformat(),
@@ -187,39 +210,18 @@ def build_weekly_page(conn, week: str | None = None, *, today: date | None = Non
     known = [row[0] for row in conn.execute("SELECT name FROM regions ORDER BY sort_order")]
     active = {}
     for row in conn.execute("SELECT * FROM weekly_imports WHERE status='active'"):
-        active[(row["kind"], row["week_start"], row["scope"])] = row
+        role = row["compare_role"] if "compare_role" in row.keys() else ""
+        active[(row["kind"], row["week_start"], row["scope"], role or "")] = row
     notes = {name: "" for name in ["全国", *known, "无区域"]}
     for row in conn.execute("SELECT region, body FROM weekly_commentary WHERE week_start=? AND metric=''", (week_start.isoformat(),)):
         notes[row["region"]] = row["body"] or ""
-    national = active.get(("operation", week_start.isoformat(), "全国"))
-    windows = None
-    if national:
-        windows = comparable_windows(week_start, _date(national["period_end"]))
     extra = []
-    for (kind, start, scope) in active:
+    for kind, start, scope, _role in active:
         if kind == "operation" and start == week_start.isoformat() and scope not in known and scope != "全国":
             extra.append(scope)
-    scopes = ["全国", *known, *sorted(extra)]
-    rows = [_operation_row(active, scope, week_start, windows, national) for scope in scopes]
-    _attach_bars(rows)
-    exports = []
-    for scope in scopes:
-        src = active.get(("operation", week_start.isoformat(), scope))
-        if src is not None:
-            exports.append({"scope": scope, "exported_at": src["exported_at"], "filename": src["source_filename"] or ""})
-    operation = {
-        "imported": national is not None or any(row["imported"] for row in rows),
-        "periods": None if windows is None else {
-            key: {"start": value["start"].isoformat(), "end": value["end"].isoformat()}
-            for key, value in windows.items()
-        },
-        "rows": rows,
-        "reconcile": _reconcile(national, rows, known) if national else None,
-        "quality": _qualities(national, active, week_start, scopes),
-        "exports": exports,
-        "note": "收款工单数按收款时间统计已收款工单，含仅备件销售，不是严格来厂台次。车辆数是各文件汇总行的去重值，不可跨业务类型或区域相加。金额单位与是否含税源表未注明。",
-    }
-    kpi_row = active.get(("kpi", week_start.isoformat(), "全国"))
+    scopes = ["全国", *known, *sorted(set(extra))]
+    operation = _operation_section(active, week_start.isoformat(), scopes, known)
+    kpi_row = active.get(("kpi", week_start.isoformat(), "全国", ""))
     kpi = _kpi_section(kpi_row, known)
     weeks = {week_start.isoformat()}
     for row in conn.execute("SELECT DISTINCT week_start FROM weekly_imports"):
@@ -243,69 +245,133 @@ def build_weekly_page(conn, week: str | None = None, *, today: date | None = Non
     }
 
 
-def _attach_bars(rows: list[dict]) -> None:
-    """给当周已导入的数字一个 0–100 的柱宽。未导入保持 None，不画成 0。"""
+def _operation_section(active, week: str, scopes: list[str], known: list[str]) -> dict:
+    quarter_as = _role_as_of(active, week, "quarter")
+    year_as = _role_as_of(active, week, "year")
+    shared = quarter_as or year_as
+    quarter = _compare_panel(active, week, scopes, known, "quarter", quarter_compare(quarter_as or shared) if (quarter_as or shared) else None)
+    year = _compare_panel(active, week, scopes, known, "year", year_compare(year_as or shared) if (year_as or shared) else None)
+    if quarter_as and year_as and quarter_as != year_as:
+        quarter["quality"].append(f"季度截止日 {quarter_as.isoformat()} 与年度截止日 {year_as.isoformat()} 不一致，两张卡各自使用自己的截止日。")
+        year["quality"].append(f"年度截止日 {year_as.isoformat()} 与季度截止日 {quarter_as.isoformat()} 不一致，两张卡各自使用自己的截止日。")
+    return {
+        "title": "经营数据：季度环比 / 年度同比",
+        "imported": quarter["imported"] or year["imported"],
+        "note": "收款工单数按收款时间统计已收款工单，含仅备件销售，不是严格来厂台次。车辆数是各文件汇总行的去重值，不可跨业务类型或区域相加。金额单位与是否含税源表未注明。比较用的是季度累计和年度累计，不是这一周的绝对数。",
+        "quarter": quarter,
+        "year": year,
+    }
+
+
+def _role_as_of(active, week: str, role: str):
+    national = active.get(("operation", week, "全国", role))
+    if national is not None:
+        return _date(national["period_end"])
+    for key, row in active.items():
+        if key[0] == "operation" and key[1] == week and key[3] == role:
+            return _date(row["period_end"])
+    return None
+
+
+def _compare_panel(active, week: str, scopes: list[str], known: list[str], span: str, windows) -> dict:
+    role = span
+    base_role = span + "_base"
+    national = active.get(("operation", week, "全国", role))
+    rows = []
+    for scope in scopes:
+        current = active.get(("operation", week, scope, role))
+        base = active.get(("operation", week, scope, base_role))
+        aligned = True
+        if windows and current is not None:
+            aligned = current["period_start"] == windows["current"]["start"].isoformat() and current["period_end"] == windows["current"]["end"].isoformat()
+        if national is not None and current is not None and scope != "全国":
+            aligned = aligned and current["period_start"] == national["period_start"] and current["period_end"] == national["period_end"]
+        cur_vals = _op_values(current) if current is not None else None
+        base_vals = None
+        if windows and base is not None and aligned:
+            if base["period_start"] == windows["base"]["start"].isoformat() and base["period_end"] == windows["base"]["end"].isoformat():
+                base_vals = _op_values(base)
+        mismatch = current is not None and not aligned
+        if mismatch:
+            base_vals = None
+        row = {"region": scope, "imported": current is not None and aligned, "period_mismatch": mismatch}
+        for field in ("orders", "output", "vehicles"):
+            cur = None if cur_vals is None else cur_vals[field]
+            bas = None if base_vals is None else base_vals[field]
+            row[field] = {
+                "current": _fmt(cur, money=field == "output"),
+                "base": _fmt(bas, money=field == "output"),
+                "change": "不可比" if mismatch else _fmt_change(change(cur, bas)),
+            }
+        if cur_vals is None:
+            row.update(labor="未导入", parts="未导入", other="未导入")
+        else:
+            row.update(
+                labor=_fmt(cur_vals["labor"], money=True),
+                parts=_fmt(cur_vals["parts"], money=True),
+                other=_fmt(cur_vals["other"], money=True),
+            )
+        rows.append(row)
+    _attach_pair_bars(rows)
+    exports = []
+    quality = []
+    for item_role in (role, base_role):
+        for scope in scopes:
+            src = active.get(("operation", week, scope, item_role))
+            if src is None:
+                continue
+            exports.append({"scope": scope, "role": item_role, "exported_at": src["exported_at"], "filename": src["source_filename"] or ""})
+            quality.append(f"{scope}（{item_role}）：导出时间 {src['exported_at']}，文件 {src['source_filename'] or '未命名'}。")
+            quality.extend(json.loads(src["quality_json"]))
+    if national is None:
+        quality.append("全国这份累计未导入。")
+    period = None
+    base_period = None
+    if windows:
+        period = {"start": windows["current"]["start"].isoformat(), "end": windows["current"]["end"].isoformat()}
+        base_period = {"start": windows["base"]["start"].isoformat(), "end": windows["base"]["end"].isoformat()}
+    return {
+        "imported": any(row["imported"] for row in rows),
+        "as_of": windows["as_of"].isoformat() if windows else "",
+        "complete": bool(windows and windows["complete"]),
+        "capped": bool(windows and windows["capped"]),
+        "progress_note": windows["progress_note"] if windows else "",
+        "default_note": windows["default_note"] if windows else "",
+        "label_current": windows.get("label_current", "") if windows else "",
+        "label_base": windows.get("label_base", "") if windows else "",
+        "series_current": "本季" if span == "quarter" else "本年",
+        "series_base": "上季" if span == "quarter" else "去年",
+        "change_label": "季度环比" if span == "quarter" else "年度同比",
+        "current": period,
+        "base": base_period,
+        "rows": rows,
+        "reconcile": _reconcile(national, rows, known) if national is not None else None,
+        "exports": exports,
+        "quality": quality,
+    }
+
+
+def _attach_pair_bars(rows: list[dict]) -> None:
+    """本期和对比期各自画柱。未导入保持 None，不画成 0。"""
     for field in ("orders", "output"):
-        vals = []
+        pairs = []
         for row in rows:
-            text = row[field]["current"]
-            vals.append(None if text in {"未导入", "不可比", ""} else Decimal(text))
-        peak = max((v for v in vals if v is not None and v > 0), default=None)
-        for row, val in zip(rows, vals):
-            if val is None:
-                row[field]["bar"] = None
-            elif peak is None:
-                row[field]["bar"] = 0
-            else:
-                row[field]["bar"] = int((val / peak * Decimal(100)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+            pairs.append((
+                None if row[field]["current"] in {"未导入", "不可比", ""} else Decimal(row[field]["current"]),
+                None if row[field]["base"] in {"未导入", "不可比", ""} else Decimal(row[field]["base"]),
+            ))
+        peak = max((value for pair in pairs for value in pair if value is not None and value > 0), default=None)
+        for row, (cur, bas) in zip(rows, pairs):
+            row[field]["current_bar"] = _bar_width(cur, peak)
+            row[field]["base_bar"] = _bar_width(bas, peak)
 
 
-def _operation_row(active, scope: str, week_start: date, windows, national) -> dict:
-    current = active.get(("operation", week_start.isoformat(), scope))
-    aligned = True
-    if national is not None and current is not None and scope != "全国":
-        aligned = current["period_start"] == national["period_start"] and current["period_end"] == national["period_end"]
-    reference = windows
-    if reference is None and current is not None:
-        reference = comparable_windows(week_start, _date(current["period_end"]))
-    current_values = _op_values(current) if current and aligned else None
-    if current is not None and not aligned:
-        current_values = _op_values(current)
-    wow_values = yoy_values = None
-    if reference is not None and (scope == "全国" or aligned):
-        wow_values = _period_values(active, scope, reference["wow"])
-        yoy_values = _period_values(active, scope, reference["yoy"])
-    row = {"region": scope, "imported": current is not None and aligned, "period_mismatch": current is not None and not aligned}
-    for field in ("orders", "output", "vehicles"):
-        money = field in MONEY_FIELDS or field == "output"
-        cur = None if current_values is None else current_values[field]
-        wow = None if wow_values is None else wow_values[field]
-        yoy = None if yoy_values is None else yoy_values[field]
-        row[field] = {
-            "current": _fmt(cur, money=field == "output"),
-            "wow": _fmt(wow, money=field == "output"),
-            "wow_change": "不可比" if not aligned and current is not None else _fmt_change(change(cur, wow)),
-            "yoy": _fmt(yoy, money=field == "output"),
-            "yoy_change": "不可比" if not aligned and current is not None else _fmt_change(change(cur, yoy)),
-        }
-    if current_values is None:
-        row.update(labor="未导入", parts="未导入", other="未导入")
-    else:
-        row.update(
-            labor=_fmt(current_values["labor"], money=True),
-            parts=_fmt(current_values["parts"], money=True),
-            other=_fmt(current_values["other"], money=True),
-        )
-    return row
-
-
-def _period_values(active, scope: str, window: dict):
-    row = active.get(("operation", window["start"].isoformat(), scope))
-    if row is None:
+def _bar_width(value: Decimal | None, peak: Decimal | None):
+    if value is None:
         return None
-    if row["period_start"] != window["start"].isoformat() or row["period_end"] != window["end"].isoformat():
-        return None
-    return _op_values(row)
+    if peak is None:
+        return 0
+    return int((value / peak * Decimal(100)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
 def _op_values(row) -> dict:
@@ -356,20 +422,6 @@ def _reconcile(national, rows, known: list[str]) -> dict:
         "gaps": gaps,
         "vehicles_compared": False,
     }
-
-
-def _qualities(national, active, week_start: date, scopes: list[str]) -> list[str]:
-    notes = []
-    for scope in scopes:
-        row = active.get(("operation", week_start.isoformat(), scope))
-        if row is None:
-            continue
-        loaded = json.loads(row["quality_json"])
-        notes.append(f"{scope}：导出时间 {row['exported_at']}，文件 {row['source_filename'] or '未命名'}。")
-        notes.extend(loaded)
-    if national is None:
-        notes.append("全国经营数据未导入，因此还不能确定当周同进度截至日。")
-    return notes
 
 
 def _kpi_section(row, known: list[str]) -> dict:
@@ -446,9 +498,10 @@ def _kpi_section(row, known: list[str]) -> dict:
 
 def _save(conn, blob: bytes, meta: dict) -> dict:
     sha = hashlib.sha256(blob).hexdigest()
+    role = meta.get("compare_role") or ""
     existing = conn.execute(
-        "SELECT * FROM weekly_imports WHERE kind=? AND week_start=? AND scope=? AND status='active'",
-        (meta["kind"], meta["week_start"], meta["scope"]),
+        "SELECT * FROM weekly_imports WHERE kind=? AND week_start=? AND scope=? AND compare_role=? AND status='active'",
+        (meta["kind"], meta["week_start"], meta["scope"], role),
     ).fetchone()
     if existing is not None and existing["sha256"] == sha and _same_meta(existing, meta):
         return {"id": existing["id"], "created": False, "idempotent": True, "revision": existing["revision"], "scope": meta["scope"]}
@@ -463,12 +516,12 @@ def _save(conn, blob: bytes, meta: dict) -> dict:
             conn.execute("UPDATE weekly_imports SET status='superseded' WHERE id=?", (existing["id"],))
         cur = conn.execute(
             """INSERT INTO weekly_imports(
-                   kind, week_start, scope, period_start, period_end, quarter_start, year, quarter,
+                   kind, week_start, scope, compare_role, period_start, period_end, quarter_start, year, quarter,
                    stat_type, report_type, exported_at, source_filename, sha256, sheet_name, revision,
                    status, created_at, created_by, quality_json, summary_json, payload)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'active', ?, ?, ?, ?, ?)""",
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'active', ?, ?, ?, ?, ?)""",
             (
-                meta["kind"], meta["week_start"], meta["scope"], meta["period_start"], meta["period_end"],
+                meta["kind"], meta["week_start"], meta["scope"], role, meta["period_start"], meta["period_end"],
                 meta["quarter_start"], meta["year"], meta["quarter"], meta["stat_type"], meta["report_type"],
                 meta["exported_at"], meta["source_filename"], sha, meta["sheet_name"], revision,
                 _now(), meta["actor"], json.dumps(meta["quality"], ensure_ascii=False),

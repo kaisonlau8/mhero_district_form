@@ -89,20 +89,81 @@ def change(current: Decimal | None, base: Decimal | None) -> dict:
     return {"status": "ok", "amount": amount, "rate": amount / base}
 
 
-def comparable_windows(week_start: date, as_of: date) -> dict[str, dict[str, date]]:
-    if week_start.weekday() != 0:
-        raise WeeklyParseError("周次必须是周一")
-    if not (week_start <= as_of <= week_start + timedelta(days=6)):
-        raise WeeklyParseError("截至日不在该周内")
-    span = as_of - week_start
+SAME_PROGRESS_NOTE = (
+    "未结束期间默认按同进度累计，避免把本季已经过的几天和上一季的整季放在一起比。"
+    "这是实现时采用的默认，不是业务方另行指定的规则。"
+)
 
-    def window(start: date) -> dict[str, date]:
-        return {"start": start, "end": start + span}
 
+def align_progress(base_start: date, base_end: date, elapsed_days: int) -> tuple[date, bool]:
+    """从上季（或对比期）起日加上已过天数。超过对比期末日则封顶。"""
+    end = base_start + timedelta(days=elapsed_days)
+    if end > base_end:
+        return base_end, True
+    return end, False
+
+
+def quarter_compare(as_of: date) -> dict:
+    """本季度累计对上一季度。未结束时对比上季起相同已过天数；已结束则对比完整上季。"""
+    quarter = (as_of.month - 1) // 3 + 1
+    q_start, q_end = quarter_span(as_of.year, quarter)
+    if not (q_start <= as_of <= q_end):
+        raise WeeklyParseError("截止日不在所属季度内")
+    prev_year, prev_quarter = (as_of.year - 1, 4) if quarter == 1 else (as_of.year, quarter - 1)
+    p_start, p_end = quarter_span(prev_year, prev_quarter)
+    elapsed = (as_of - q_start).days
+    complete = as_of == q_end
+    capped = False
+    if complete:
+        b_start, b_end = p_start, p_end
+        progress = "本季已结束，季度环比使用上一季度的完整期间。"
+    else:
+        b_start = p_start
+        b_end, capped = align_progress(p_start, p_end, elapsed)
+        progress = "同进度（实现默认，不是业务指定）：本季起日至截止日，对上季起相同已过天数。"
+        if capped:
+            progress += "上季较短，对比止日封顶为上季末日。"
     return {
-        "current": window(week_start),
-        "wow": window(week_start - timedelta(days=7)),
-        "yoy": window(week_start - timedelta(days=364)),
+        "kind": "quarter",
+        "as_of": as_of,
+        "complete": complete,
+        "capped": capped,
+        "elapsed_days": elapsed,
+        "current": {"start": q_start, "end": as_of},
+        "base": {"start": b_start, "end": b_end},
+        "progress_note": progress,
+        "default_note": "" if complete else SAME_PROGRESS_NOTE,
+        "label_current": f"{as_of.year}Q{quarter}",
+        "label_base": f"{prev_year}Q{prev_quarter}",
+    }
+
+
+def year_compare(as_of: date) -> dict:
+    """本年度累计对上一年度。未结束时对到去年同月同日；2月29日在去年不存在则取2月28日。"""
+    current_start = date(as_of.year, 1, 1)
+    year_end = date(as_of.year, 12, 31)
+    complete = as_of == year_end
+    leap_note = ""
+    if complete:
+        base_end = date(as_of.year - 1, 12, 31)
+        progress = "本年已结束，年度同比使用上一年度的完整期间。"
+    else:
+        try:
+            base_end = date(as_of.year - 1, as_of.month, as_of.day)
+        except ValueError:
+            base_end = date(as_of.year - 1, 2, 28)
+            leap_note = "今年2月29日在去年不存在，对比止日取2月28日。"
+        progress = "同进度（实现默认，不是业务指定）：本年1月1日至截止日，对去年1月1日至同月同日。" + leap_note
+    return {
+        "kind": "year",
+        "as_of": as_of,
+        "complete": complete,
+        "capped": False,
+        "current": {"start": current_start, "end": year_end if complete else as_of},
+        "base": {"start": date(as_of.year - 1, 1, 1), "end": base_end},
+        "progress_note": progress,
+        "default_note": "" if complete else SAME_PROGRESS_NOTE,
+        "leap_note": leap_note,
     }
 
 

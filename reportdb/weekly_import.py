@@ -1,7 +1,8 @@
 """手动导入猛士周报 Excel。不登录 DMS，不改每日调度。
 
     python -m reportdb.weekly_import operation --file 经营.xlsx --week 2026-11-16 \\
-        --period-start 2026-11-16 --period-end 2026-11-19 --exported-at "2026-11-20 14:25:35"
+        --span quarter --period-start 2026-10-01 --period-end 2026-11-20 \\
+        --exported-at "2026-11-20 14:25:35"
     python -m reportdb.weekly_import kpi --file 主表.xlsx --week 2026-11-16 \\
         --as-of 2026-11-20 --exported-at "2026-11-20 14:25:35"
 """
@@ -23,8 +24,10 @@ def main(argv: list[str] | None = None) -> int:
 
     operation = sub.add_parser("operation", help="服务经营报表：收款 + 日报")
     _common(operation)
+    operation.add_argument("--span", required=True, choices=["quarter", "quarter_base", "year", "year_base"])
     operation.add_argument("--period-start", required=True)
     operation.add_argument("--period-end", required=True)
+    operation.add_argument("--as-of", default="", help="对比期必填：本次更新的累计截止日，须落在 --week 那一周")
     operation.add_argument("--stat-type", default="收款")
     operation.add_argument("--report-type", default="日报")
     operation.add_argument("--scope", default="")
@@ -45,7 +48,7 @@ def main(argv: list[str] | None = None) -> int:
                 conn, blob, week_start=args.week, period_start=args.period_start, period_end=args.period_end,
                 exported_at=args.exported_at, timezone=args.timezone, stat_type=args.stat_type,
                 report_type=args.report_type, scope=args.scope or None, filename=args.file,
-                actor=args.actor, allow_revision=args.revision,
+                actor=args.actor, allow_revision=args.revision, span=args.span, as_of=args.as_of or None,
             )
         else:
             result = import_kpi(

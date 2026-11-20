@@ -1646,7 +1646,8 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
     def weekly_import_submit(request: Request, kind: str = Form(""), week: str = Form(""), period_start: str = Form(""),
                              period_end: str = Form(""), as_of: str = Form(""), exported_at: str = Form(""),
                              timezone: str = Form("+08:00"), stat_type: str = Form("收款"), report_type: str = Form("日报"),
-                             year: str = Form(""), quarter: str = Form(""), allow_revision: str = Form(""),
+                             year: str = Form(""), quarter: str = Form(""), span: str = Form(""),
+                             allow_revision: str = Form(""),
                              csrf: str = Form(""), file: UploadFile = File(...), conn=Depends(get_conn),
                              user=Depends(admin_required)):
         check_csrf(user, csrf)
@@ -1659,7 +1660,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
                     conn, blob, week_start=week, period_start=period_start, period_end=period_end,
                     exported_at=exported_at, timezone=timezone or "+08:00", stat_type=stat_type or "收款",
                     report_type=report_type or "日报", filename=file.filename or "", actor=user.username,
-                    allow_revision=allow_revision == "1",
+                    allow_revision=allow_revision == "1", span=span, as_of=as_of or None,
                 )
             elif kind == "kpi":
                 weekly_mod.import_kpi(
