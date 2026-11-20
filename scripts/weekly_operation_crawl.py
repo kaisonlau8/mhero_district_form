@@ -26,6 +26,7 @@ from reportdb.weekly_crawl import (  # noqa: E402
     SCHEDULE_TIME,
     SCHEDULE_WEEKDAY,
     WeeklyCrawlError,
+    close_owned_session,
     describe_plan,
     prepare_export,
     run_weekly_crawl,
@@ -171,12 +172,17 @@ def run_live(conn, args) -> dict:
                 fetch=live_fetch(page, output_dir), output_dir=output_dir,
             )
     finally:
-        if lock is not None:
-            release_export_lock(lock, owner=CRAWLER_OWNER, plugin_root=ROOT)
-        try:
-            hard_refresh_dms(ROOT, label="post-weekly-crawl")
-        except Exception as exc:
-            print(f"  [WARN] 采集后刷新失败: {exc}")
+        def _refresh():
+            try:
+                hard_refresh_dms(ROOT, label="post-weekly-crawl")
+            except Exception as exc:
+                print(f"  [WARN] 采集后刷新失败: {exc}")
+
+        close_owned_session(
+            lock,
+            refresh=_refresh,
+            release=lambda held: release_export_lock(held, owner=CRAWLER_OWNER, plugin_root=ROOT),
+        )
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -582,7 +582,7 @@ def test_weekly_crawl_imports_serial_and_keeps_partial_failure(conn, tmp_path):
 
     def fetch(job):
         calls.append(job["key"])
-        if job["key"] == "year_base:华东":
+        if job["key"].endswith(":year_base:华东"):
             raise RuntimeError("下载超时")
         blob = national_blob() if job["scope"] == "全国" else east_blob()
         echoed = dict(job["filters"])
@@ -595,7 +595,7 @@ def test_weekly_crawl_imports_serial_and_keeps_partial_failure(conn, tmp_path):
     out = tmp_path / "weekly"
     first = run_weekly_crawl(conn, as_of="2026-11-20", regions=["华东"], fetch=fetch, output_dir=out)
     assert first["complete"] is False
-    assert first["failed"] == ["year_base:华东"]
+    assert first["failed"] == ["2026-11-20:year_base:华东"]
     assert first["verified_against_dms"] is False
     assert (out / "quarter_全国.xlsx").is_file()
     saved = conn.execute(
@@ -604,8 +604,13 @@ def test_weekly_crawl_imports_serial_and_keeps_partial_failure(conn, tmp_path):
     assert saved == 7
     calls.clear()
     second = run_weekly_crawl(conn, as_of="2026-11-20", regions=["华东"], fetch=fetch, output_dir=out)
-    assert calls == ["year_base:华东"]
+    assert calls == ["2026-11-20:year_base:华东"]
     assert second["complete"] is False
+    calls.clear()
+    later = run_weekly_crawl(conn, as_of="2026-11-27", regions=["华东"], fetch=fetch, output_dir=out)
+    assert later["complete"] is False
+    assert len(calls) == 8
+    assert "2026-11-27:quarter:全国" in calls
 
     def wrong(job):
         bad = dict(job["filters"])
@@ -637,6 +642,22 @@ def test_weekly_crawl_imports_serial_and_keeps_partial_failure(conn, tmp_path):
     with pytest.raises(Exception, match="查询前"):
         prepare_export(form, {"统计类型": "收款", "报表类型": "日报", "区域": "华东", "业务门店": "", "开始日期": "2026-10-01", "结束日期": "2026-11-20"})
     assert form.queries == 0
+
+
+def test_refresh_waits_until_lock_is_held_and_is_released_after():
+    from reportdb.weekly_crawl import close_owned_session
+
+    order = []
+    close_owned_session(None, refresh=lambda: order.append("refresh"), release=lambda _lock: order.append("release"))
+    assert order == []
+
+    def boom():
+        order.append("refresh")
+        raise RuntimeError("刷新失败")
+
+    with pytest.raises(RuntimeError, match="刷新失败"):
+        close_owned_session("lock", refresh=boom, release=lambda held: order.append(("release", held)))
+    assert order == ["refresh", ("release", "lock")]
 
 
 def test_weekly_crawl_cli_does_not_open_dms(tmp_path):

@@ -46,7 +46,7 @@ def plan_jobs(as_of: date, regions: list[str]) -> list[dict]:
         for scope in scopes:
             filters = expected_filters(scope, window["start"], window["end"])
             jobs.append({
-                "key": f"{span}:{scope}",
+                "key": f"{as_of.isoformat()}:{span}:{scope}",
                 "span": span,
                 "scope": scope,
                 "period_start": window["start"].isoformat(),
@@ -110,11 +110,12 @@ def run_weekly_crawl(conn, *, as_of: str | date, regions: list[str], fetch, outp
     day = _as_date(as_of)
     output_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = output_dir / "weekly_manifest.json"
-    manifest = _load_manifest(manifest_path) if resume else {"done": {}}
+    manifest = _manifest_for(day, manifest_path) if resume else _fresh_manifest(day)
     results = []
     for job in plan_jobs(day, regions):
         previous = manifest["done"].get(job["key"]) or {}
-        if resume and previous.get("status") == "imported":
+        same_window = previous.get("period_start") == job["period_start"] and previous.get("period_end") == job["period_end"]
+        if resume and previous.get("status") == "imported" and same_window:
             results.append({**job, "status": "skipped"})
             continue
         try:
@@ -143,7 +144,7 @@ def run_weekly_crawl(conn, *, as_of: str | date, regions: list[str], fetch, outp
             )
             manifest["done"][job["key"]] = {
                 "status": "imported", "id": imported["id"], "idempotent": imported["idempotent"],
-                "file": saved.name,
+                "file": saved.name, "period_start": job["period_start"], "period_end": job["period_end"],
             }
             results.append({**job, "status": "imported", "idempotent": imported["idempotent"]})
         except (WeeklyCrawlError, WeeklyImportError, SnapshotConflict, OSError, KeyError, RuntimeError) as exc:
@@ -216,6 +217,29 @@ def _as_date(value: str | date) -> date:
 
 def _monday(day: date) -> date:
     return day - timedelta(days=day.weekday())
+
+
+def close_owned_session(lock, *, refresh, release) -> None:
+    """只有拿到锁之后才刷新共享浏览器，并且刷新完成前不把锁放开。"""
+    if lock is None:
+        return
+    try:
+        refresh()
+    finally:
+        release(lock)
+
+
+def _fresh_manifest(day: date) -> dict:
+    return {"as_of": day.isoformat(), "week_start": _monday(day).isoformat(), "done": {}}
+
+
+def _manifest_for(day: date, path: Path) -> dict:
+    loaded = _load_manifest(path)
+    if loaded.get("as_of") != day.isoformat():
+        return _fresh_manifest(day)
+    loaded.setdefault("done", {})
+    loaded["week_start"] = _monday(day).isoformat()
+    return loaded
 
 
 def _load_manifest(path: Path) -> dict:
