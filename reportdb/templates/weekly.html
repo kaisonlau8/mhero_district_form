@@ -83,7 +83,16 @@
     .topbar, .ant-header, .weekly-edit, .history-card, .switch { display: none !important; }
     .metric-scroll { overflow: visible; }
     .metric-scroll > table.kpi-sheet { min-width: 0; }
+    .month-scroll { overflow: visible; }
+    .month-scroll > table.month-sheet { min-width: 0; }
   }
+  .month-scroll { overflow-x: auto; max-width: 100%; }
+  table.month-sheet { border-collapse: separate; border-spacing: 0; min-width: 720px; }
+  table.month-sheet th, table.month-sheet td { border: 1px solid #f0f0f0; padding: 8px 10px; text-align: center; white-space: nowrap; }
+  table.month-sheet th { background: #fafafa; }
+  table.month-sheet th.lab, table.month-sheet td.lab { position: sticky; left: 0; z-index: 2; text-align: left; background: #fff; min-width: 72px; box-shadow: 1px 0 0 #f0f0f0; }
+  table.month-sheet tr.is-nation td { background: #e6f4ff; font-weight: 700; }
+  table.month-sheet tr.is-nation td.lab { background: #e6f4ff; }
 </style>
 {% endblock %}
 {% block body %}
@@ -92,7 +101,7 @@
 <header class="ant-page-header">
   <div class="ant-page-header-heading">
     <h1>猛士周报</h1>
-    <div class="ant-page-header-sub">每周看一次。经营看本季度和上季度同期，指标用系统已经算好的结果。</div>
+    <div class="ant-page-header-sub">每周看一次。经营看本季和上季度同期，也可看各月。指标用系统已经算好的结果。</div>
   </div>
   <form class="ant-page-header-actions" method="get" action="{{ '/reports/weekly/demo' if demo else '/reports/weekly' }}">
     {% if not demo %}
@@ -103,6 +112,7 @@
     </label>
     {% endif %}
     <a class="ant-btn" href="{{ '/reports/weekly/demo' if demo else '/reports/weekly' }}?week={{ model.week_start }}&view=quarter">截图：季度</a>
+    <a class="ant-btn" href="{{ '/reports/weekly/demo' if demo else '/reports/weekly' }}?week={{ model.week_start }}&view=months">截图：各月</a>
     <a class="ant-btn" href="{{ '/reports/weekly/demo' if demo else '/reports/weekly' }}?week={{ model.week_start }}&view=indicators">截图：指标</a>
     {% if model.can_import and not demo %}<a class="ant-btn" href="/reports/weekly/import?week={{ model.week_start }}">导入 Excel</a>{% endif %}
   </form>
@@ -177,6 +187,42 @@
     <p>{{ model.operation.note }}</p>
     {% if model.operation.quarter.progress_note %}<p>{{ model.operation.quarter.progress_note }} {{ model.operation.quarter.default_note }}</p>{% endif %}
     {% if model.operation.quarter.reconcile %}<p>{{ model.operation.quarter.reconcile.warning }}</p>{% endif %}
+  </details>
+</section>
+{% endif %}
+
+{% if view == 'months' %}
+<section class="board" id="shot-months">
+  <h2>各月经营</h2>
+  <div class="switch">
+    {% for key, label in (('output', '产值（千元）'), ('orders', '收款工单数'), ('vehicles', '来厂车辆数（去重）')) %}
+    <a class="{{ 'on' if metric == key else '' }}" href="?week={{ model.week_start }}&view=months&metric={{ key }}">{{ label }}</a>
+    {% endfor %}
+  </div>
+  <p class="src-line">来自DMS收款报表，按月各自汇总。截止 {{ model.operation.months.as_of }}。没有原件的月份是未导入。</p>
+  <div class="month-scroll" role="region" aria-label="月度经营" tabindex="0">
+    <table class="month-sheet" data-cards="off">
+      <thead>
+        <tr>
+          <th class="lab">区域</th>
+          {% for column in model.operation.months.columns %}<th>{{ column.label }}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in model.operation.months.rows %}
+        <tr class="{{ 'is-nation' if row.region == '全国' }}" data-region="{{ row.region }}">
+          <td class="lab">{{ row.region }}</td>
+          {% for column in model.operation.months.columns %}
+          <td data-month="{{ column.key }}" data-state="{{ 'imported' if row.cells[column.key].imported else 'missing' }}">{{ row.cells[column.key][metric] }}</td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <details class="weekly-audit">
+    <summary>月份怎么取</summary>
+    <p>{{ model.operation.months.note }}</p>
   </details>
 </section>
 {% endif %}

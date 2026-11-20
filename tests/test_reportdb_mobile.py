@@ -65,7 +65,7 @@ def audit_site(conn, tmp_path):
             "summary", "region-indicators", "direct-stores", "spare-parts")],
             *[f"/data/{key}" for key in data], "/stores", f"/stores/{store}",
             "/reports/daily", "/reports/weekly?week=2026-11-16", "/reports/weekly/demo",
-            "/reports/weekly/demo?view=indicators",
+            "/reports/weekly/demo?view=months", "/reports/weekly/demo?view=indicators",
             "/reports/weekly/import", "/account/password", "/exemptions/new", "/exemptions/mine",
             "/exclusions/new", "/settings/exclusion-rules", "/settings/spare-parts",
             f"/settings/spare-parts/preview/{draft}", "/admin/users", f"/admin/users/{supervisor}/stores",
@@ -160,6 +160,17 @@ def test_reportdb_layout(chromium, audit_site, width):
                 check(page.locator(".hero-cards").first.evaluate(
                     "el => getComputedStyle(el).gridTemplateColumns.split(' ').length")
                     == (1 if mobile else 3), "经营摘要卡列数不符")
+            if path == "/reports/weekly/demo?view=months":
+                scroll = page.get_by_role("region", name="月度经营")
+                sheet = scroll.locator("table.month-sheet")
+                check(sheet.locator("th.lab").inner_text() == "区域" and sheet.locator("tr.is-nation").count() == 1,
+                      "月度表应有固定区域列和全国行")
+                check("12月" not in sheet.inner_text() and "未导入" not in sheet.inner_text(),
+                      "示例月表不应出现未来月或未导入")
+                check(sheet.locator("td.lab").first.evaluate("el => getComputedStyle(el).position") == "sticky",
+                      "月度区域列未固定")
+                check(scroll.evaluate("el => el.scrollWidth > el.clientWidth") == mobile, "月度表未按断点在表内横滚")
+                check("年度同比" not in page.content() and page.locator("#shot-year").count() == 0, "月度视图不能恢复年度")
             if path == "/reports/weekly/demo?view=indicators":
                 scroll = page.get_by_role("region", name="服务指标表")
                 sheet = scroll.locator("table.kpi-sheet")

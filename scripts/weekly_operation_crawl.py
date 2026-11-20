@@ -250,6 +250,7 @@ def run_live(conn, args) -> dict:
             return run_weekly_crawl(
                 conn, as_of=args.as_of or beijing_now().date(), regions=regions,
                 fetch=live_fetch(page, output_dir), output_dir=output_dir,
+                include_backfill=args.backfill_months,
             )
     finally:
         def _refresh():
@@ -274,6 +275,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--db", default="")
     parser.add_argument("--lock-wait", type=float, default=0)
     parser.add_argument("--allow-late", action="store_true", help="周五 17:00 之后仍允许人工补跑")
+    parser.add_argument("--backfill-months", action="store_true", help="额外补已结束但还没有完整原件的月份，受 16:57 限制")
     args = parser.parse_args(argv)
     if args.live and not args.allow_late and past_friday_deadline(beijing_now()):
         print("已过周五 17:00，不启动采集，待人工复核。不会连接 DMS。")
@@ -282,7 +284,7 @@ def main(argv: list[str] | None = None) -> int:
     migrate(conn)
     if not args.live:
         regions = _regions(conn, args.regions)
-        plan = describe_plan(as_of=args.as_of or beijing_now().date(), regions=regions)
+        plan = describe_plan(as_of=args.as_of or beijing_now().date(), regions=regions, conn=conn)
         print(json.dumps(plan, ensure_ascii=False, indent=2, default=_json_default))
         print("未连接 DMS。现场端到端尚未在本环境执行。")
         return 0

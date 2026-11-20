@@ -487,13 +487,17 @@ def test_collector_plans_without_dms_and_keeps_daily_schedule():
     assert plan["live"] is False and plan["verified_against_dms"] is False
     assert plan["time"] == "14:45" and plan["weekday"] == "friday"
     assert [job["span"] for job in plan["jobs"] if job["scope"] == "全国"] == [
-        "quarter", "quarter_base",
+        "quarter", "quarter_base", "month",
     ]
     seven = ["华北", "华东", "华南", "华中1", "西南", "西北", "华中2"]
     full = collect_weekly_sources(as_of="2026-11-20", regions=seven)
-    assert len(full["jobs"]) == 16
-    assert {job["span"] for job in full["jobs"]} == {"quarter", "quarter_base"}
-    assert not any("year" in job["span"] for job in full["jobs"])
+    quarter_jobs = [job for job in full["jobs"] if job["span"] in {"quarter", "quarter_base"}]
+    month_jobs = [job for job in full["jobs"] if job["span"] == "month"]
+    assert len(quarter_jobs) == 16
+    assert len(month_jobs) == 8
+    assert {job["period_end"] for job in month_jobs} == {"2026-11-20"}
+    assert len(full["month_backfill"]) == 80
+    assert not any(job["span"] in {"year", "year_base"} for job in full["jobs"] + full["month_backfill"])
     assert plan["jobs"][0]["filters"]["统计类型"] == "收款"
     assert plan["jobs"][0]["filters"]["报表类型"] == "日报"
     assert plan["jobs"][0]["filters"]["业务门店"] == ""
@@ -680,7 +684,7 @@ def test_weekly_crawl_imports_serial_and_keeps_partial_failure(conn, tmp_path):
     saved = conn.execute(
         "SELECT COUNT(*) FROM weekly_imports WHERE kind='operation' AND status='active'"
     ).fetchone()[0]
-    assert saved == 3
+    assert saved == 5
     calls.clear()
     second = run_weekly_crawl(conn, as_of="2026-11-20", regions=["华东"], fetch=fetch, output_dir=out, clock=lambda: datetime(2026, 11, 20, 14, 45))
     assert calls == ["2026-11-20:quarter_base:华东"] * 3
@@ -1093,6 +1097,88 @@ def test_real_samples_parse_and_do_not_bind_as_current_week(conn):
     page = build_weekly_page(conn, None, today=date(2026, 11, 20))
     assert page["operation"]["imported"] is False
     assert "6402712.72" not in json.dumps(page, ensure_ascii=False)
+
+
+def test_month_windows_reuse_snapshots_and_keep_gaps(conn, tmp_path):
+    from datetime import timedelta
+    from reportdb.weekly_crawl import plan_month_backfill, run_weekly_crawl
+    from reportdb.weekly_parse import WeeklyParseError, month_window
+    from reportdb.weekly_report import WeeklyImportError, build_weekly_page, demo_board, import_operation
+
+    assert month_window(date(2026, 11, 20), "2026-11")["end"] == date(2026, 11, 20)
+    assert month_window(date(2026, 12, 4), "2026-11")["end"] == date(2026, 11, 30)
+    assert month_window(date(2024, 3, 1), "2024-02")["end"] == date(2024, 2, 29)
+    assert month_window(date(2023, 3, 1), "2023-02")["end"] == date(2023, 2, 28)
+    assert month_window(date(2027, 1, 8), "2027-01")["end"] == date(2027, 1, 8)
+    assert plan_month_backfill(date(2027, 1, 8), ["华东"]) == []
+    with pytest.raises(WeeklyParseError):
+        month_window(date(2026, 11, 20), "2026-12")
+    with pytest.raises(WeeklyImportError):
+        import_operation(conn, national_blob(), **_op_meta(
+            span="month", period_start="2026-12-01", period_end="2026-12-31", as_of="2026-11-20"))
+    with pytest.raises(WeeklyImportError):
+        import_operation(conn, national_blob(), **_op_meta(
+            week_start="2026-11-30", span="month", period_start="2026-11-01",
+            period_end="2026-11-20", as_of="2026-12-04"))
+
+    import_operation(conn, national_blob(), **_op_meta(
+        span="month", period_start="2026-11-01", period_end="2026-11-20",
+        as_of="2026-11-20", filename="nov-partial.xlsx"))
+    import_operation(conn, national_blob(), **_op_meta())
+    page = build_weekly_page(conn, "2026-11-16", today=date(2026, 11, 20))
+    months = page["operation"]["months"]
+    assert [item["label"] for item in months["columns"]] == [f"{i}月" for i in range(1, 12)]
+    nation = next(row for row in months["rows"] if row["region"] == "全国")
+    assert nation["cells"]["2026-11"]["orders"] == "15"
+    assert nation["cells"]["2026-11"]["vehicles"] == "9"
+    assert nation["cells"]["2026-10"]["orders"] == "未导入"
+    assert "2026-12" not in nation["cells"]
+
+    october_as_of = date(2026, 11, 6)
+    october_week = october_as_of - timedelta(days=october_as_of.weekday())
+    import_operation(conn, national_blob(), **_op_meta(
+        week_start=october_week.isoformat(), span="month", period_start="2026-10-01",
+        period_end="2026-10-31", as_of="2026-11-06", filename="oct.xlsx"))
+    missing = {job["month"] for job in plan_month_backfill(date(2026, 12, 4), [], conn)}
+    assert "2026-10" not in missing and "2026-11" in missing and "2026-12" not in missing
+
+    calls = []
+
+    def fetch(job):
+        calls.append(job["key"])
+        blob = national_blob() if job["scope"] == "全国" else east_blob()
+        return _captured(job, blob)
+
+    run_weekly_crawl(
+        conn, as_of="2026-12-04", regions=[], fetch=fetch, output_dir=tmp_path / "dec",
+        resume=False, clock=lambda: datetime(2026, 12, 4, 14, 45),
+    )
+    assert not any("2026-10" in key for key in calls)
+    assert any(key.endswith(":month:2026-12:全国") for key in calls)
+    december_week = date(2026, 12, 4) - timedelta(days=date(2026, 12, 4).weekday())
+    december = build_weekly_page(conn, december_week.isoformat(), today=date(2026, 12, 4))
+    row = next(item for item in december["operation"]["months"]["rows"] if item["region"] == "全国")
+    assert row["cells"]["2026-10"]["imported"] is True
+    assert row["cells"]["2026-10"]["vehicles"] == "9"
+    assert row["cells"]["2026-11"]["imported"] is False
+    assert row["cells"]["2026-12"]["vehicles"] == "9"
+    assert "2027-01" not in row["cells"]
+
+    def fail_east(job):
+        if job["scope"] == "华东" and job["span"] == "month":
+            raise RuntimeError("下载超时")
+        return fetch(job)
+
+    failed = run_weekly_crawl(
+        conn, as_of="2026-11-13", regions=["华东"], fetch=fail_east, output_dir=tmp_path / "gap",
+        resume=False, clock=lambda: datetime(2026, 11, 13, 14, 45),
+    )
+    assert any(item["span"] == "month" and item["scope"] == "华东" and item["status"] == "failed" for item in failed["results"])
+    assert any(item["span"] == "month" and item["scope"] == "全国" and item["status"] == "imported" for item in failed["results"])
+    demo = demo_board()["operation"]["months"]
+    demo_nation = next(item for item in demo["rows"] if item["region"] == "全国")
+    others = [item for item in demo["rows"] if item["region"] != "全国"]
+    assert int(demo_nation["cells"]["2026-01"]["vehicles"]) != sum(int(item["cells"]["2026-01"]["vehicles"]) for item in others)
 
 
 def test_gettotal_contract_accepts_day_mode_and_rejects_conflicts():

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from decimal import Decimal
 
-from .weekly_parse import norm_region, parse_operation_xlsx, quarter_compare
+from .weekly_parse import month_window, norm_region, parse_operation_xlsx, quarter_compare
 from .weekly_report import SnapshotConflict, WeeklyImportError, import_operation
 
 SCHEDULE_ID = "district-form-weekly"
@@ -31,9 +31,10 @@ class WeeklyCrawlError(RuntimeError):
     pass
 
 
-def describe_plan(*, as_of: str | date, regions: list[str]) -> dict:
+def describe_plan(*, as_of: str | date, regions: list[str], conn=None) -> dict:
     day = _as_date(as_of)
     jobs = plan_jobs(day, regions)
+    backfill = plan_month_backfill(day, regions, conn)
     return {
         "live": False,
         "verified_against_dms": False,
@@ -45,6 +46,8 @@ def describe_plan(*, as_of: str | date, regions: list[str]) -> dict:
         "week_start": _monday(day).isoformat(),
         "as_of": day.isoformat(),
         "jobs": jobs,
+        "month_backfill": backfill,
+        "month_backfill_note": "缺历史月时单独回补，不放进每周五的默认任务，也不用年度区间一次查询。",
     }
 
 
@@ -65,7 +68,37 @@ def plan_jobs(as_of: date, regions: list[str]) -> list[dict]:
                 "as_of": as_of.isoformat(),
                 "filters": filters,
             })
+    current = month_window(as_of, f"{as_of.year:04d}-{as_of.month:02d}")
+    for scope in scopes:
+        jobs.append(_month_job(as_of, scope, current))
     return jobs
+
+
+def plan_month_backfill(as_of: date, regions: list[str], conn=None) -> list[dict]:
+    """本年已结束但还没有完整原件的月份。默认周五任务不跑这些。"""
+    scopes = ["全国", *regions]
+    jobs = []
+    for mon in range(1, as_of.month):
+        window = month_window(as_of, f"{as_of.year:04d}-{mon:02d}")
+        for scope in scopes:
+            if conn is not None and _complete_month_row(conn, scope, window):
+                continue
+            jobs.append(_month_job(as_of, scope, window))
+    return jobs
+
+
+def _month_job(as_of: date, scope: str, window: dict) -> dict:
+    return {
+        "key": f"{as_of.isoformat()}:month:{window['month']}:{scope}",
+        "span": "month",
+        "month": window["month"],
+        "scope": scope,
+        "period_start": window["start"].isoformat(),
+        "period_end": window["end"].isoformat(),
+        "as_of": as_of.isoformat(),
+        "filters": expected_filters(scope, window["start"], window["end"]),
+        "closed": window["closed"],
+    }
 
 
 def expected_filters(scope: str, start: date, end: date) -> dict:
@@ -268,8 +301,46 @@ def merge_weekly_schedule(data: dict) -> dict:
     )
 
 
+def _complete_month_row(conn, scope: str, window: dict):
+    return conn.execute(
+        """SELECT * FROM weekly_imports
+           WHERE kind='operation' AND scope=? AND compare_role=? AND status='active'
+             AND period_start=? AND period_end=?
+           ORDER BY week_start DESC LIMIT 1""",
+        (scope, f"month:{window['month']}", window["start"].isoformat(), window["complete_end"].isoformat()),
+    ).fetchone()
+
+
+def reuse_closed_months(conn, as_of: date, regions: list[str], *, actor: str = "weekly-reuse") -> list[str]:
+    """把已证实的完整月复制进本周快照。月中文件不会被当成已结束月。"""
+    from .weekly_report import SnapshotConflict, WeeklyImportError, import_operation
+
+    week = _monday(as_of).isoformat()
+    copied = []
+    for mon in range(1, as_of.month):
+        window = month_window(as_of, f"{as_of.year:04d}-{mon:02d}")
+        for scope in ["全国", *regions]:
+            src = _complete_month_row(conn, scope, window)
+            if src is None or src["week_start"] == week:
+                continue
+            if src["period_end"] != window["complete_end"].isoformat():
+                continue
+            try:
+                import_operation(
+                    conn, src["payload"], week_start=week, span="month",
+                    period_start=window["start"].isoformat(), period_end=window["end"].isoformat(),
+                    as_of=as_of.isoformat(), exported_at=src["exported_at"], timezone="+08:00",
+                    scope=scope, filename=src["source_filename"] or "", actor=actor,
+                )
+            except (WeeklyImportError, SnapshotConflict):
+                continue
+            copied.append(f"{window['month']}:{scope}")
+    return copied
+
+
 def run_weekly_crawl(conn, *, as_of: str | date, regions: list[str], fetch, output_dir: Path,
-                     actor: str = "weekly-crawl", resume: bool = True, clock=None) -> dict:
+                     actor: str = "weekly-crawl", resume: bool = True, clock=None,
+                     include_backfill: bool = False) -> dict:
     """串行调用 fetch。失败的范围记下来，已导入的留下，不把部分成功说成全部完成。"""
     day = _as_date(as_of)
     clock = clock or _hong_kong_now
@@ -277,7 +348,11 @@ def run_weekly_crawl(conn, *, as_of: str | date, regions: list[str], fetch, outp
     manifest_path = output_dir / "weekly_manifest.json"
     manifest = _manifest_for(day, manifest_path) if resume else _fresh_manifest(day)
     results = []
-    for job in plan_jobs(day, regions):
+    reused = reuse_closed_months(conn, day, regions)
+    jobs = plan_jobs(day, regions)
+    if include_backfill:
+        jobs.extend(plan_month_backfill(day, regions, conn))
+    for job in jobs:
         previous = manifest["done"].get(job["key"]) or {}
         same_window = previous.get("period_start") == job["period_start"] and previous.get("period_end") == job["period_end"]
         if resume and previous.get("status") == "imported" and same_window:
@@ -289,7 +364,8 @@ def run_weekly_crawl(conn, *, as_of: str | date, regions: list[str], fetch, outp
                 "error": "已到周五 16:57，不再开始新的地区或期间。正在进行的请求会做完并释放锁，不会关掉浏览器。",
             })
             continue
-        saved = output_dir / f"{job['span']}_{job['scope']}.xlsx"
+        label = job["month"] if job.get("span") == "month" else job["span"]
+        saved = output_dir / f"{label}_{job['scope']}.xlsx"
         previous_bytes = saved.read_bytes() if saved.exists() else None
         last_error = ""
         imported_ok = False
@@ -309,7 +385,7 @@ def run_weekly_crawl(conn, *, as_of: str | date, regions: list[str], fetch, outp
                     raise WeeklyCrawlError("筛选读回不一致：" + "；".join(bad))
                 blob, summary = accept_operation_result(job, got)
                 saved.write_bytes(blob)
-                meta_path = output_dir / f"{job['span']}_{job['scope']}.json"
+                meta_path = output_dir / f"{label}_{job['scope']}.json"
                 meta_path.write_text(json.dumps({
                     "span": job["span"], "scope": job["scope"], "filters": job["filters"],
                     "readback_before": before, "readback_after": after,
@@ -362,6 +438,8 @@ def run_weekly_crawl(conn, *, as_of: str | date, regions: list[str], fetch, outp
         "results": results,
         "failed": failed,
         "gaps": failed,
+        "reused_months": reused,
+        "month_backfill": plan_month_backfill(day, regions, conn),
         "schedule_id": SCHEDULE_ID,
         "time": SCHEDULE_TIME,
     }
