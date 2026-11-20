@@ -28,6 +28,7 @@
       <a class="ant-chip" href="/tables/direct-stores?date={{ date }}{% if region %}&region={{ region|urlencode }}{% endif %}" title="{{ table_titles['direct-stores'][1] }}"><svg class="ai" aria-hidden="true"><use href="#i-shop"/></svg>{{ table_titles['direct-stores'][0] }}</a>
       <a class="ant-chip" href="/tables/spare-parts?date={{ date }}{% if region %}&region={{ region|urlencode }}{% endif %}" title="{{ table_titles['spare-parts'][1] }}"><svg class="ai" aria-hidden="true"><use href="#i-appstore"/></svg>{{ table_titles['spare-parts'][0] }}</a>
       <a class="ant-chip" href="/reports/daily?date={{ date }}"><svg class="ai" aria-hidden="true"><use href="#i-file-text"/></svg>日报导出历史</a>
+      <a class="ant-chip" href="/reports/weekly"><svg class="ai" aria-hidden="true"><use href="#i-file-text"/></svg>猛士周报</a>
       <a class="ant-chip" href="/export/tables/all.xlsx?date={{ date }}"><svg class="ai" aria-hidden="true"><use href="#i-cloud-download"/></svg>导出全部汇总表</a>
     </div>
     {% if not summary_only %}<div class="ant-chip-group-label">明细数据{% if not authorized %}（VIN / 姓名已脱敏）{% endif %}</div>
