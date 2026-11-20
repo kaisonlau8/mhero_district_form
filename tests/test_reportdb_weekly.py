@@ -581,16 +581,24 @@ def _captured(job, blob, **overrides):
     parsed = parse_operation_xlsx(blob)
     echoed = dict(job["filters"])
     echoed["开始日期"] = job["filters"]["开始日期"].replace("-", "/")
+    summary = {key: str(parsed["summary"][key]) for key in ("orders", "vehicles", "output")}
     got = {
         "blob": blob, "exported_at": "2026-11-20 13:40:00",
         "readback_before": echoed, "readback_after": dict(echoed),
-        "detail_ok": True, "summary_ok": True, "summary_error": "",
-        "summary_unchanged": False, "summary_source": "response",
-        "summary_body_parsed": True, "download_is_new": True,
-        "visible_summary": "",
-        "summary": {key: str(parsed["summary"][key]) for key in ("orders", "vehicles", "output")},
+        "download_is_new": True,
+        "query_id": "q-this",
+        "summary": summary,
     }
     got.update(overrides)
+    if "responses" not in overrides:
+        got["responses"] = [
+            {"query_id": got["query_id"], "kind": "detail", "status": 200, "filters": dict(job["filters"])},
+            {
+                "query_id": got["query_id"], "kind": "summary", "status": 200,
+                "filters": dict(job["filters"]), "summary_from": "response_body",
+                "summary": dict(got["summary"]),
+            },
+        ]
     return got
 
 
@@ -664,38 +672,40 @@ def test_stale_summary_and_old_file_are_not_imported(conn, tmp_path):
     kept = tmp_path / "kept" / "year_华东.xlsx"
     kept.parent.mkdir()
     kept.write_bytes(b"already-good")
+    filters = {"统计类型": "收款", "报表类型": "日报", "区域": "华东", "业务门店": "", "开始日期": "2026-01-01", "结束日期": "2026-11-20"}
     stale = _captured(
-        {"scope": "华东", "filters": {"开始日期": "2026-01-01"}},
+        {"scope": "华东", "filters": filters},
         east_blob(),
-        summary_ok=False,
-        summary_error="HTTP 504",
-        summary_unchanged=True,
-        summary_source="page",
         download_is_new=False,
-        visible_summary="843|522|1923650.23",
-        summary={"orders": "843", "vehicles": "522", "output": "1923650.23"},
+        responses=[
+            {"query_id": "q-this", "kind": "detail", "status": 200, "filters": filters},
+            {"query_id": "q-this", "kind": "summary", "status": 504, "filters": filters, "summary_from": "response_body"},
+            {"query_id": "other", "kind": "summary", "status": 200, "filters": filters, "summary_from": "response_body",
+             "summary": {"orders": "843", "vehicles": "522", "output": "1923650.23"}},
+        ],
     )
     stale["blob"] = b""
     with pytest.raises(Exception, match="汇总请求失败"):
-        accept_operation_result({"scope": "华东"}, stale)
+        accept_operation_result({"scope": "华东", "filters": filters}, stale)
 
     summed = _captured(
-        {"scope": "华东", "filters": {"开始日期": "2026-01-01"}},
+        {"scope": "华东", "filters": filters},
         east_blob(),
-        summary_source="detail_sum",
-        summary={"orders": "6", "vehicles": "5", "output": "40.00"},
+        responses=[
+            {"query_id": "q-this", "kind": "detail", "status": 200, "filters": filters},
+            {"query_id": "q-this", "kind": "summary", "status": 200, "filters": filters, "summary_from": "detail_sum",
+             "summary": {"orders": "6", "vehicles": "5", "output": "40.00"}},
+        ],
     )
     with pytest.raises(Exception, match="不能把明细"):
-        accept_operation_result({"scope": "华东"}, summed)
+        accept_operation_result({"scope": "华东", "filters": filters}, summed)
 
     def fetch(job):
-        if job["span"] == "year" and job["scope"] == "华东":
-            got = _captured(job, east_blob())
-            got["summary"] = {"orders": "843", "vehicles": "522", "output": "1923650.23"}
-            got["visible_summary"] = "843|522|1923650.23"
-            return got
         blob = national_blob() if job["scope"] == "全国" else east_blob()
-        return _captured(job, blob)
+        got = _captured(job, blob)
+        if job["span"] == "year" and job["scope"] == "华东":
+            got["responses"][1]["summary"] = {"orders": "843", "vehicles": "522", "output": "1923650.23"}
+        return got
 
     out = tmp_path / "kept"
     result = run_weekly_crawl(conn, as_of="2026-11-20", regions=["华东"], fetch=fetch, output_dir=out, resume=False)
@@ -707,6 +717,40 @@ def test_stale_summary_and_old_file_are_not_imported(conn, tmp_path):
     assert conn.execute(
         "SELECT COUNT(*) FROM weekly_imports WHERE scope='华东' AND compare_role='year'"
     ).fetchone()[0] == 0
+
+
+def test_summary_response_must_belong_to_this_query(conn, tmp_path):
+    from reportdb.weekly_crawl import confirm_query_responses, run_weekly_crawl
+
+    filters = {"统计类型": "收款", "报表类型": "日报", "区域": "华东", "业务门店": "", "开始日期": "2026-01-01", "结束日期": "2026-11-20"}
+    summary = {"orders": "6", "vehicles": "4", "output": "40.00"}
+    unrelated = [
+        {"query_id": "q-this", "kind": "detail", "status": 200, "filters": filters},
+        {"query_id": "other", "kind": "summary", "status": 200, "filters": filters, "summary_from": "response_body", "summary": summary},
+        {"query_id": "q-this", "kind": "other", "status": 200, "filters": filters},
+    ]
+    with pytest.raises(Exception, match="汇总响应未观测到"):
+        confirm_query_responses(filters, "q-this", unrelated)
+    with pytest.raises(Exception, match="汇总响应未观测到"):
+        confirm_query_responses(filters, "q-this", [
+            {"query_id": "q-this", "kind": "detail", "status": 200, "filters": filters},
+        ])
+    same = confirm_query_responses(filters, "q-this", [
+        {"query_id": "q-this", "kind": "detail", "status": 200, "filters": filters},
+        {"query_id": "q-this", "kind": "summary", "status": 200, "filters": filters, "summary_from": "response_body", "summary": summary},
+    ])
+    assert same == summary
+
+    def fetch(job):
+        blob = national_blob() if job["scope"] == "全国" else east_blob()
+        return _captured(job, blob)
+
+    out = tmp_path / "same"
+    first = run_weekly_crawl(conn, as_of="2026-11-20", regions=[], fetch=fetch, output_dir=out, resume=False)
+    assert first["complete"] is True
+    second = run_weekly_crawl(conn, as_of="2026-11-20", regions=[], fetch=fetch, output_dir=out, resume=False)
+    assert second["complete"] is True
+    assert all(item["idempotent"] for item in second["results"])
 
 
 def test_refresh_waits_until_lock_is_held_and_is_released_after():

@@ -100,23 +100,76 @@ def fresh_download(before: dict[str, bytes], name: str, content: bytes) -> bool:
     return before.get(name) != content
 
 
-def accept_operation_result(job: dict, got: dict) -> bytes:
-    """明细、本次汇总请求、新下载的 Excel 必须同时成功，并且文件汇总等于这次汇总。
+def confirm_query_responses(expected: dict, query_id: str, responses) -> dict:
+    """只承认这次 Query 发出、且请求筛选对得上的明细和汇总响应。
 
-    页面上还留着上一笔查询的数字、汇总请求 504、或者把明细车辆数加总，都不能导入。
+    旁边的 2xx、上一笔查询、页面上的旧文字，都不算。汇总响应没观测到就失败，待人工复核。
+    数字和上次相同没有关系，只要这次响应本身成功即可。
     """
-    if got.get("summary_error"):
-        raise WeeklyCrawlError(f"汇总请求失败：{got['summary_error']}")
-    if not got.get("detail_ok"):
-        raise WeeklyCrawlError("本次查询没有成功返回明细")
-    if got.get("summary_source") == "detail_sum":
-        raise WeeklyCrawlError("车辆数不能把明细或分月去重值相加，必须用本次汇总行")
-    if not got.get("summary_ok") or got.get("summary_unchanged") or got.get("summary_source") != "response":
-        shown = got.get("visible_summary") or "页面上的旧汇总"
-        raise WeeklyCrawlError(f"汇总不是本次查询的结果，不采用页面残留数字：{shown}")
+    if not query_id:
+        raise WeeklyCrawlError("没有本次查询标记，待人工复核")
+    if not responses:
+        raise WeeklyCrawlError("汇总响应未观测到，待人工复核")
+    details = []
+    summaries = []
+    for item in responses:
+        if not isinstance(item, dict) or item.get("query_id") != query_id:
+            continue
+        if item.get("kind") not in {"detail", "summary"}:
+            continue
+        if readback_mismatches(expected, item.get("filters")):
+            continue
+        status = int(item.get("status") or 0)
+        if item.get("kind") == "summary" and status >= 400:
+            raise WeeklyCrawlError(f"汇总请求失败：HTTP {status}，待人工复核")
+        if not 200 <= status < 300:
+            continue
+        if item.get("kind") == "detail":
+            details.append(item)
+            continue
+        if item.get("summary_from") != "response_body":
+            raise WeeklyCrawlError("车辆数不能把明细或分月去重值相加，必须用本次汇总响应")
+        summary = item.get("summary") or {}
+        if any(key not in summary or summary[key] in ("", None) for key in SUMMARY_KEYS):
+            continue
+        summaries.append(summary)
+    if not details:
+        raise WeeklyCrawlError("明细响应未观测到，待人工复核")
+    if not summaries:
+        raise WeeklyCrawlError("汇总响应未观测到，待人工复核")
+    first = summaries[0]
+    for other in summaries[1:]:
+        for key in SUMMARY_KEYS:
+            if Decimal(str(other[key])) != Decimal(str(first[key])):
+                raise WeeklyCrawlError("本次出现多条不一致的汇总响应，待人工复核")
+    return {key: first[key] for key in SUMMARY_KEYS}
+
+
+def classify_page_response(event: dict, query_id: str, expected: dict) -> dict | None:
+    """只把页面自己发出、且请求里带有本次筛选的响应分成明细或汇总。对不上就丢掉。"""
+    request_text = f"{event.get('url') or ''} {event.get('post_data') or ''}"
+    if not _request_has_filters(request_text, expected):
+        return None
+    kind, summary = _kind_from_body(event.get("body"))
+    if kind is None:
+        return None
+    record = {
+        "query_id": query_id,
+        "kind": kind,
+        "status": int(event.get("status") or 0),
+        "filters": dict(expected),
+        "summary_from": "response_body",
+    }
+    if kind == "summary":
+        record["summary"] = summary
+    return record
+
+
+def accept_operation_result(job: dict, got: dict) -> bytes:
+    """本次 Query 的明细响应、汇总响应，以及新下载的 Excel，必须同时对上。"""
+    summary = confirm_query_responses(job.get("filters") or {}, got.get("query_id") or "", got.get("responses"))
     if not got.get("download_is_new"):
         raise WeeklyCrawlError("没有本次新下载的 Excel，不把已有文件当成新导出")
-    summary = got.get("summary") or {}
     blob = got.get("blob") or b""
     if not blob:
         raise WeeklyCrawlError("没有本次新下载的 Excel")
@@ -124,11 +177,9 @@ def accept_operation_result(job: dict, got: dict) -> bytes:
     if parsed["scope"] != job["scope"]:
         raise WeeklyCrawlError(f"Excel 范围是「{parsed['scope']}」，这次查询是「{job['scope']}」")
     for key in SUMMARY_KEYS:
-        if key not in summary:
-            raise WeeklyCrawlError(f"本次汇总缺少{key}")
         if Decimal(str(summary[key])) != parsed["summary"][key]:
             raise WeeklyCrawlError(
-                f"Excel 的{key}是 {parsed['summary'][key]}，本次汇总是 {summary[key]}，不一致，不导入"
+                f"Excel 的{key}是 {parsed['summary'][key]}，本次汇总响应是 {summary[key]}，不一致，不导入"
             )
     return blob
 
@@ -261,6 +312,45 @@ def _same_filter(key: str, want, got) -> bool:
     if key == "业务门店":
         return _blank(got) and _blank(want)
     return _compact(got) == _compact(want)
+
+
+def _request_has_filters(text: str, expected: dict) -> bool:
+    compact = _compact(text)
+    folded = text.replace("/", "-")
+    for key, want in expected.items():
+        if key == "业务门店":
+            if not _blank(want) and _compact(want) not in compact:
+                return False
+            continue
+        if key in {"开始日期", "结束日期"}:
+            if _date_text(want) not in folded and _compact(want) not in compact:
+                return False
+            continue
+        if _compact(want) not in compact:
+            return False
+    return True
+
+
+def _kind_from_body(body):
+    if isinstance(body, str):
+        try:
+            body = json.loads(body)
+        except json.JSONDecodeError:
+            return None, None
+    if not isinstance(body, dict):
+        return None, None
+    if body.get("summary_from") == "detail_sum":
+        return "summary", None
+    summary = body.get("summary") if isinstance(body.get("summary"), dict) else body
+    if isinstance(summary, dict) and all(key in summary and summary[key] not in ("", None) for key in SUMMARY_KEYS):
+        if body.get("kind") == "detail":
+            return "detail", None
+        if body.get("kind") == "summary" or any(key in body for key in SUMMARY_KEYS):
+            return "summary", {key: summary[key] for key in SUMMARY_KEYS}
+    rows = body.get("rows")
+    if isinstance(rows, list) and rows and isinstance(rows[0], dict) and "区域名称" in rows[0]:
+        return "detail", None
+    return None, None
 
 
 def _blank(value) -> bool:
