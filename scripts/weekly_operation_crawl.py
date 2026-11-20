@@ -110,8 +110,30 @@ def open_operation_page(page) -> None:
     page.wait_for_selector("section.mixButton", timeout=15_000)
 
 
+def _summary_on_page(page) -> dict:
+    """只读页面上的汇总行。读不到或和查询前一样，不算本次汇总请求成功。"""
+    return page.evaluate(
+        """() => {
+          const table = document.querySelector('.el-table');
+          if (!table) return {text: '', values: null};
+          const heads = [...table.querySelectorAll('.el-table__header th')]
+            .map((th) => (th.innerText || '').replace(/\\s+/g, ''));
+          const rows = [...table.querySelectorAll('.el-table__body tr')];
+          for (const row of rows) {
+            const cells = [...row.querySelectorAll('td')].map((td) => (td.innerText || '').trim());
+            if (!cells.length || (cells[0] !== '汇总' && cells[0] !== '合计')) continue;
+            const values = {};
+            heads.forEach((head, i) => { values[head] = cells[i] || ''; });
+            return {text: cells.join('|'), values};
+          }
+          return {text: '', values: null};
+        }"""
+    )
+
+
 def live_fetch(page, output_dir: Path):
     from crawl_district_reports import click_export_and_save
+    from reportdb.weekly_crawl import fresh_download
 
     opened = {"done": False}
 
@@ -119,21 +141,64 @@ def live_fetch(page, output_dir: Path):
         if not opened["done"]:
             open_operation_page(page)
             opened["done"] = True
-        form = PlaywrightForm(page)
-        before, after = prepare_export(form, job["filters"])
-        path = click_export_and_save(
-            page, output_dir,
-            button_texts=["导出", "Export"],
-            save_prefix=f"{job['span']}_{job['scope']}_",
-        )
-        if path is None:
-            raise WeeklyCrawlError(f"{job['key']} 没有等到下载文件")
-        return {
-            "blob": path.read_bytes(),
-            "exported_at": beijing_now().strftime("%Y-%m-%d %H:%M:%S"),
-            "readback_before": before,
-            "readback_after": after,
-        }
+        seen = []
+
+        def on_response(resp):
+            try:
+                seen.append(int(resp.status))
+            except Exception:
+                seen.append(0)
+
+        page.on("response", on_response)
+        try:
+            before_files = {path.name: path.read_bytes() for path in output_dir.glob("*.xls*")}
+            summary_before = _summary_on_page(page).get("text") or ""
+            form = PlaywrightForm(page)
+            readback_before, readback_after = prepare_export(form, job["filters"])
+            summary_state = _summary_on_page(page)
+            summary_after = summary_state.get("text") or ""
+            errors = [status for status in seen if status >= 500]
+            success = [status for status in seen if 200 <= status < 300]
+            values = summary_state.get("values") or {}
+            summary = {
+                "orders": values.get("工单数量", ""),
+                "vehicles": values.get("车辆数", ""),
+                "output": values.get("总产值", ""),
+            }
+            summary_error = f"HTTP {errors[0]}" if errors else ""
+            unchanged = bool(summary_after) and summary_after == summary_before
+            summary_ok = not summary_error and bool(success) and not unchanged and all(summary.values())
+            path = None
+            content = b""
+            if summary_ok:
+                path = click_export_and_save(
+                    page, output_dir,
+                    button_texts=["导出", "Export"],
+                    save_prefix=f"{job['span']}_{job['scope']}_",
+                )
+                if path is not None and path.exists():
+                    content = path.read_bytes()
+                export_errors = [status for status in seen if status >= 500]
+                if export_errors:
+                    summary_error = f"HTTP {export_errors[0]}"
+                    summary_ok = False
+            return {
+                "blob": content,
+                "exported_at": beijing_now().strftime("%Y-%m-%d %H:%M:%S"),
+                "readback_before": readback_before,
+                "readback_after": readback_after,
+                "detail_ok": not errors and bool(success),
+                "summary_ok": summary_ok,
+                "summary_error": summary_error,
+                "summary_unchanged": unchanged,
+                "summary_source": "response" if summary_ok else "page",
+                "summary_body_parsed": False,
+                "visible_summary": summary_after or summary_before,
+                "summary": summary,
+                "download_is_new": fresh_download(before_files, path.name if path else "", content),
+            }
+        finally:
+            page.remove_listener("response", on_response)
 
     return fetch
 

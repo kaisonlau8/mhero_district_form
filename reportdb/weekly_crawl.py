@@ -5,7 +5,9 @@ import json
 from datetime import date, timedelta
 from pathlib import Path
 
-from .weekly_parse import norm_region, quarter_compare, year_compare
+from decimal import Decimal
+
+from .weekly_parse import norm_region, parse_operation_xlsx, quarter_compare, year_compare
 from .weekly_report import SnapshotConflict, WeeklyImportError, import_operation
 
 SCHEDULE_ID = "district-form-weekly"
@@ -14,6 +16,8 @@ SCHEDULE_WEEKDAY = "friday"
 DMS_BROWSER_DOC = "https://github.com/kaisonlau8/m-hero/blob/main/docs/SHARED_DMS_BROWSER.md"
 SPANS = ("quarter", "quarter_base", "year", "year_base")
 EMPTY_MARKS = {"", "请选择", "请输入", "please choose", "please input"}
+MAX_ATTEMPTS = 3
+SUMMARY_KEYS = ("orders", "vehicles", "output")
 
 
 class WeeklyCrawlError(RuntimeError):
@@ -89,6 +93,46 @@ def readback_mismatches(expected: dict, actual: dict | None) -> list[str]:
     return bad
 
 
+def fresh_download(before: dict[str, bytes], name: str, content: bytes) -> bool:
+    """旧文件内容没变，或没有新字节，都不算这次导出。"""
+    if not name or not content or name.endswith(".crdownload"):
+        return False
+    return before.get(name) != content
+
+
+def accept_operation_result(job: dict, got: dict) -> bytes:
+    """明细、本次汇总请求、新下载的 Excel 必须同时成功，并且文件汇总等于这次汇总。
+
+    页面上还留着上一笔查询的数字、汇总请求 504、或者把明细车辆数加总，都不能导入。
+    """
+    if got.get("summary_error"):
+        raise WeeklyCrawlError(f"汇总请求失败：{got['summary_error']}")
+    if not got.get("detail_ok"):
+        raise WeeklyCrawlError("本次查询没有成功返回明细")
+    if got.get("summary_source") == "detail_sum":
+        raise WeeklyCrawlError("车辆数不能把明细或分月去重值相加，必须用本次汇总行")
+    if not got.get("summary_ok") or got.get("summary_unchanged") or got.get("summary_source") != "response":
+        shown = got.get("visible_summary") or "页面上的旧汇总"
+        raise WeeklyCrawlError(f"汇总不是本次查询的结果，不采用页面残留数字：{shown}")
+    if not got.get("download_is_new"):
+        raise WeeklyCrawlError("没有本次新下载的 Excel，不把已有文件当成新导出")
+    summary = got.get("summary") or {}
+    blob = got.get("blob") or b""
+    if not blob:
+        raise WeeklyCrawlError("没有本次新下载的 Excel")
+    parsed = parse_operation_xlsx(blob)
+    if parsed["scope"] != job["scope"]:
+        raise WeeklyCrawlError(f"Excel 范围是「{parsed['scope']}」，这次查询是「{job['scope']}」")
+    for key in SUMMARY_KEYS:
+        if key not in summary:
+            raise WeeklyCrawlError(f"本次汇总缺少{key}")
+        if Decimal(str(summary[key])) != parsed["summary"][key]:
+            raise WeeklyCrawlError(
+                f"Excel 的{key}是 {parsed['summary'][key]}，本次汇总是 {summary[key]}，不一致，不导入"
+            )
+    return blob
+
+
 def prepare_export(form, filters: dict) -> tuple[dict, dict]:
     """先设筛选并读回，不对就不要查询；查询后再读回，不对就不要导出。"""
     form.set_filters(filters)
@@ -118,38 +162,61 @@ def run_weekly_crawl(conn, *, as_of: str | date, regions: list[str], fetch, outp
         if resume and previous.get("status") == "imported" and same_window:
             results.append({**job, "status": "skipped"})
             continue
-        try:
-            got = fetch(job)
-            before = got.get("readback_before")
-            after = got.get("readback_after")
-            bad = [f"查询前{item}" for item in readback_mismatches(job["filters"], before)]
-            bad += [f"查询后{item}" for item in readback_mismatches(job["filters"], after)]
-            if bad:
-                raise WeeklyCrawlError("筛选读回不一致：" + "；".join(bad))
-            blob = got["blob"]
-            saved = output_dir / f"{job['span']}_{job['scope']}.xlsx"
-            saved.write_bytes(blob)
-            meta_path = output_dir / f"{job['span']}_{job['scope']}.json"
-            meta_path.write_text(json.dumps({
-                "span": job["span"], "scope": job["scope"], "filters": job["filters"],
-                "readback_before": before, "readback_after": after,
-                "exported_at": got["exported_at"], "file": saved.name,
-            }, ensure_ascii=False, indent=2), encoding="utf-8")
-            imported = import_operation(
-                conn, blob, week_start=_monday(day).isoformat(), span=job["span"],
-                period_start=job["period_start"], period_end=job["period_end"],
-                as_of=job["as_of"], exported_at=got["exported_at"], timezone="+08:00",
-                stat_type="收款", report_type="日报", scope=job["scope"],
-                filename=saved.name, actor=actor,
-            )
-            manifest["done"][job["key"]] = {
-                "status": "imported", "id": imported["id"], "idempotent": imported["idempotent"],
-                "file": saved.name, "period_start": job["period_start"], "period_end": job["period_end"],
-            }
-            results.append({**job, "status": "imported", "idempotent": imported["idempotent"]})
-        except (WeeklyCrawlError, WeeklyImportError, SnapshotConflict, OSError, KeyError, RuntimeError) as exc:
-            manifest["done"][job["key"]] = {"status": "failed", "error": str(exc)}
-            results.append({**job, "status": "failed", "error": str(exc)})
+        saved = output_dir / f"{job['span']}_{job['scope']}.xlsx"
+        previous_bytes = saved.read_bytes() if saved.exists() else None
+        last_error = ""
+        imported_ok = False
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            try:
+                got = fetch(job)
+                before = got.get("readback_before")
+                after = got.get("readback_after")
+                bad = [f"查询前{item}" for item in readback_mismatches(job["filters"], before)]
+                bad += [f"查询后{item}" for item in readback_mismatches(job["filters"], after)]
+                if bad:
+                    raise WeeklyCrawlError("筛选读回不一致：" + "；".join(bad))
+                blob = accept_operation_result(job, got)
+                saved.write_bytes(blob)
+                meta_path = output_dir / f"{job['span']}_{job['scope']}.json"
+                meta_path.write_text(json.dumps({
+                    "span": job["span"], "scope": job["scope"], "filters": job["filters"],
+                    "readback_before": before, "readback_after": after,
+                    "summary": {key: str(got["summary"][key]) for key in SUMMARY_KEYS},
+                    "exported_at": got["exported_at"], "file": saved.name,
+                    "summary_body_parsed": bool(got.get("summary_body_parsed")),
+                }, ensure_ascii=False, indent=2), encoding="utf-8")
+                imported = import_operation(
+                    conn, blob, week_start=_monday(day).isoformat(), span=job["span"],
+                    period_start=job["period_start"], period_end=job["period_end"],
+                    as_of=job["as_of"], exported_at=got["exported_at"], timezone="+08:00",
+                    stat_type="收款", report_type="日报", scope=job["scope"],
+                    filename=saved.name, actor=actor,
+                )
+                manifest["done"][job["key"]] = {
+                    "status": "imported", "id": imported["id"], "idempotent": imported["idempotent"],
+                    "file": saved.name, "period_start": job["period_start"], "period_end": job["period_end"],
+                }
+                results.append({**job, "status": "imported", "idempotent": imported["idempotent"], "attempts": attempt})
+                imported_ok = True
+                break
+            except (WeeklyCrawlError, RuntimeError, OSError) as exc:
+                last_error = str(exc)
+                if previous_bytes is None and saved.exists() and saved.read_bytes() != previous_bytes:
+                    saved.unlink(missing_ok=True)
+                elif previous_bytes is not None and (not saved.exists() or saved.read_bytes() != previous_bytes):
+                    saved.write_bytes(previous_bytes)
+                if attempt == MAX_ATTEMPTS:
+                    break
+            except (WeeklyImportError, SnapshotConflict, KeyError) as exc:
+                last_error = str(exc)
+                if previous_bytes is not None:
+                    saved.write_bytes(previous_bytes)
+                elif saved.exists():
+                    saved.unlink(missing_ok=True)
+                break
+        if not imported_ok:
+            manifest["done"][job["key"]] = {"status": "failed", "error": last_error, "attempts": MAX_ATTEMPTS}
+            results.append({**job, "status": "failed", "error": last_error})
         manifest["complete"] = False
         manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     failed = [item for item in results if item["status"] == "failed"]

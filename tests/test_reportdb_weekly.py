@@ -575,6 +575,25 @@ def test_weekly_page_nav_and_roles(conn, tmp_path):
     assert "980" not in again
 
 
+def _captured(job, blob, **overrides):
+    from reportdb.weekly_parse import parse_operation_xlsx
+
+    parsed = parse_operation_xlsx(blob)
+    echoed = dict(job["filters"])
+    echoed["开始日期"] = job["filters"]["开始日期"].replace("-", "/")
+    got = {
+        "blob": blob, "exported_at": "2026-11-20 13:40:00",
+        "readback_before": echoed, "readback_after": dict(echoed),
+        "detail_ok": True, "summary_ok": True, "summary_error": "",
+        "summary_unchanged": False, "summary_source": "response",
+        "summary_body_parsed": True, "download_is_new": True,
+        "visible_summary": "",
+        "summary": {key: str(parsed["summary"][key]) for key in ("orders", "vehicles", "output")},
+    }
+    got.update(overrides)
+    return got
+
+
 def test_weekly_crawl_imports_serial_and_keeps_partial_failure(conn, tmp_path):
     from reportdb.weekly_crawl import prepare_export, readback_mismatches, run_weekly_crawl
 
@@ -585,12 +604,7 @@ def test_weekly_crawl_imports_serial_and_keeps_partial_failure(conn, tmp_path):
         if job["key"].endswith(":year_base:华东"):
             raise RuntimeError("下载超时")
         blob = national_blob() if job["scope"] == "全国" else east_blob()
-        echoed = dict(job["filters"])
-        echoed["开始日期"] = job["filters"]["开始日期"].replace("-", "/")
-        return {
-            "blob": blob, "exported_at": "2026-11-20 13:40:00",
-            "readback_before": echoed, "readback_after": dict(echoed),
-        }
+        return _captured(job, blob)
 
     out = tmp_path / "weekly"
     first = run_weekly_crawl(conn, as_of="2026-11-20", regions=["华东"], fetch=fetch, output_dir=out)
@@ -604,13 +618,13 @@ def test_weekly_crawl_imports_serial_and_keeps_partial_failure(conn, tmp_path):
     assert saved == 7
     calls.clear()
     second = run_weekly_crawl(conn, as_of="2026-11-20", regions=["华东"], fetch=fetch, output_dir=out)
-    assert calls == ["2026-11-20:year_base:华东"]
+    assert calls == ["2026-11-20:year_base:华东"] * 3
     assert second["complete"] is False
     calls.clear()
     later = run_weekly_crawl(conn, as_of="2026-11-27", regions=["华东"], fetch=fetch, output_dir=out)
     assert later["complete"] is False
-    assert len(calls) == 8
-    assert "2026-11-27:quarter:全国" in calls
+    assert calls.count("2026-11-27:quarter:全国") == 1
+    assert calls.count("2026-11-27:year_base:华东") == 3
 
     def wrong(job):
         bad = dict(job["filters"])
@@ -642,6 +656,57 @@ def test_weekly_crawl_imports_serial_and_keeps_partial_failure(conn, tmp_path):
     with pytest.raises(Exception, match="查询前"):
         prepare_export(form, {"统计类型": "收款", "报表类型": "日报", "区域": "华东", "业务门店": "", "开始日期": "2026-10-01", "结束日期": "2026-11-20"})
     assert form.queries == 0
+
+
+def test_stale_summary_and_old_file_are_not_imported(conn, tmp_path):
+    from reportdb.weekly_crawl import accept_operation_result, run_weekly_crawl
+
+    kept = tmp_path / "kept" / "year_华东.xlsx"
+    kept.parent.mkdir()
+    kept.write_bytes(b"already-good")
+    stale = _captured(
+        {"scope": "华东", "filters": {"开始日期": "2026-01-01"}},
+        east_blob(),
+        summary_ok=False,
+        summary_error="HTTP 504",
+        summary_unchanged=True,
+        summary_source="page",
+        download_is_new=False,
+        visible_summary="843|522|1923650.23",
+        summary={"orders": "843", "vehicles": "522", "output": "1923650.23"},
+    )
+    stale["blob"] = b""
+    with pytest.raises(Exception, match="汇总请求失败"):
+        accept_operation_result({"scope": "华东"}, stale)
+
+    summed = _captured(
+        {"scope": "华东", "filters": {"开始日期": "2026-01-01"}},
+        east_blob(),
+        summary_source="detail_sum",
+        summary={"orders": "6", "vehicles": "5", "output": "40.00"},
+    )
+    with pytest.raises(Exception, match="不能把明细"):
+        accept_operation_result({"scope": "华东"}, summed)
+
+    def fetch(job):
+        if job["span"] == "year" and job["scope"] == "华东":
+            got = _captured(job, east_blob())
+            got["summary"] = {"orders": "843", "vehicles": "522", "output": "1923650.23"}
+            got["visible_summary"] = "843|522|1923650.23"
+            return got
+        blob = national_blob() if job["scope"] == "全国" else east_blob()
+        return _captured(job, blob)
+
+    out = tmp_path / "kept"
+    result = run_weekly_crawl(conn, as_of="2026-11-20", regions=["华东"], fetch=fetch, output_dir=out, resume=False)
+    assert result["complete"] is False
+    failed = [item for item in result["results"] if item["span"] == "year" and item["scope"] == "华东"]
+    assert failed and failed[0]["status"] == "failed"
+    assert "不一致" in failed[0]["error"]
+    assert kept.read_bytes() == b"already-good"
+    assert conn.execute(
+        "SELECT COUNT(*) FROM weekly_imports WHERE scope='华东' AND compare_role='year'"
+    ).fetchone()[0] == 0
 
 
 def test_refresh_waits_until_lock_is_held_and_is_released_after():
