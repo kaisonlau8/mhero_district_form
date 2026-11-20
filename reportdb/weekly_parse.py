@@ -248,6 +248,7 @@ def parse_operation_xlsx(blob: bytes) -> dict:
 
 
 def parse_kpi_xlsx(blob: bytes) -> dict:
+    """只用于辨认 DMS 服务管理主表。周报指标不读它，改读 calc.compute 的总表。"""
     sheet, rows = _sheet(blob)
     present_metrics = []
     required_headers = list(KPI_IDENTITY)

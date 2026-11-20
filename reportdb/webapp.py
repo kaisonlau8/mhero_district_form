@@ -1662,14 +1662,10 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
                     report_type=report_type or "日报", filename=file.filename or "", actor=user.username,
                     allow_revision=allow_revision == "1", span=span, as_of=as_of or None,
                 )
-            elif kind == "kpi":
-                weekly_mod.import_kpi(
-                    conn, blob, week_start=week, as_of=as_of, exported_at=exported_at, timezone=timezone or "+08:00",
-                    year=int(year) if year.strip() else None, quarter=int(quarter) if quarter.strip() else None,
-                    filename=file.filename or "", actor=user.username, allow_revision=allow_revision == "1",
-                )
             else:
-                raise weekly_mod.WeeklyImportError("请选择经营报表或季度指标")
+                raise weekly_mod.WeeklyImportError(
+                    "服务考核指标不从 DMS 主表导入。收款工单数、总产值、车辆数只导入服务经营报表；指标用 reportdb 总表自算结果。"
+                )
         except (weekly_mod.WeeklyImportError, weekly_mod.SnapshotConflict, WeeklyParseError) as exc:
             return page(request, "weekly_import.html", conn, user, week=week, err=str(exc))
         return RedirectResponse(f"/reports/weekly?week={quote(week)}&msg={quote('已写入周快照')}", status_code=303)

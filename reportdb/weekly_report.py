@@ -9,21 +9,20 @@ from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 from .auth import service
+from . import calc, config
+from .db import get_meta
+from .tables import PCT0, fmt_value
 from .weekly_parse import (
-    METRICS,
     change,
     norm_region,
-    parse_kpi_xlsx,
     parse_operation_xlsx,
     quarter_compare,
-    quarter_span,
     year_compare,
 )
 
 OPERATION_SPANS = {"quarter", "quarter_base", "year", "year_base"}
 
 DMS_BROWSER_DOC = "https://github.com/kaisonlau8/m-hero/blob/main/docs/SHARED_DMS_BROWSER.md"
-PERIOD_RE = re.compile(r"^(\d{4})年Q([1-4])$")
 EXPORTED_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(?:\s*([+-]\d{2}:\d{2}))?$")
 ZONE_RE = re.compile(r"^[+-]\d{2}:\d{2}$")
 MONEY_FIELDS = ("output", "labor", "parts", "other")
@@ -95,6 +94,12 @@ def import_operation(conn, blob: bytes, *, week_start: str, period_start: str, p
         "business_types": parsed["business_types"],
         "detail_sums": {key: _s(value) for key, value in parsed["detail_sums"].items()},
         "sheet_name": parsed["sheet_name"],
+        "metric_source": "dms_service_operation_receipt",
+        "field_sources": {
+            "orders": "收款工单数，取该文件汇总行，不把业务类型明细相加",
+            "vehicles": "车辆数，取该文件汇总行的去重值，不跨业务类型或区域相加",
+            "output": "总产值，取该文件汇总行",
+        },
     }
     return _save(conn, blob, {
         "kind": "operation",
@@ -118,66 +123,71 @@ def import_operation(conn, blob: bytes, *, week_start: str, period_start: str, p
     })
 
 
-def import_kpi(conn, blob: bytes, *, week_start: str, as_of: str, exported_at: str,
-               timezone: str = "+08:00", year: int | None = None, quarter: int | None = None,
-               filename: str = "", actor: str = "", allow_revision: bool = False) -> dict:
+INDICATOR_PERIOD_NOTE = (
+    "服务考核指标来自 reportdb 总表，接口是 calc.compute，结果表是 report_results（table_key=summary）。"
+    "首保、二保、新保、续保用的是每日流水线已经入库的明细；招揽和常备件用的是同一快照里的任务和库存。"
+    "现有公式按这一整份快照汇总，没有再按季度起日至截止日截开，所以这不是另一套季度累计，也不是 DMS 服务管理主表。"
+    "收款工单数、总产值、车辆数不在这里，它们只来自服务经营报表收款导出的汇总行。"
+)
+
+
+def capture_own_indicators(conn, week_start: str, *, allow_revision: bool = False) -> dict | None:
+    """把该周已有的总表自算结果冻成周报指标快照。没有快照则什么都不写。"""
     week = _monday(week_start)
-    cutoff = _date(as_of)
-    if not (week <= cutoff <= week + timedelta(days=6)):
-        raise WeeklyImportError("截至日必须落在所选周内。季度累计从季度第一天起算，但这次导出要归到该周。")
-    parsed = parse_kpi_xlsx(blob)
-    if len(parsed["periods"]) != 1:
-        raise WeeklyImportError("KPI 周期不唯一或为空，不能确定季度起日")
-    matched = PERIOD_RE.fullmatch(parsed["periods"][0])
-    if not matched:
-        raise WeeklyImportError(f"无法识别周期「{parsed['periods'][0]}」，期望如 2026年Q4")
-    file_year, file_quarter = int(matched.group(1)), int(matched.group(2))
-    if year is not None and int(year) != file_year:
-        raise WeeklyImportError(f"填写年份 {year} 与文件周期 {file_year} 不一致")
-    if quarter is not None and int(quarter) != file_quarter:
-        raise WeeklyImportError(f"填写季度 {quarter} 与文件周期 Q{file_quarter} 不一致")
-    q_start, q_end = quarter_span(file_year, file_quarter)
-    if not (q_start <= cutoff <= q_end):
-        raise WeeklyImportError(f"截至日 {cutoff.isoformat()} 不在 {file_year}Q{file_quarter}（{q_start} 至 {q_end}）内")
-    summary = {
-        "rollup_ok": parsed["rollup_ok"],
-        "blockers": parsed["blockers"],
-        "row_count": parsed["row_count"],
-        "unique_stores": parsed["unique_stores"],
-        "duplicate_groups": parsed["duplicate_groups"],
-        "blank_region_rows": parsed["blank_region_rows"],
-        "periods": parsed["periods"],
-        "metrics": parsed["metrics"],
-        "unverified_columns": parsed["unverified_columns"],
-        "source_rate_mismatches": parsed["source_rate_mismatches"],
-        "zero_denominator_rates": parsed["zero_denominator_rates"],
-        "national": {key: _cell_out(value) for key, value in parsed["national"].items()},
-        "regions": {
-            region: {key: _cell_out(value) for key, value in cells.items()}
-            for region, cells in parsed["regions"].items()
-        },
-        "sheet_name": parsed["sheet_name"],
-    }
-    return _save(conn, blob, {
-        "kind": "kpi",
+    week_end = (week + timedelta(days=6)).isoformat()
+    existing = conn.execute(
+        "SELECT * FROM weekly_imports WHERE kind='indicators' AND week_start=? AND scope='全国' AND compare_role='' AND status='active'",
+        (week.isoformat(),),
+    ).fetchone()
+    if existing is not None and not allow_revision:
+        return json.loads(existing["summary_json"])
+    mode = config.region_mode()
+    src = _latest_summary_row(conn, week.isoformat(), week_end, mode)
+    if src is None:
+        return None
+    threshold = float(get_meta(conn, "spare_threshold", "0.8") or 0.8)
+    summary = _indicators_from_sheet(json.loads(src["payload"]), src, mode, threshold)
+    blob = json.dumps(summary, ensure_ascii=False).encode("utf-8")
+    _save(conn, blob, {
+        "kind": "indicators",
         "compare_role": "",
         "week_start": week.isoformat(),
         "scope": "全国",
-        "period_start": q_start.isoformat(),
-        "period_end": cutoff.isoformat(),
-        "quarter_start": q_start.isoformat(),
-        "year": file_year,
-        "quarter": file_quarter,
+        "period_start": src["snapshot_date"],
+        "period_end": src["snapshot_date"],
+        "quarter_start": "",
+        "year": None,
+        "quarter": None,
         "stat_type": "",
-        "report_type": "服务管理报表主表",
-        "exported_at": _exported(exported_at, timezone),
-        "source_filename": Path(filename).name,
-        "sheet_name": parsed["sheet_name"],
-        "quality": parsed["quality"],
+        "report_type": "reportdb总表",
+        "exported_at": src["computed_at"],
+        "source_filename": "",
+        "sheet_name": "summary",
+        "quality": [INDICATOR_PERIOD_NOTE],
         "summary": summary,
-        "actor": actor or "",
-        "allow_revision": allow_revision,
+        "actor": "reportdb",
+        "allow_revision": allow_revision or existing is not None,
     })
+    return summary
+
+
+def _latest_summary_row(conn, start: str, end: str, mode: str):
+    sql = (
+        "SELECT s.snapshot_date, s.ingested_at, r.computed_at, r.payload FROM snapshots s "
+        "JOIN report_results r ON r.snapshot_date=s.snapshot_date AND r.table_key='summary' AND r.region_mode=? "
+        "WHERE s.snapshot_date>=? AND s.snapshot_date<=? ORDER BY s.snapshot_date DESC LIMIT 1"
+    )
+    row = conn.execute(sql, (mode, start, end)).fetchone()
+    if row is not None:
+        return row
+    snap = conn.execute(
+        "SELECT snapshot_date FROM snapshots WHERE snapshot_date>=? AND snapshot_date<=? ORDER BY snapshot_date DESC LIMIT 1",
+        (start, end),
+    ).fetchone()
+    if snap is None:
+        return None
+    calc.compute_and_store(conn, snap["snapshot_date"], mode)
+    return conn.execute(sql, (mode, start, end)).fetchone()
 
 
 def save_commentary(conn, week_start: str, region: str, body: str, actor: str) -> None:
@@ -207,6 +217,7 @@ def build_weekly_page(conn, week: str | None = None, *, today: date | None = Non
     today = today or date.today()
     week_start = today - timedelta(days=today.weekday()) if not week else _monday(week)
     week_end = week_start + timedelta(days=6)
+    capture_own_indicators(conn, week_start.isoformat())
     known = [row[0] for row in conn.execute("SELECT name FROM regions ORDER BY sort_order")]
     active = {}
     for row in conn.execute("SELECT * FROM weekly_imports WHERE status='active'"):
@@ -221,8 +232,7 @@ def build_weekly_page(conn, week: str | None = None, *, today: date | None = Non
             extra.append(scope)
     scopes = ["全国", *known, *sorted(set(extra))]
     operation = _operation_section(active, week_start.isoformat(), scopes, known)
-    kpi_row = active.get(("kpi", week_start.isoformat(), "全国", ""))
-    kpi = _kpi_section(kpi_row, known)
+    indicators = _indicators_section(active.get(("indicators", week_start.isoformat(), "全国", "")))
     weeks = {week_start.isoformat()}
     for row in conn.execute("SELECT DISTINCT week_start FROM weekly_imports"):
         weeks.add(row[0])
@@ -239,7 +249,7 @@ def build_weekly_page(conn, week: str | None = None, *, today: date | None = Non
         "is_current_week": week_start == today - timedelta(days=today.weekday()),
         "weeks": [{"start": item, "label": _week_label(item, today)} for item in sorted(weeks, reverse=True)],
         "operation": operation,
-        "kpi": kpi,
+        "indicators": indicators,
         "commentary": notes,
         "history": history,
     }
@@ -257,7 +267,8 @@ def _operation_section(active, week: str, scopes: list[str], known: list[str]) -
     return {
         "title": "经营数据：季度环比 / 年度同比",
         "imported": quarter["imported"] or year["imported"],
-        "note": "收款工单数按收款时间统计已收款工单，含仅备件销售，不是严格来厂台次。车辆数是各文件汇总行的去重值，不可跨业务类型或区域相加。金额单位与是否含税源表未注明。比较用的是季度累计和年度累计，不是这一周的绝对数。",
+        "source": "dms_service_operation_receipt",
+        "note": "收款工单数、总产值、车辆数只来自 DMS 服务经营报表「收款 · 日报」导出的汇总行，不用总表自算结果代替。收款工单数按收款时间统计已收款工单，含仅备件销售，不是严格来厂台次。车辆数用汇总行去重值，不跨业务类型或区域相加。金额单位与是否含税源表未注明。环比、同比只按对应期间的这些导出值计算。",
         "quarter": quarter,
         "year": year,
     }
@@ -424,76 +435,73 @@ def _reconcile(national, rows, known: list[str]) -> dict:
     }
 
 
-def _kpi_section(row, known: list[str]) -> dict:
+def _indicators_from_sheet(sheet: dict, src, mode: str, threshold: float) -> dict:
+    blocks = {b["key"]: b for b in sheet["blocks"]}
+    specs = (
+        ("first", "首保实施率", False, "实绩/应保"),
+        ("second", "二保实施率", False, "实绩/应保"),
+        ("new", "新保投保率", False, "新车投保/新车交付量"),
+        ("renewal", "续保投保率", False, "实绩续保/续保到期（含去年同期交付未新保）"),
+        ("spare", "常备件备库率", False, "实备店数/应备店数"),
+        ("task", "招揽实施率", True, "(应招揽-未招揽)/应招揽"),
+    )
+    metrics = []
+    for key, title, complement, note in specs:
+        block = blocks[key]
+        cells = [_own_cell(block["total"], complement)]
+        cells.extend(_own_cell(row, complement) for row in block["rows"])
+        national_rate = cells[0]["rate"]
+        for cell in cells[1:]:
+            cell["below"] = cell["rate"] is not None and national_rate is not None and cell["rate"] < national_rate
+        metrics.append({"key": key, "title": title, "note": note, "cells": cells})
+    return {
+        "status": "ready",
+        "source": "reportdb.calc.compute",
+        "result_table": "report_results",
+        "table_key": "summary",
+        "region_mode": mode,
+        "snapshot_date": src["snapshot_date"],
+        "ingested_at": src["ingested_at"] or "",
+        "computed_at": src["computed_at"] or "",
+        "period_note": INDICATOR_PERIOD_NOTE,
+        "threshold": threshold,
+        "metrics": metrics,
+    }
+
+
+def _own_cell(row, complement: bool) -> dict:
+    den = int(row[1] or 0)
+    second = row[2] or 0
+    second_n = int(second) if isinstance(second, (int, float)) and float(second) == int(second) else 0
+    num = den - second_n if complement else second_n
+    rate = row[3]
+    if rate is None or den == 0:
+        rate_val = None
+        rate_text = "不可比"
+    else:
+        rate_val = float(rate)
+        rate_text = fmt_value(rate_val, PCT0)
+    return {
+        "region": row[0], "num": num, "den": den, "rate": rate_val,
+        "rate_text": rate_text, "sub": f"{num}/{den}", "below": False,
+    }
+
+
+def _indicators_section(row) -> dict:
     if row is None:
         return {
-            "imported": False,
-            "quarter_start": "",
-            "as_of": "",
-            "exported_at": "",
-            "filename": "",
-            "row_count": None,
-            "unique_stores": None,
-            "blank_region_rows": None,
-            "duplicate_groups": None,
-            "blockers": [],
-            "quality": ["本周季度累计指标未导入。"],
-            "unverified_columns": [],
+            "status": "pending",
+            "source": "reportdb.calc.compute",
+            "result_table": "report_results",
+            "table_key": "summary",
+            "snapshot_date": "",
+            "ingested_at": "",
+            "computed_at": "",
+            "period_note": "待计算。本周还没有 reportdb 总表结果，不用 DMS 服务管理主表填上。",
+            "threshold": None,
             "metrics": [],
-            "periods_label": "",
         }
-    summary = json.loads(row["summary_json"])
-    columns = ["全国", *known]
-    for region in summary.get("regions", {}):
-        if region not in columns and region != "无区域":
-            columns.append(region)
-    columns.append("无区域")
-    metrics = []
-    if summary.get("rollup_ok"):
-        national_cells = {key: _cell_in(value) for key, value in summary.get("national", {}).items()}
-        region_cells = {
-            region: {key: _cell_in(value) for key, value in cells.items()}
-            for region, cells in summary.get("regions", {}).items()
-        }
-        for spec in METRICS:
-            if spec.key not in national_cells:
-                continue
-            national_rate = national_cells[spec.key]["rate"]
-            cells = []
-            for region in columns:
-                source = national_cells.get(spec.key) if region == "全国" else region_cells.get(region, {}).get(spec.key)
-                if source is None:
-                    cells.append({"region": region, "rate_text": "不可比", "sub": "0/0", "below": False})
-                    continue
-                below = (
-                    region != "全国"
-                    and source["rate"] is not None
-                    and national_rate is not None
-                    and source["rate"] < national_rate
-                )
-                cells.append({
-                    "region": region,
-                    "rate_text": _fmt_pct(source["rate"]),
-                    "sub": _ratio_text(source),
-                    "below": below,
-                })
-            metrics.append({"key": spec.key, "title": spec.title, "note": spec.note, "cells": cells})
-    return {
-        "imported": True,
-        "quarter_start": row["quarter_start"] or "",
-        "as_of": row["period_end"] or "",
-        "exported_at": row["exported_at"] or "",
-        "filename": row["source_filename"] or "",
-        "row_count": summary.get("row_count"),
-        "unique_stores": summary.get("unique_stores"),
-        "blank_region_rows": summary.get("blank_region_rows"),
-        "duplicate_groups": summary.get("duplicate_groups"),
-        "blockers": summary.get("blockers") or [],
-        "quality": json.loads(row["quality_json"]),
-        "unverified_columns": summary.get("unverified_columns") or [],
-        "metrics": metrics,
-        "periods_label": "、".join(summary.get("periods") or []),
-    }
+    return json.loads(row["summary_json"])
 
 
 def _save(conn, blob: bytes, meta: dict) -> dict:

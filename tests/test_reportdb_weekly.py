@@ -350,26 +350,47 @@ def test_quarter_base_zero_and_year_missing(conn):
     assert year["orders"]["change"] == "未导入"
 
 
-def test_blank_region_not_taken_from_store_table(conn):
-    from reportdb.weekly_report import build_weekly_page, import_kpi
+def test_indicators_use_summary_and_operation_stays_on_receipt_export(conn):
+    from test_reportdb_calc import make_data
 
-    conn.execute(
-        "INSERT INTO stores(code,name,region,seq,active,source) VALUES ('S-BLANK','未分区店','华南',999,1,'test')"
-    )
-    conn.commit()
-    import_kpi(conn, kpi_blob(), week_start="2026-11-16", as_of="2026-11-20",
-               exported_at="2026-11-20 09:00:00", filename="kpi.xlsx", actor="test")
+    from reportdb import calc
+    from reportdb.ingest import ingest_datasets
+    from reportdb.weekly_report import build_weekly_page, import_operation
+
+    data, origin = make_data(conn)
+    ingest_datasets(conn, "2026-11-18", data, source="t", origin_renewal=origin)
+    first = calc.compute(conn, "2026-11-18")["summary"].blocks[0]
     page = build_weekly_page(conn, "2026-11-16", today=date(2026, 11, 20))
-    cells = {c["region"]: c for c in page["kpi"]["metrics"][0]["cells"]}
-    assert page["kpi"]["metrics"][0]["key"] == "first"
-    assert cells["无区域"]["rate_text"] == "不可比"
-    assert cells["华南"]["sub"] == "9/20"
-    assert cells["华南"]["below"] is True
-    assert cells["华东"]["below"] is False
-    assert page["kpi"]["quarter_start"] == "2026-10-01"
-    assert page["kpi"]["as_of"] == "2026-11-20"
-    assert "2026-11-20 09:00:00" in page["kpi"]["exported_at"]
-    assert page["commentary"]["华南"] == ""
+    ind = page["indicators"]
+    assert ind["status"] == "ready"
+    assert ind["source"] == "reportdb.calc.compute"
+    assert ind["result_table"] == "report_results" and ind["table_key"] == "summary"
+    assert ind["snapshot_date"] == "2026-11-18"
+    assert ind["computed_at"]
+    metric = ind["metrics"][0]
+    assert metric["key"] == "first" and metric["title"] == "首保实施率"
+    national = metric["cells"][0]
+    assert national["region"] == "全国"
+    assert national["den"] == first.total[1] and national["num"] == first.total[2]
+    south = next(c for c in metric["cells"] if c["region"] == "华南")
+    assert south["below"] is True
+    assert "品情" not in json.dumps(ind, ensure_ascii=False)
+    assert "服务管理主表" in ind["period_note"] and "不是另一套季度累计" in ind["period_note"]
+    import_operation(conn, national_blob(), **_op_meta())
+    page = build_weekly_page(conn, "2026-11-16", today=date(2026, 11, 20))
+    op = page["operation"]
+    assert op["source"] == "dms_service_operation_receipt"
+    assert "汇总行" in op["note"] and "不用总表自算结果代替" in op["note"]
+    orders = next(r for r in op["quarter"]["rows"] if r["region"] == "全国")
+    assert orders["orders"]["current"] == "15"
+    assert orders["vehicles"]["current"] == "9"
+    assert orders["output"]["current"] == "120.00"
+    assert page["indicators"]["metrics"][0]["cells"][0]["num"] != 15
+    stored = json.loads(conn.execute(
+        "SELECT summary_json FROM weekly_imports WHERE kind='operation' AND compare_role='quarter' AND scope='全国'"
+    ).fetchone()[0])
+    assert stored["metric_source"] == "dms_service_operation_receipt"
+    assert stored["summary"]["vehicles"] == "9"
 
 
 def test_commentary_starts_empty_and_persists(conn):
@@ -388,7 +409,8 @@ def test_current_week_without_import_is_blank(conn):
     page = build_weekly_page(conn, None, today=date(2026, 11, 20))
     assert page["week_start"] == "2026-11-16"
     assert page["operation"]["imported"] is False
-    assert page["kpi"]["imported"] is False
+    assert page["indicators"]["status"] == "pending"
+    assert "待计算" in page["indicators"]["period_note"]
     text = json.dumps(page, ensure_ascii=False)
     assert "6402712.72" not in text
     assert "6246" not in text

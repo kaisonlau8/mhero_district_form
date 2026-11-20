@@ -134,28 +134,20 @@
 </section>
 
 <section class="weekly-shot" id="shot-kpi">
-  <h2>季度累计指标</h2>
-  <p class="weekly-meta">
-    {% if model.kpi.imported %}
-    季度起日 {{ model.kpi.quarter_start }}，截至日 {{ model.kpi.as_of }}，导出时间 {{ model.kpi.exported_at }}。
-    周期 {{ model.kpi.periods_label }}。DMS 区域为空 {{ model.kpi.blank_region_rows }} 行，标为无区域，未改归属。
-    {% else %}
-    本周季度累计指标未导入。没有文件时不显示 0。
-    {% endif %}
-    达成率按分子/分母加权，低于全国标红。分母为 0 显示不可比。
-  </p>
-  {% if model.kpi.blockers %}<div class="ant-alert ant-alert-error"><div class="ant-alert-content">不可汇总：{{ model.kpi.blockers|join('；') }}</div></div>{% endif %}
-  {% if model.kpi.metrics %}
+  <h2>自算指标（总表）</h2>
+  <p class="weekly-meta">{{ model.indicators.period_note }}</p>
+  {% if model.indicators.status == 'ready' %}
+  <p class="weekly-meta">快照日期 {{ model.indicators.snapshot_date }}，入库 {{ model.indicators.ingested_at or '—' }}，计算时间 {{ model.indicators.computed_at }}。常备件达标线沿用现有 {{ model.indicators.threshold }}。低于全国加权达成率标红。分母为 0 显示不可比。</p>
   <div style="overflow:auto">
     <table class="wshot" data-ds-primary>
       <thead>
         <tr>
           <th class="lab">指标</th>
-          {% for cell in model.kpi.metrics[0].cells %}<th>{{ cell.region }}</th>{% endfor %}
+          {% for cell in model.indicators.metrics[0].cells %}<th>{{ cell.region }}</th>{% endfor %}
         </tr>
       </thead>
       <tbody>
-        {% for metric in model.kpi.metrics %}
+        {% for metric in model.indicators.metrics %}
         <tr>
           <td class="lab">{{ metric.title }}<span class="sub">{{ metric.note }}</span></td>
           {% for cell in metric.cells %}
@@ -166,8 +158,8 @@
       </tbody>
     </table>
   </div>
-  {% elif not model.kpi.imported %}
-  <p>未导入</p>
+  {% else %}
+  <p>待计算</p>
   {% endif %}
   <h3>督导原因分析</h3>
   <table class="wshot" data-ds-primary>
@@ -182,12 +174,8 @@
     </tbody>
   </table>
   <details class="weekly-audit">
-    <summary>指标来源与核验</summary>
-    {% if model.kpi.imported %}
-    <p class="weekly-meta">来源文件 {{ model.kpi.filename or '未命名' }}，{{ model.kpi.row_count }} 行、{{ model.kpi.unique_stores }} 个门店编码，重复组 {{ model.kpi.duplicate_groups }}。导出时间是导入时录入的，Excel 单元格里没有导出时间和统计起止。</p>
-    {% endif %}
-    {% for line in model.kpi.quality %}<p class="weekly-meta">{{ line }}</p>{% endfor %}
-    {% if model.kpi.unverified_columns %}<p class="weekly-meta">公式未核验、不纳入加权：{{ model.kpi.unverified_columns|join('、') }}。</p>{% endif %}
+    <summary>指标来源</summary>
+    <p class="weekly-meta">结果表 report_results，table_key=summary，接口 calc.compute。不读取 DMS 服务管理主表，也不为周报另导出指标。</p>
   </details>
 </section>
 

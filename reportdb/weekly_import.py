@@ -3,8 +3,7 @@
     python -m reportdb.weekly_import operation --file 经营.xlsx --week 2026-11-16 \\
         --span quarter --period-start 2026-10-01 --period-end 2026-11-20 \\
         --exported-at "2026-11-20 14:25:35"
-    python -m reportdb.weekly_import kpi --file 主表.xlsx --week 2026-11-16 \\
-        --as-of 2026-11-20 --exported-at "2026-11-20 14:25:35"
+指标不从这里导入。周报读取该周已有的 reportdb 总表。
 """
 from __future__ import annotations
 
@@ -15,7 +14,7 @@ from pathlib import Path
 
 from .db import connect, migrate
 from .weekly_parse import WeeklyParseError
-from .weekly_report import SnapshotConflict, WeeklyImportError, import_kpi, import_operation
+from .weekly_report import SnapshotConflict, WeeklyImportError, import_operation
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -32,30 +31,17 @@ def main(argv: list[str] | None = None) -> int:
     operation.add_argument("--report-type", default="日报")
     operation.add_argument("--scope", default="")
 
-    kpi = sub.add_parser("kpi", help="服务管理报表主表，季度累计到截至日")
-    _common(kpi)
-    kpi.add_argument("--as-of", required=True)
-    kpi.add_argument("--year", type=int, default=None)
-    kpi.add_argument("--quarter", type=int, default=None)
-
     args = parser.parse_args(argv)
     blob = Path(args.file).read_bytes()
     conn = connect()
     try:
         migrate(conn)
-        if args.cmd == "operation":
-            result = import_operation(
-                conn, blob, week_start=args.week, period_start=args.period_start, period_end=args.period_end,
-                exported_at=args.exported_at, timezone=args.timezone, stat_type=args.stat_type,
-                report_type=args.report_type, scope=args.scope or None, filename=args.file,
-                actor=args.actor, allow_revision=args.revision, span=args.span, as_of=args.as_of or None,
-            )
-        else:
-            result = import_kpi(
-                conn, blob, week_start=args.week, as_of=args.as_of, exported_at=args.exported_at,
-                timezone=args.timezone, year=args.year, quarter=args.quarter, filename=args.file,
-                actor=args.actor, allow_revision=args.revision,
-            )
+        result = import_operation(
+            conn, blob, week_start=args.week, period_start=args.period_start, period_end=args.period_end,
+            exported_at=args.exported_at, timezone=args.timezone, stat_type=args.stat_type,
+            report_type=args.report_type, scope=args.scope or None, filename=args.file,
+            actor=args.actor, allow_revision=args.revision, span=args.span, as_of=args.as_of or None,
+        )
     except SnapshotConflict as exc:
         print(str(exc), file=sys.stderr)
         return 2

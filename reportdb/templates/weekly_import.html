@@ -38,20 +38,8 @@
   </div>
 </div>
 <div class="ant-card">
-  <div class="ant-card-head"><h2 class="ant-card-head-title">服务管理主表（季度累计）</h2></div>
   <div class="ant-card-body">
-    <p>使用通用导出的主表，不是每日流水线里的 5 份具名明细。周期列决定年份和季度。截至日是这次导出所代表的累计截止日，必须落在所选周内，也必须落在该季度内。2026 年第四季度的起日是 2026-10-01。</p>
-    <form method="post" action="/reports/weekly/import" enctype="multipart/form-data">
-      <input type="hidden" name="csrf" value="{{ csrf }}">
-      <input type="hidden" name="kind" value="kpi">
-      <p><label>文件 <input type="file" name="file" accept=".xlsx" required></label></p>
-      <p><label>周一 <input name="week" value="{{ week }}" required placeholder="2026-11-16"></label>
-         <label>截至日 <input name="as_of" required placeholder="2026-11-20"></label></p>
-      <p><label>导出时间 <input name="exported_at" required placeholder="2026-11-20 14:25:35"></label>
-         <label>时区 <input name="timezone" value="+08:00" required></label></p>
-      <p><label><input type="checkbox" name="allow_revision" value="1"> 保留旧快照并写入新修订</label></p>
-      <button class="ant-btn ant-btn-primary" type="submit">导入指标 Excel</button>
-    </form>
+    <p>服务考核指标不在这里导入。周报直接读取本周已有的 reportdb 总表（calc.compute）。没有该周快照时显示待计算，不会改用 DMS 服务管理主表。</p>
   </div>
 </div>
 {% endblock %}
