@@ -134,9 +134,8 @@
   {% endfor %}
 </div>
 {% else %}
-<p class="src-line">全国还没有数。</p>
+<p class="src-line">未导入</p>
 {% endif %}
-{% if panel.reconcile %}<div class="ant-alert ant-alert-warning"><div class="ant-alert-content">{{ panel.reconcile.warning }}</div></div>{% endif %}
 {{ bars(panel, 'orders', '各区收款工单数（单）', '单') | safe }}
 {{ bars(panel, 'output', '各区总产值（千元）', '千元') | safe }}
 {{ bars(panel, 'vehicles', '各区来厂车辆数（去重）', '辆') | safe }}
@@ -168,6 +167,7 @@
     <p>{{ model.operation.note }}</p>
     {% if model.operation.quarter.progress_note %}<p>{{ model.operation.quarter.progress_note }} {{ model.operation.quarter.default_note }}</p>{% endif %}
     {% if model.operation.quarter.reconcile %}<p>{{ model.operation.quarter.reconcile.warning }}</p>{% endif %}
+    {% if model.operation.year.reconcile %}<p>{{ model.operation.year.reconcile.warning }}</p>{% endif %}
   </details>
 </section>
 {% endif %}

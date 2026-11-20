@@ -523,6 +523,10 @@ def test_weekly_page_nav_and_roles(conn, tmp_path):
     assert "<textarea" not in shot_kpi
     assert "<details class=\"weekly-audit\">" in shot_op
     assert "<details class=\"weekly-audit\" open" not in shot_op
+    visible_op = shot_op.split("<details", 1)[0]
+    assert "不摊分" not in visible_op
+    assert "差额保留" not in visible_op
+    assert "未导入" in visible_op
     assert "不摊分" in shot_op
     link = re.search(r'href="(/reports/weekly/imports/\d+/source.xlsx)"', shown.text)
     assert link
