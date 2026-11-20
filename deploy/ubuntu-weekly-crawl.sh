@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 只给 Ubuntu 生产机 dfms-tecent 准备周五 14:45 周报采集。
-# 默认只打印将要写入的内容。加上 --apply 才会改 crontab 和共享时刻表。
+# 默认只打印将要写入的内容。加上 --apply 才会改当前用户的 crontab，不改共享时刻表。
 # 不改 08:30 流水线，不改 17:00 事故任务，不读取或打印密码。
 set -euo pipefail
 

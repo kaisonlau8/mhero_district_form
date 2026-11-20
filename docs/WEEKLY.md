@@ -9,7 +9,7 @@ python scripts/weekly_operation_crawl.py --as-of 2026-11-20 --regions 华东
 python scripts/weekly_operation_crawl.py --live
 ```
 
-不加 `--live` 只打印计划，不连接 DMS。`--live` 才使用现场已经登录的共享浏览器：先拿共用导出锁（时刻表 id `district-form-weekly`），从报表菜单点「服务经营报表」，设成收款、日报、区域、空门店和起止日期，查询前后把筛选项读回来。成功只认这次点击查询之后，页面自己发出的那一对响应：请求里的筛选和本次一致，一条是明细，一条是汇总，汇总正文里有工单数、车辆数、总产值。旁边的成功响应、上一笔查询、页面上的旧数字，都不能放行。汇总响应没看到，或汇总请求失败，就明确失败并待人工复核，最多再试 2 次。数字和上次一样也可以导入，只要这次响应对得上。不会把旧 Excel 当成新导出，也不会把明细或分月的车辆数加起来。Excel 必须和这次汇总响应一致。已经成功的文件保留。某一份失败不把整个任务说成完成。生产机是 Ubuntu `dfms-tecent`，不是 Mac。仓库里原来的定时文件是 macOS launchd，网页进程在现场由 supervisor 的 `reportdb-web` 管。周五采集是一次命令，和每天 08:30 的采集一样用 cron，不做成常驻进程，也不改 08:30。
+不加 `--live` 只打印计划，不连接 DMS。`--live` 才使用现场已经登录的共享浏览器：先拿共用导出锁（时刻表 id `district-form-weekly`），从报表菜单点「服务经营报表」，设成收款、日报、区域、空门店和起止日期，查询前后把筛选项读回来。成功只认这次点击查询之后，直到这次下载结束、同步 Playwright 已经派发完响应，页面自己发出的那一对响应：请求里的筛选和本次一致，一条是明细，一条是汇总，汇总正文里有工单数、车辆数、总产值。只用 `time.sleep` 等文件时，已经到达的响应不会进入监听，所以周采集在下载等待里改用页面自己的等待。旁边的成功响应、上一笔查询、页面上的旧数字，都不能放行。中文六个字段名还没有现场契约，未验证前不安装、不自动开启。汇总响应没看到，或汇总请求失败，就明确失败并待人工复核，最多再试 2 次。数字和上次一样也可以导入，只要这次响应对得上。不会把旧 Excel 当成新导出，也不会把明细或分月的车辆数加起来。Excel 必须和这次汇总响应一致。已经成功的文件保留。某一份失败不把整个任务说成完成。生产机是 Ubuntu `dfms-tecent`，不是 Mac。仓库里原来的定时文件是 macOS launchd，网页进程在现场由 supervisor 的 `reportdb-web` 管。周五采集是一次命令，和每天 08:30 的采集一样用 cron，不做成常驻进程，也不改 08:30。
 
 启动时间是每周五 14:45（Asia/Hong_Kong）。16:57 起不再开始新的地区或期间，把锁留给 17:00 事故任务的提前 3 分钟。已经开始的这一次会做完，然后释放锁，不会关掉浏览器。来不及做的范围记成缺口，不把整批说成完成。
 
@@ -21,7 +21,7 @@ python scripts/weekly_operation_crawl.py --live
 cd /home/ubuntu/m-hero-prod/mhero_district_form
 deploy/ubuntu-weekly-crawl.sh verify
 deploy/ubuntu-weekly-crawl.sh install          # 只打印
-deploy/ubuntu-weekly-crawl.sh install --apply  # 写入 crontab，并只追加时刻表这一条
+deploy/ubuntu-weekly-crawl.sh install --apply  # 只写 crontab，不改共享时刻表。本次没有执行
 deploy/ubuntu-weekly-crawl.sh verify
 # 卸掉时：
 deploy/ubuntu-weekly-crawl.sh uninstall --apply

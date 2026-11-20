@@ -158,11 +158,18 @@ def live_fetch(page, output_dir: Path):
             page.on("response", on_response)
             attached = True
             readback_after = finish_query(form, job["filters"])
+
+            def pump(seconds, page=page):
+                page.wait_for_timeout(max(int(float(seconds) * 1000), 0))
+
             path = click_export_and_save(
                 page, output_dir,
                 button_texts=["导出", "Export"],
                 save_prefix=f"{job['span']}_{job['scope']}_",
+                pump=pump if hasattr(page, "wait_for_timeout") else None,
             )
+            if hasattr(page, "wait_for_timeout"):
+                page.wait_for_timeout(100)
             content = path.read_bytes() if path is not None and path.exists() else b""
             responses = []
             for event in seen:

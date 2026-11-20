@@ -1047,3 +1047,102 @@ def test_real_samples_parse_and_do_not_bind_as_current_week(conn):
     page = build_weekly_page(conn, None, today=date(2026, 11, 20))
     assert page["operation"]["imported"] is False
     assert "6402712.72" not in json.dumps(page, ensure_ascii=False)
+
+
+def test_real_playwright_download_wait_rejects_late_wrong_period(conn, tmp_path, monkeypatch):
+    """下载等待必须让同步 Playwright 派发响应。不能靠测试代码把响应塞进列表。"""
+    import threading
+    from datetime import date, datetime
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    pw = pytest.importorskip("playwright.sync_api")
+    import scripts.weekly_operation_crawl as weekly_script
+    from reportdb import weekly_crawl as wc
+    from reportdb.weekly_crawl import plan_jobs, run_weekly_crawl
+    from scripts.weekly_operation_crawl import live_fetch
+
+    out = tmp_path / "dl"
+    out.mkdir()
+    blob = xlsx(OP_HEADERS, [
+        op_row("全国", "全国", "全国", "998", "1272", "定期保养", "7620333.56", "0", "0", "7620333.56"),
+        op_row("汇总", "", "", "998", "1272", "", "7620333.56", "0", "0", "7620333.56"),
+    ], "经营报表导出")
+    served = {"n": 0}
+    html = """<!doctype html><meta charset="utf-8">
+<section class="mixButton"><div class="u-btn-left"><button type="button">导出</button></div></section>
+<script>
+document.querySelector("button").addEventListener("click", () => {
+  setTimeout(() => {
+    fetch("/late", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({"统计类型":"收款","报表类型":"日报","区域":"全国","业务门店":"","开始日期":"2024-01-01","结束日期":"2024-01-02"})});
+  }, 200);
+});
+</script>"""
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, fmt, *args):
+            return
+        def do_GET(self):
+            body = html.encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        def do_POST(self):
+            length = int(self.headers.get("Content-Length") or 0)
+            self.rfile.read(length)
+            (out / "late-download.xlsx").write_bytes(blob)
+            served["n"] += 1
+            payload = json.dumps({"kind": "summary", "orders": "998", "vehicles": "1272", "output": "7620333.56"}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    seen_urls = []
+    original = wc.classify_page_response
+
+    def spy(event, query_id, expected):
+        seen_urls.append(event.get("url") or "")
+        return original(event, query_id, expected)
+
+    class Form:
+        def __init__(self, page):
+            self.values = {}
+        def set_filters(self, filters):
+            self.values = dict(filters)
+        def read_filters(self):
+            return dict(self.values)
+        def query(self):
+            return None
+
+    monkeypatch.setattr(weekly_script, "open_operation_page", lambda page: None)
+    monkeypatch.setattr(weekly_script, "PlaywrightForm", Form)
+    monkeypatch.setattr(wc, "classify_page_response", spy)
+    monkeypatch.setattr(wc, "plan_jobs", lambda *args, **kwargs: [plan_jobs(date(2026, 11, 20), [])[0]])
+    binary = os.environ.get("REPORTDB_CHROMIUM") or "/usr/bin/google-chrome"
+    try:
+        with pw.sync_playwright() as p:
+            exe = binary if Path(binary).is_file() else p.chromium.executable_path
+            if not Path(exe).is_file():
+                pytest.skip("没有可用的 Chromium")
+            browser = p.chromium.launch(executable_path=exe, headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
+            page = browser.new_page()
+            page.goto(f"http://127.0.0.1:{server.server_address[1]}/")
+            result = run_weekly_crawl(
+                conn, as_of="2026-11-20", regions=[], fetch=live_fetch(page, out), output_dir=out,
+                resume=False, clock=lambda: datetime(2026, 11, 20, 14, 45),
+            )
+            browser.close()
+    finally:
+        server.shutdown()
+    assert served["n"] >= 1
+    assert any(url.endswith("/late") for url in seen_urls)
+    assert result["complete"] is False
+    assert "汇总" in (result["results"][0].get("error") or "")
+    assert conn.execute("select count(*) from weekly_imports").fetchone()[0] == 0
