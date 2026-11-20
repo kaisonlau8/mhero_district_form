@@ -187,7 +187,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         return p
 
     _SUMMARY_PREFIXES = ("/tables/", "/export/tables/", "/export/tables-view/", "/api/tables")
-    _SUMMARY_EXACT = {"/", "/export/home.xlsx", "/api/snapshots", "/api/health", "/reports/daily", "/reports/weekly",
+    _SUMMARY_EXACT = {"/", "/export/home.xlsx", "/api/snapshots", "/api/health", "/reports/daily", "/reports/weekly", "/reports/weekly/demo",
                       "/export/daily-history.xlsx", "/export/daily-report.xlsx", "/account/password", "/logout",
                       "/admin/preview/exit"}
 
@@ -1631,12 +1631,23 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         return {**ctx, "model": model, **extra}
 
     @app.get("/reports/weekly", response_class=HTMLResponse)
-    def weekly_page(request: Request, week: str = "", msg: str = "", conn=Depends(get_conn), user=Depends(login_required)):
+    def weekly_page(request: Request, week: str = "", view: str = "", msg: str = "", conn=Depends(get_conn), user=Depends(login_required)):
         try:
             model = weekly_mod.build_weekly_page(conn, week or None)
         except weekly_mod.WeeklyImportError as exc:
             raise HTTPException(400, str(exc))
-        return _TPL.TemplateResponse(request, "weekly.html", _weekly_ctx(request, conn, user, model, msg=msg))
+        if view not in {"quarter", "year", "indicators"}:
+            view = ""
+        return _TPL.TemplateResponse(request, "weekly.html", _weekly_ctx(request, conn, user, model, msg=msg, view=view, demo=False))
+
+    @app.get("/reports/weekly/demo", response_class=HTMLResponse)
+    def weekly_demo(request: Request, view: str = "quarter", conn=Depends(get_conn), user=Depends(login_required)):
+        if view not in {"quarter", "year", "indicators"}:
+            view = "quarter"
+        model = weekly_mod.demo_board()
+        model["can_import"] = False
+        model["can_edit"] = False
+        return _TPL.TemplateResponse(request, "weekly.html", _weekly_ctx(request, conn, user, model, view=view, demo=True))
 
     @app.get("/reports/weekly/import", response_class=HTMLResponse)
     def weekly_import_page(request: Request, week: str = "", err: str = "", conn=Depends(get_conn), user=Depends(admin_required)):

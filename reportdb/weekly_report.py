@@ -363,18 +363,24 @@ def _compare_panel(active, week: str, scopes: list[str], known: list[str], span:
 
 
 def _attach_pair_bars(rows: list[dict]) -> None:
-    """本期和对比期各自画柱。未导入保持 None，不画成 0。"""
-    for field in ("orders", "output"):
-        pairs = []
-        for row in rows:
-            pairs.append((
-                None if row[field]["current"] in {"未导入", "不可比", ""} else Decimal(row[field]["current"]),
-                None if row[field]["base"] in {"未导入", "不可比", ""} else Decimal(row[field]["base"]),
-            ))
-        peak = max((value for pair in pairs for value in pair if value is not None and value > 0), default=None)
-        for row, (cur, bas) in zip(rows, pairs):
-            row[field]["current_bar"] = _bar_width(cur, peak)
-            row[field]["base_bar"] = _bar_width(bas, peak)
+    """本期和对比期各自画柱。未导入保持 None，不画成 0。各区柱按各区最大值缩放，避免全国柱把各区压扁。"""
+    for field in ("orders", "output", "vehicles"):
+        _paint_bars(rows, field, "current_bar", "base_bar")
+        regional = [row for row in rows if row["region"] != "全国"]
+        _paint_bars(regional, field, "region_current_bar", "region_base_bar")
+
+
+def _paint_bars(rows: list[dict], field: str, cur_key: str, base_key: str) -> None:
+    pairs = []
+    for row in rows:
+        pairs.append((
+            None if row[field]["current"] in {"未导入", "不可比", ""} else Decimal(row[field]["current"]),
+            None if row[field]["base"] in {"未导入", "不可比", ""} else Decimal(row[field]["base"]),
+        ))
+    peak = max((value for pair in pairs for value in pair if value is not None and value > 0), default=None)
+    for row, (cur, bas) in zip(rows, pairs):
+        row[field][cur_key] = _bar_width(cur, peak)
+        row[field][base_key] = _bar_width(bas, peak)
 
 
 def _bar_width(value: Decimal | None, peak: Decimal | None):
@@ -649,3 +655,111 @@ def _s(value: Decimal) -> str:
 
 def _now() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def demo_board() -> dict:
+    """仅供 /reports/weekly/demo 截图。不写入数据库，也不代替真实周报。"""
+    def pair(cur, base, *, money=False):
+        c, b = Decimal(str(cur)), Decimal(str(base))
+        return {"current": _fmt(c, money=money), "base": _fmt(b, money=money), "change": _fmt_change(change(c, b))}
+
+    def panel(series_c, series_b, change_label, current, base, national, regions):
+        rows = []
+
+        def add(name, oc, ob, xc, xb, vc, vb):
+            rows.append({
+                "region": name,
+                "orders": pair(oc, ob),
+                "output": pair(xc, xb, money=True),
+                "vehicles": pair(vc, vb),
+                "labor": "—", "parts": "—", "other": "—",
+                "imported": True, "period_mismatch": False,
+            })
+
+        add("全国", *national)
+        for item in regions:
+            add(*item)
+        _attach_pair_bars(rows)
+        return {
+            "imported": True,
+            "as_of": current[1], "complete": False, "capped": False,
+            "current": {"start": current[0], "end": current[1]},
+            "base": {"start": base[0], "end": base[1]},
+            "series_current": series_c, "series_base": series_b, "change_label": change_label,
+            "label_current": "", "label_base": "",
+            "progress_note": "同进度是系统默认的比法，用来对齐还没过完的季度或年度。",
+            "default_note": "",
+            "reconcile": None, "exports": [], "quality": [], "rows": rows,
+        }
+
+    quarter_regions = [
+        ("华北", 186, 160, "96.40", "88.20", 92, 84),
+        ("华东", 154, 171, "80.10", "91.50", 78, 88),
+        ("华南", 142, 101, "74.80", "55.30", 70, 52),
+        ("华中1", 96, 118, "48.20", "60.40", 46, 58),
+        ("西南", 88, 74, "41.60", "36.10", 40, 35),
+        ("西北", 64, 79, "28.40", "33.70", 31, 39),
+        ("华中2", 42, 51, "18.90", "22.40", 20, 24),
+    ]
+    year_regions = [
+        ("华北", 640, 590, "310.20", "288.40", 310, 290),
+        ("华东", 520, 560, "260.50", "274.10", 250, 268),
+        ("华南", 480, 410, "240.00", "198.60", 230, 190),
+        ("华中1", 300, 340, "150.40", "166.20", 140, 160),
+        ("西南", 260, 230, "120.80", "108.50", 120, 108),
+        ("西北", 180, 210, "86.30", "99.40", 84, 98),
+        ("华中2", 120, 140, "54.10", "62.80", 56, 66),
+    ]
+    quarter = panel("本季", "上季", "季度环比", ("2026-10-01", "2026-11-20"), ("2026-07-01", "2026-08-20"),
+                    (980, 860, "488.40", "452.10", 470, 438), quarter_regions)
+    year = panel("本年", "去年", "年度同比", ("2026-01-01", "2026-11-20"), ("2025-01-01", "2025-11-20"),
+                 (2860, 2620, "1410.50", "1298.20", 1320, 1240), year_regions)
+
+    def metric(key, title, national, regions):
+        cells = [{"region": "全国", "rate": national, "rate_text": fmt_value(national, PCT0), "sub": "", "below": False, "num": 1, "den": 1}]
+        for name, rate in regions:
+            if rate is None:
+                cells.append({"region": name, "rate": None, "rate_text": "暂无数据", "sub": "", "below": False, "num": 0, "den": 0})
+            else:
+                cells.append({
+                    "region": name, "rate": rate, "rate_text": fmt_value(rate, PCT0), "sub": "",
+                    "below": rate < national, "num": 1, "den": 1,
+                })
+        return {"key": key, "title": title, "note": "", "cells": cells}
+
+    areas = ["华北", "华东", "华南", "华中1", "西南", "西北", "华中2"]
+    pack = [
+        ("first", "首保实施率", 0.72, [0.86, 0.74, 0.58, 0.70, 0.81, 0.49, None]),
+        ("second", "二保实施率", 0.66, [0.80, 0.62, 0.55, 0.71, 0.68, 0.44, 0.77]),
+        ("new", "新保投保率", 0.81, [0.90, 0.84, 0.76, 0.69, 0.88, 0.63, 0.85]),
+        ("renewal", "续保投保率", 0.54, [0.61, 0.48, 0.42, 0.57, 0.66, 0.39, 0.58]),
+        ("spare", "常备件备库率", 0.78, [0.88, 0.74, 0.69, 0.81, 0.83, 0.60, 0.79]),
+        ("task", "招揽实施率", 0.70, [0.82, 0.73, 0.64, 0.58, 0.76, 0.67, 0.71]),
+    ]
+    metrics = [metric(k, t, n, list(zip(areas, rates))) for k, t, n, rates in pack]
+    commentary = {name: "" for name in ["全国", *areas]}
+    commentary["华南"] = "到店比上季少"
+    return {
+        "demo": True,
+        "week_start": "2026-11-16", "week_end": "2026-11-22", "is_current_week": False,
+        "weeks": [{"start": "2026-11-16", "label": "2026-11-16 至 2026-11-22"}],
+        "operation": {
+            "title": "经营数据：季度环比 / 年度同比",
+            "imported": True,
+            "source": "demo",
+            "note": "示例",
+            "quarter": quarter, "year": year,
+        },
+        "indicators": {
+            "status": "ready",
+            "source": "demo",
+            "snapshot_date": "2026-11-18",
+            "ingested_at": "2026-11-18 08:30:00",
+            "computed_at": "2026-11-18 08:31:00",
+            "period_note": "示例",
+            "threshold": 0.8,
+            "metrics": metrics,
+        },
+        "commentary": commentary,
+        "history": [],
+    }

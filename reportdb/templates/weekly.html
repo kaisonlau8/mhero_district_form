@@ -1,225 +1,244 @@
 {% extends "base.html" %}
 {% block head %}
 <style>
-  /* weekly-topbar-flat: 本页顶栏不粘住，滚动或截图时不会压住下面的表。 */
+  /* weekly-topbar-flat */
   body:has(#shot-operation) .topbar { position: static; }
-  .weekly-shot { background:#fff; border:1px solid #d9d9d9; border-radius:8px; padding:16px 18px 12px; margin:12px 0 20px; break-inside: avoid; }
-  .weekly-shot h2 { margin:0 0 6px; font-size:20px; }
-  .weekly-meta { color:#595959; font-size:13px; line-height:1.55; margin:0 0 8px; }
-  .bar-chart { margin:8px 0 12px; }
-  .chart-legend { font-size:12px; color:#595959; margin-bottom:6px; }
-  .swatch { display:inline-block; width:10px; height:10px; border-radius:2px; margin:0 4px 0 8px; vertical-align:-1px; }
-  .swatch.orders, .chart-track i.orders { background:#1677ff; }
-  .swatch.base, .chart-track i.base { background:#fa8c16; }
-  .swatch.output, .chart-track i.output { background:#13a8a8; }
-  .compare-card + .compare-card { margin-top: 14px; padding-top: 10px; border-top: 1px solid #f0f0f0; }
-  .chart-row { display:grid; grid-template-columns:4.2em minmax(80px,1fr) 4.6em minmax(80px,1fr) 6.2em; gap:4px 8px; align-items:center; margin:3px 0; font-size:12px; }
-  .chart-name { font-weight:600; }
-  .chart-track { background:#f5f5f5; height:14px; border-radius:2px; overflow:hidden; }
-  .chart-track i { display:block; height:100%; min-width:0; }
-  .chart-track em { display:block; color:#8c8c8c; font-style:normal; font-size:11px; line-height:14px; padding-left:4px; }
-  .chart-val { text-align:right; font-variant-numeric:tabular-nums; }
-  table.wshot { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
-  table.wshot th, table.wshot td { border:1px solid #f0f0f0; padding:4px 6px; font-size:12px; text-align:right; white-space:nowrap; vertical-align:top; }
-  table.wshot th { background:#fafafa; text-align:center; }
-  table.wshot td.lab, table.wshot th.lab { text-align:left; white-space:normal; }
-  td.miss, .miss { color:#8c8c8c; }
-  td.bad { color:#cf1322; font-weight:600; background:#fff1f0; }
-  .sub { display:block; color:#8c8c8c; font-weight:400; font-size:11px; }
-  details.weekly-audit, details.weekly-edit { margin:8px 0 16px; }
-  details.weekly-audit summary, details.weekly-edit summary { cursor:pointer; color:#1677ff; }
-  textarea.note { width:min(420px, 100%); min-height:44px; }
+  body:has(.shot-view) .topbar,
+  body:has(.shot-view) .ant-page-header,
+  body:has(.shot-view) .weekly-edit,
+  body:has(.shot-view) .history-card,
+  body:has(.shot-view) details.weekly-audit { display: none !important; }
+  .demo-banner { margin: 0 0 12px; padding: 8px 12px; background: #fff7e6; color: #ad4e00; font-weight: 700; font-size: 16px; border-radius: 8px; }
+  .board { background: #fff; border: 1px solid #f0f0f0; border-radius: 12px; padding: 20px 22px 16px; margin: 0 0 18px; }
+  .board h2 { margin: 0 0 4px; font-size: 28px; }
+  .src-line { margin: 0 0 12px; color: #595959; font-size: 16px; }
+  .switch { display: flex; gap: 8px; margin: 0 0 12px; }
+  .switch a { padding: 6px 14px; border-radius: 16px; background: #f5f5f5; color: #262626; text-decoration: none; font-size: 15px; }
+  .switch a.on { background: #1677ff; color: #fff; }
+  .when { font-size: 16px; margin: 0 0 14px; }
+  .hero-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 18px; }
+  .hero-card { background: #fafafa; border-radius: 12px; padding: 16px 18px; }
+  .hero-card .k { font-size: 15px; color: #595959; }
+  .hero-card .num { font-size: 40px; font-weight: 700; line-height: 1.15; letter-spacing: -0.5px; }
+  .hero-card .sub { font-size: 16px; margin-top: 6px; }
+  .up { color: #389e0d; font-weight: 700; }
+  .down { color: #cf1322; font-weight: 700; }
+  .flat { color: #595959; font-weight: 700; }
+  .bar-chart { margin: 8px 0 18px; }
+  .bar-chart h3 { margin: 0 0 8px; font-size: 20px; }
+  .legend { font-size: 14px; color: #595959; margin-bottom: 8px; }
+  .sw { display: inline-block; width: 14px; height: 14px; border-radius: 3px; margin-right: 4px; vertical-align: -2px; }
+  .sw.now { background: #1677ff; }
+  .sw.prev { background: #fa8c16; }
+  .grow { display: grid; grid-template-columns: 72px 1fr 88px; gap: 8px 10px; align-items: center; margin: 0 0 10px; }
+  .gname { font-size: 16px; font-weight: 600; }
+  .gline { display: flex; align-items: center; height: 22px; margin: 3px 0; background: #f5f5f5; border-radius: 4px; overflow: hidden; }
+  .gbar { display: flex; align-items: center; height: 22px; min-width: 36px; border-radius: 4px; color: #fff; font-size: 13px; font-weight: 700; padding: 0 8px; }
+  .gbar.now { background: #1677ff; }
+  .gbar.prev { background: #fa8c16; }
+  .gmiss { color: #8c8c8c; font-size: 14px; padding-left: 8px; }
+  .gpct { font-size: 16px; text-align: right; }
+  .metric-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .metric-card { border: 1px solid #f0f0f0; border-radius: 12px; padding: 12px 14px 8px; }
+  .metric-card h3 { margin: 0; font-size: 18px; }
+  .natline { margin: 2px 0 8px; font-size: 14px; color: #d46b08; font-weight: 700; }
+  .mrow { display: grid; grid-template-columns: 64px 1fr; gap: 8px; align-items: center; margin: 6px 0; }
+  .mtrack { position: relative; height: 26px; background: #f5f5f5; border-radius: 4px; }
+  .refline { position: absolute; top: -2px; bottom: -2px; width: 0; border-left: 2px dashed #fa8c16; z-index: 1; }
+  .mbar { position: relative; display: flex; align-items: center; height: 26px; border-radius: 4px; background: #1677ff; color: #fff; font-weight: 700; font-size: 13px; padding-left: 6px; z-index: 0; }
+  .mbar.bad { background: #cf1322; }
+  .mnone { color: #8c8c8c; font-size: 14px; }
+  .reason-line { margin-top: 12px; font-size: 14px; color: #595959; }
+  details.weekly-audit, details.weekly-edit { margin: 10px 0 16px; }
+  details.weekly-audit summary, details.weekly-edit summary { cursor: pointer; color: #1677ff; }
+  table.wshot { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.wshot th, table.wshot td { border: 1px solid #f0f0f0; padding: 4px 6px; }
+  textarea.note { width: min(420px, 100%); min-height: 44px; }
   @media print {
-    .topbar, .ant-header { position: static !important; }
-    .nav-backdrop, .burger, .weekly-edit, .ant-page-header-actions { display: none !important; }
-    details.weekly-audit:not([open]) > :not(summary) { display: none !important; }
-    .weekly-shot { border-color:#ccc; }
+    .topbar, .ant-header, .weekly-edit, .history-card, .switch { display: none !important; }
   }
 </style>
 {% endblock %}
 {% block body %}
+<div class="{{ 'shot-view' if view else '' }}">
+{% if demo %}<p class="demo-banner">示例数据，非实际经营数据</p>{% endif %}
 <header class="ant-page-header">
   <div class="ant-page-header-heading">
     <h1>猛士周报</h1>
-    <div class="ant-page-header-sub">当周经营及同环比；指标为每周导出时的季度累计。未导入的周不会用别的日期填上。</div>
+    <div class="ant-page-header-sub">每周看一次。经营看季和年，指标用系统已经算好的结果。</div>
   </div>
-  <form class="ant-page-header-actions" method="get" action="/reports/weekly">
+  <form class="ant-page-header-actions" method="get" action="{{ '/reports/weekly/demo' if demo else '/reports/weekly' }}">
+    {% if not demo %}
     <label>周次
       <select class="ant-select" name="week" aria-label="周次" onchange="this.form.submit()">
         {% for w in model.weeks %}<option value="{{ w.start }}" {% if w.start == model.week_start %}selected{% endif %}>{{ w.label }}</option>{% endfor %}
       </select>
     </label>
-    <noscript><button class="ant-btn" type="submit">切换</button></noscript>
-    {% if model.can_import %}<a class="ant-btn" href="/reports/weekly/import?week={{ model.week_start }}">导入 Excel</a>{% endif %}
+    {% endif %}
+    <a class="ant-btn" href="{{ '/reports/weekly/demo' if demo else '/reports/weekly' }}?week={{ model.week_start }}&view=quarter">截图：季度</a>
+    <a class="ant-btn" href="{{ '/reports/weekly/demo' if demo else '/reports/weekly' }}?week={{ model.week_start }}&view=year">截图：年度</a>
+    <a class="ant-btn" href="{{ '/reports/weekly/demo' if demo else '/reports/weekly' }}?week={{ model.week_start }}&view=indicators">截图：指标</a>
+    {% if model.can_import and not demo %}<a class="ant-btn" href="/reports/weekly/import?week={{ model.week_start }}">导入 Excel</a>{% endif %}
   </form>
 </header>
 {% if msg %}<div class="ant-alert ant-alert-success"><div class="ant-alert-content">{{ msg }}</div></div>{% endif %}
 
-<section class="weekly-shot" id="shot-operation">
-  <h2>经营数据：季度环比 / 年度同比</h2>
-  <p class="weekly-meta">更新周 {{ model.week_start }} 至 {{ model.week_end }}。比较的是季度累计和年度累计，不是这一周的工单数。{{ model.operation.note }}</p>
-  {% for key in ('quarter', 'year') %}
-  {% set panel = model.operation[key] %}
-  <article class="compare-card" id="shot-{{ key }}">
-    <h3>{% if key == 'quarter' %}季度累计及季度环比{% else %}年度累计及年度同比{% endif %}</h3>
-    <p class="weekly-meta">
-      {% if panel.current %}
-      {{ panel.series_current }}{% if panel.label_current %} {{ panel.label_current }}{% endif %} {{ panel.current.start }} 至 {{ panel.current.end }}。
-      {{ panel.series_base }}{% if panel.label_base %} {{ panel.label_base }}{% endif %} {{ panel.base.start }} 至 {{ panel.base.end }}。
-      {{ panel.progress_note }}{{ panel.default_note }}
-      {% else %}
-      这一周还没有截止日，{{ panel.change_label }}未导入。
-      {% endif %}
-      {% if panel.exports %}导出时间：{% for item in panel.exports %}{{ item.scope }} {{ item.exported_at }}{% if not loop.last %}；{% endif %}{% endfor %}。{% endif %}
-    </p>
-    {% if panel.reconcile %}<div class="ant-alert ant-alert-warning"><div class="ant-alert-content">{{ panel.reconcile.warning }}</div></div>{% endif %}
-    <div class="bar-chart" role="img" aria-label="{{ panel.change_label }}：收款工单数与总产值。未导入不画柱。">
-      <div class="chart-legend"><span class="swatch orders"></span>{{ panel.series_current }}工单 <span class="swatch base"></span>{{ panel.series_base }}工单</div>
-      {% for row in panel.rows %}
-      <div class="chart-row">
-        <span class="chart-name">{{ row.region }}</span>
-        <span class="chart-track">{% if row.orders.current_bar is not none %}<i class="orders" style="width: {{ row.orders.current_bar }}%"></i>{% else %}<em>未导入</em>{% endif %}</span>
-        <span class="chart-val">{{ row.orders.current }}</span>
-        <span class="chart-track">{% if row.orders.base_bar is not none %}<i class="base" style="width: {{ row.orders.base_bar }}%"></i>{% else %}<em>未导入</em>{% endif %}</span>
-        <span class="chart-val">{{ row.orders.base }}</span>
+{% macro bars(panel, field, title) %}
+<div class="bar-chart" data-chart="{{ field }}">
+  <h3>{{ title }}</h3>
+  <div class="legend"><span class="sw now"></span>本期 <span class="sw prev"></span>对比期</div>
+  {% for row in panel.rows if row.region != '全国' %}
+  <div class="grow">
+    <div class="gname">{{ row.region }}</div>
+    <div>
+      <div class="gline">
+        {% if row[field].region_current_bar is not none %}
+        <span class="gbar now" style="width: {{ row[field].region_current_bar }}%" data-value="{{ row[field].current }}">{{ row[field].current }}</span>
+        {% else %}<span class="gmiss">未导入</span>{% endif %}
       </div>
-      {% endfor %}
-      <div class="chart-legend"><span class="swatch output"></span>{{ panel.series_current }}产值 <span class="swatch base"></span>{{ panel.series_base }}产值</div>
-      {% for row in panel.rows %}
-      <div class="chart-row">
-        <span class="chart-name">{{ row.region }}</span>
-        <span class="chart-track">{% if row.output.current_bar is not none %}<i class="output" style="width: {{ row.output.current_bar }}%"></i>{% else %}<em>未导入</em>{% endif %}</span>
-        <span class="chart-val">{{ row.output.current }}</span>
-        <span class="chart-track">{% if row.output.base_bar is not none %}<i class="base" style="width: {{ row.output.base_bar }}%"></i>{% else %}<em>未导入</em>{% endif %}</span>
-        <span class="chart-val">{{ row.output.base }}</span>
+      <div class="gline">
+        {% if row[field].region_base_bar is not none %}
+        <span class="gbar prev" style="width: {{ row[field].region_base_bar }}%" data-value="{{ row[field].base }}">{{ row[field].base }}</span>
+        {% else %}<span class="gmiss">未导入</span>{% endif %}
       </div>
-      {% endfor %}
     </div>
-    <div style="overflow:auto">
-      <table class="wshot" data-ds-primary>
-        <thead>
-          <tr>
-            <th class="lab">区域</th>
-            <th>{{ panel.series_current }}工单</th><th>{{ panel.series_base }}工单</th><th>{{ panel.change_label }}</th>
-            <th>{{ panel.series_current }}产值</th><th>{{ panel.series_base }}产值</th><th>{{ panel.change_label }}</th>
-            <th>{{ panel.series_current }}车辆</th><th>{{ panel.series_base }}车辆</th><th>{{ panel.change_label }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in panel.rows %}
-          <tr>
-            <td class="lab">{{ row.region }}</td>
-            {% for field in ('orders', 'output', 'vehicles') %}
-            <td class="{{ 'miss' if row[field].current == '未导入' else '' }}">{{ row[field].current }}</td>
-            <td class="{{ 'miss' if row[field].base == '未导入' else '' }}">{{ row[field].base }}</td>
-            <td class="{{ 'miss' if row[field].change in ('未导入', '不可比') else '' }}">{{ row[field].change }}</td>
-            {% endfor %}
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    <details class="weekly-audit">
-      <summary>来源核对与产值构成</summary>
-      {% for line in panel.quality %}<p class="weekly-meta">{{ line }}</p>{% endfor %}
-      <table class="wshot" data-ds-primary>
-        <thead><tr><th class="lab">区域</th><th>工时</th><th>备件</th><th>其他</th></tr></thead>
-        <tbody>
-          {% for row in panel.rows %}<tr><td class="lab">{{ row.region }}</td><td>{{ row.labor }}</td><td>{{ row.parts }}</td><td>{{ row.other }}</td></tr>{% endfor %}
-        </tbody>
-      </table>
-    </details>
-  </article>
-  {% endfor %}
-</section>
-
-<section class="weekly-shot" id="shot-kpi">
-  <h2>自算指标（总表）</h2>
-  <p class="weekly-meta">{{ model.indicators.period_note }}</p>
-  {% if model.indicators.status == 'ready' %}
-  <p class="weekly-meta">快照日期 {{ model.indicators.snapshot_date }}，入库 {{ model.indicators.ingested_at or '—' }}，计算时间 {{ model.indicators.computed_at }}。常备件达标线沿用现有 {{ model.indicators.threshold }}。低于全国加权达成率标红。分母为 0 显示不可比。</p>
-  <div style="overflow:auto">
-    <table class="wshot" data-ds-primary>
-      <thead>
-        <tr>
-          <th class="lab">指标</th>
-          {% for cell in model.indicators.metrics[0].cells %}<th>{{ cell.region }}</th>{% endfor %}
-        </tr>
-      </thead>
-      <tbody>
-        {% for metric in model.indicators.metrics %}
-        <tr>
-          <td class="lab">{{ metric.title }}<span class="sub">{{ metric.note }}</span></td>
-          {% for cell in metric.cells %}
-          <td class="{{ 'bad' if cell.below else '' }}">{{ cell.rate_text }}<span class="sub">{{ cell.sub }}</span></td>
-          {% endfor %}
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div class="gpct {{ 'up' if row[field].change.startswith('+') else ('down' if row[field].change.startswith('-') else 'flat') }}">{{ row[field].change }}</div>
   </div>
-  {% else %}
-  <p>待计算</p>
+  {% endfor %}
+</div>
+{% endmacro %}
+
+{% macro board(panel) %}
+{% set nation = panel.rows | selectattr('region', 'equalto', '全国') | first %}
+<p class="when">本期 {{ panel.current.start }} 至 {{ panel.current.end }}　对比期 {{ panel.base.start }} 至 {{ panel.base.end }}</p>
+{% if nation %}
+<div class="hero-cards">
+  {% for field, title, unit in (('orders', '收款工单数', '单'), ('output', '总产值', '金额单位未注明'), ('vehicles', '车辆数', '辆')) %}
+  <div class="hero-card" data-card="{{ field }}">
+    <div class="k">全国 {{ title }}</div>
+    <div class="num">{{ nation[field].current }}</div>
+    <div class="sub">对比期 {{ nation[field].base }}　<span class="{{ 'up' if nation[field].change.startswith('+') else ('down' if nation[field].change.startswith('-') else 'flat') }}">{{ nation[field].change }}</span></div>
+    <div class="k">{{ unit }}</div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<p class="src-line">全国还没有数。</p>
+{% endif %}
+{% if panel.reconcile %}<div class="ant-alert ant-alert-warning"><div class="ant-alert-content">{{ panel.reconcile.warning }}</div></div>{% endif %}
+{{ bars(panel, 'orders', '各区收款工单数') | safe }}
+{{ bars(panel, 'output', '各区总产值') | safe }}
+{{ bars(panel, 'vehicles', '各区车辆数') | safe }}
+{% endmacro %}
+
+{% if not view or view in ('quarter', 'year') %}
+<section class="board" id="shot-operation">
+  <h2>经营数据</h2>
+  <div class="switch">
+    <a class="{{ 'on' if view == 'quarter' else '' }}" href="?week={{ model.week_start }}&view=quarter">季度环比</a>
+    <a class="{{ 'on' if view == 'year' else '' }}" href="?week={{ model.week_start }}&view=year">年度同比</a>
+  </div>
+  {% if not view or view == 'quarter' %}
+  <article id="shot-quarter">
+    <h3 style="font-size:22px;margin:8px 0">季度环比</h3>
+    <p class="src-line">来自DMS收款报表</p>
+    {% if model.operation.quarter.current %}{{ board(model.operation.quarter) | safe }}{% else %}<p class="src-line">未导入</p>{% endif %}
+  </article>
   {% endif %}
-  <h3>督导原因分析</h3>
-  <table class="wshot" data-ds-primary>
-    <thead><tr><th class="lab">区域</th><th class="lab">原因</th></tr></thead>
-    <tbody>
-      {% for region, body in model.commentary.items() %}
-      <tr>
-        <td class="lab">{{ region }}</td>
-        <td class="lab">{% if body %}{{ body }}{% else %}<span class="miss">未填写</span>{% endif %}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  {% if not view or view == 'year' %}
+  <article id="shot-year">
+    <h3 style="font-size:22px;margin:8px 0">年度同比</h3>
+    <p class="src-line">来自DMS收款报表</p>
+    {% if model.operation.year.current %}{{ board(model.operation.year) | safe }}{% else %}<p class="src-line">未导入</p>{% endif %}
+  </article>
+  {% endif %}
   <details class="weekly-audit">
-    <summary>指标来源</summary>
-    <p class="weekly-meta">结果表 report_results，table_key=summary，接口 calc.compute。不读取 DMS 服务管理主表，也不为周报另导出指标。</p>
+    <summary>比对方式和核对</summary>
+    <p>{{ model.operation.note }}</p>
+    {% if model.operation.quarter.progress_note %}<p>{{ model.operation.quarter.progress_note }} {{ model.operation.quarter.default_note }}</p>{% endif %}
+    {% if model.operation.quarter.reconcile %}<p>{{ model.operation.quarter.reconcile.warning }}</p>{% endif %}
   </details>
 </section>
+{% endif %}
 
+{% if not view or view == 'indicators' %}
+<section class="board" id="shot-kpi">
+  <h2>服务指标</h2>
+  <p class="src-line">使用系统计算结果{% if model.indicators.status == 'ready' %}　数据日期 {{ model.indicators.snapshot_date }}{% endif %}</p>
+  {% if model.indicators.status == 'ready' %}
+  <div class="metric-grid">
+    {% for metric in model.indicators.metrics %}
+    {% set nation = metric.cells[0] %}
+    <article class="metric-card">
+      <h3>{{ metric.title }}</h3>
+      <p class="natline">全国 {{ nation.rate_text }}</p>
+      {% for cell in metric.cells if cell.region != '全国' %}
+      <div class="mrow">
+        <span class="gname">{{ cell.region }}</span>
+        <div class="mtrack">
+          {% if nation.rate is not none %}<i class="refline" style="left: {{ (nation.rate * 100)|round(1) }}%"></i>{% endif %}
+          {% if cell.rate is not none %}
+          <b class="mbar {{ 'bad' if cell.below else '' }}" style="width: {{ (cell.rate * 100)|round(1) }}%" data-rate="{{ cell.rate_text }}">{{ cell.rate_text }}</b>
+          {% else %}<span class="mnone">暂无数据</span>{% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="src-line">待计算</p>
+  {% endif %}
+  {% if model.commentary.values() | select | list %}
+  <p class="reason-line">{% for region, body in model.commentary.items() if body %}{{ region }}：{{ body }}　{% endfor %}</p>
+  {% else %}<p class="reason-line">原因：未填写</p>{% endif %}
+  <details class="weekly-audit">
+    <summary>计算说明</summary>
+    <p>{{ model.indicators.period_note }}</p>
+    {% if model.indicators.computed_at %}<p>计算时间 {{ model.indicators.computed_at }}</p>{% endif %}
+  </details>
+</section>
+{% endif %}
+
+{% if not view %}
 {% if model.can_edit %}
 <details class="weekly-edit" id="weekly-edit">
-  <summary>编辑督导原因</summary>
-  <p class="weekly-meta">写在截图区域外面。空着保存会清空，系统不代写原因。</p>
+  <summary>填写原因</summary>
   {% for region, body in model.commentary.items() %}
   <form method="post" action="/reports/weekly/commentary">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <input type="hidden" name="week" value="{{ model.week_start }}">
     <input type="hidden" name="region" value="{{ region }}">
-    <label>{{ region }} <textarea class="note" name="body" placeholder="待填写" aria-label="{{ region }}原因分析">{{ body }}</textarea></label>
+    <label>{{ region }} <textarea class="note" name="body" aria-label="{{ region }}原因">{{ body }}</textarea></label>
     <button class="ant-btn" type="submit">保存</button>
   </form>
   {% endfor %}
 </details>
-{% else %}
-<div id="weekly-edit" hidden></div>
-{% endif %}
+{% else %}<div id="weekly-edit" hidden></div>{% endif %}
 
-<section class="ant-card">
-  <div class="ant-card-head"><h2 class="ant-card-head-title">历史快照</h2></div>
+<section class="ant-card history-card">
+  <div class="ant-card-head"><h2 class="ant-card-head-title">历史</h2></div>
   <div class="ant-card-body">
-    <p class="weekly-meta">同一周、同一范围再次导入相同文件不会新增。内容不同时默认拒绝覆盖；只有勾选修订才会保留旧行并另存。</p>
-    <table class="wshot" data-ds-primary>
-      <thead><tr><th>周次</th><th>种类</th><th>范围</th><th>期间</th><th>导出时间</th><th>修订</th><th>状态</th><th class="lab">文件</th></tr></thead>
+    <table class="wshot">
+      <thead><tr><th>周次</th><th>种类</th><th>范围</th><th>期间</th><th>时间</th><th>状态</th><th>文件</th></tr></thead>
       <tbody>
         {% for h in model.history %}
         <tr>
           <td><a href="/reports/weekly?week={{ h.week_start }}">{{ h.week_start }}</a></td>
-          <td>{{ '经营' if h.kind == 'operation' else '季度指标' }}</td>
+          <td>{{ '经营' if h.kind == 'operation' else ('指标' if h.kind == 'indicators' else h.kind) }}</td>
           <td>{{ h.scope }}</td>
           <td>{{ h.period_start or '' }} 至 {{ h.period_end or '' }}</td>
           <td>{{ h.exported_at }}</td>
-          <td>{{ h.revision }}</td>
-          <td>{{ '使用中' if h.status == 'active' else '已保留的旧修订' }}</td>
-          <td class="lab">{{ h.source_filename or '' }}{% if model.can_import %} · <a href="/reports/weekly/imports/{{ h.id }}/source.xlsx">原件</a>{% endif %}</td>
+          <td>{{ '在用' if h.status == 'active' else '旧版' }}</td>
+          <td>{{ h.source_filename or '' }}{% if model.can_import and h.kind == 'operation' %} · <a href="/reports/weekly/imports/{{ h.id }}/source.xlsx">原件</a>{% endif %}</td>
         </tr>
-        {% else %}
-        <tr><td colspan="8" class="miss">还没有周快照。</td></tr>
-        {% endfor %}
+        {% else %}<tr><td colspan="7" class="gmiss">还没有记录。</td></tr>{% endfor %}
       </tbody>
     </table>
   </div>
 </section>
+{% else %}
+<div id="weekly-edit" hidden></div>
+{% endif %}
+</div>
 {% endblock %}

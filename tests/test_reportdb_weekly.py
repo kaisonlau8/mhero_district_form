@@ -484,7 +484,8 @@ def test_weekly_page_nav_and_roles(conn, tmp_path):
     )
     assert posted.status_code == 303
     shown = admin.get("/reports/weekly", params={"week": "2026-11-16"})
-    assert "经营数据：季度环比 / 年度同比" in shown.text
+    assert "经营数据" in shown.text and "季度环比" in shown.text and "年度同比" in shown.text
+    assert "来自DMS收款报表" in shown.text
     assert "2026-10-01" in shown.text and "2026-08-20" in shown.text
     assert "实现默认" in shown.text
     assert "上周同进度" not in shown.text and "364" not in shown.text
@@ -512,6 +513,24 @@ def test_weekly_page_nav_and_roles(conn, tmp_path):
     assert saved.status_code == 303
     again = sup.get("/reports/weekly", params={"week": "2026-11-16"}).text
     assert "出口车挂店导致" not in again
+    assert "示例数据，非实际经营数据" not in again
+    demo_q = admin.get("/reports/weekly/demo", params={"view": "quarter"})
+    assert demo_q.status_code == 200
+    qchunk = demo_q.text.split('id="shot-quarter"', 1)[1].split("<details", 1)[0]
+    assert "示例数据，非实际经营数据" in demo_q.text
+    assert "来自DMS收款报表" in qchunk
+    assert 'data-chart="vehicles"' in qchunk
+    assert 'data-value="142"' in qchunk
+    assert "calc.compute" not in qchunk
+    demo_y = admin.get("/reports/weekly/demo", params={"view": "year"})
+    assert "2025-01-01" in demo_y.text and "2025-11-20" in demo_y.text
+    demo_i = admin.get("/reports/weekly/demo", params={"view": "indicators"})
+    ichunk = demo_i.text.split('id="shot-kpi"', 1)[1].split("<details", 1)[0]
+    assert "使用系统计算结果" in ichunk
+    assert "暂无数据" in ichunk
+    assert "mbar bad" in ichunk
+    assert "calc.compute" not in ichunk
+    assert "980" not in again
 
 
 def test_cli_import(conn, tmp_path, monkeypatch):
