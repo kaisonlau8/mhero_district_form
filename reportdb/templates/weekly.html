@@ -2,8 +2,10 @@
 {% block head %}
 <style>
   /* weekly-topbar-flat */
-  body:has(#shot-operation) .topbar { position: static; }
-  body:has(.shot-view) .topbar,
+  @media (min-width: 861px) {
+    body:has(#shot-operation) .topbar { position: static; }
+    body:has(.shot-view) .topbar { display: none !important; }
+  }
   body:has(.shot-view) .ant-page-header,
   body:has(.shot-view) .weekly-edit,
   body:has(.shot-view) .history-card,
@@ -12,7 +14,7 @@
   .board { background: #fff; border: 1px solid #f0f0f0; border-radius: 12px; padding: 20px 22px 16px; margin: 0 0 18px; }
   .board h2 { margin: 0 0 4px; font-size: 28px; }
   .src-line { margin: 0 0 12px; color: #595959; font-size: 16px; }
-  .switch { display: flex; gap: 8px; margin: 0 0 12px; }
+  .switch { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
   .switch a { padding: 6px 14px; border-radius: 16px; background: #f5f5f5; color: #262626; text-decoration: none; font-size: 15px; }
   .switch a.on { background: #1677ff; color: #fff; }
   .when { font-size: 16px; margin: 0 0 14px; }
@@ -42,32 +44,56 @@
   .vbar.prev { background: #fa8c16; }
   .vval { position: absolute; left: -6px; right: -6px; text-align: center; font-size: 12px; line-height: 14px; font-weight: 700; color: #262626; z-index: 2; white-space: nowrap; }
   .vname { margin-top: 8px; font-size: 16px; font-weight: 700; }
-  .gmiss { position: absolute; left: 0; right: 0; bottom: 4px; color: #8c8c8c; font-size: 13px; }
+  .gmiss { color: #595959; font-size: 13px; }
+  .vslot .gmiss { position: absolute; left: 0; right: 0; bottom: 4px; }
   .vpct { margin-top: 2px; font-size: 15px; }
-  .metric-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
-  .metric-card { border: 1px solid #f0f0f0; border-radius: 12px; padding: 12px 14px 10px; }
-  .metric-card h3 { margin: 0; font-size: 18px; }
-  .natline { margin: 2px 0 8px; font-size: 15px; color: #d46b08; font-weight: 700; }
-  .mplot { padding-top: 16px; }
-  .marea { position: relative; display: flex; align-items: flex-end; height: 168px; }
-  .nhline { position: absolute; left: 0; right: 0; border-top: 2px dashed #fa8c16; z-index: 2; }
-  .mslot { position: relative; flex: 1; height: 168px; }
-  .mbar { position: absolute; left: 18%; right: 18%; bottom: 0; border-radius: 4px 4px 0 0; background: #1677ff; min-height: 2px; z-index: 1; }
-  .mbar.bad { background: #cf1322; }
-  .mv { position: absolute; left: 0; right: 0; text-align: center; font-size: 13px; font-weight: 700; color: #262626; z-index: 3; }
-  .mv.down { color: #cf1322; }
-  .mnone { position: absolute; left: 0; right: 0; bottom: 6px; text-align: center; color: #8c8c8c; font-size: 13px; }
-  .mnames { display: flex; margin-top: 8px; }
-  .mnames span { flex: 1; text-align: center; font-size: 15px; font-weight: 700; }
+  table.kpi-sheet { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 16px; }
+  table.kpi-sheet th, table.kpi-sheet td { border: 1px solid #f0f0f0; padding: 10px 6px; text-align: center; }
+  table.kpi-sheet th { background: #fafafa; font-size: 15px; font-weight: 700; }
+  table.kpi-sheet td.lab, table.kpi-sheet th.lab { text-align: left; }
+  table.kpi-sheet tr.is-nation td { background: #e6f4ff; font-weight: 700; }
+  table.kpi-sheet td.bad { color: #cf1322; font-weight: 700; background: #fff1f0; }
+  table.kpi-sheet td.reason { text-align: left; color: #595959; font-size: 14px; font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .reason-line { margin-top: 12px; font-size: 14px; color: #595959; }
   details.weekly-audit, details.weekly-edit { margin: 10px 0 16px; }
   details.weekly-audit summary, details.weekly-edit summary { cursor: pointer; color: #1677ff; }
   table.wshot { width: 100%; border-collapse: collapse; font-size: 13px; }
   table.wshot th, table.wshot td { border: 1px solid #f0f0f0; padding: 4px 6px; }
   textarea.note { width: min(420px, 100%); min-height: 44px; }
+  @media (max-width: 860px) {
+    .board { padding: 12px; }
+    .board h2 { font-size: 22px; }
+    .hero-cards { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+    .hero-card { padding: 12px; }
+    .hero-card .num { font-size: 30px; overflow-wrap: anywhere; }
+    .switch a { display: inline-flex; align-items: center; min-height: 44px; }
+    .when span { display: block; }
+    .varea { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 8px; row-gap: 14px; align-items: stretch; }
+    .vgroup { min-width: 0; padding: 6px 4px; border: 1px solid var(--ant-color-split); border-radius: 8px; }
+    .vpair { height: 118px; gap: 4px; }
+    .vslot { flex: 1 1 0; min-width: 0; }
+    .vval { left: 0; right: 0; font-size: 11px; overflow-wrap: anywhere; white-space: normal; }
+    .vname { font-size: 14px; }
+    .metric-scroll { overflow-x: auto; }
+    .metric-scroll > table.kpi-sheet { min-width: 760px; }
+    details.weekly-edit form { display: grid; gap: 6px; margin: 8px 0; }
+    details.weekly-edit textarea { display: block; }
+  }
   @media print {
     .topbar, .ant-header, .weekly-edit, .history-card, .switch { display: none !important; }
+    .metric-scroll { overflow: visible; }
+    .metric-scroll > table.kpi-sheet { min-width: 0; }
+    .month-scroll { overflow: visible; }
+    .month-scroll > table.month-sheet { min-width: 0; }
   }
+  .month-scroll { overflow-x: auto; max-width: 100%; }
+  table.month-sheet { border-collapse: separate; border-spacing: 0; min-width: 720px; }
+  table.month-sheet th, table.month-sheet td { border: 1px solid #f0f0f0; padding: 8px 10px; text-align: center; white-space: nowrap; }
+  table.month-sheet th { background: #fafafa; }
+  table.month-sheet th.lab, table.month-sheet td.lab { position: sticky; left: 0; z-index: 3; text-align: left; background: #fff; min-width: 72px; box-shadow: 1px 0 0 #f0f0f0; }
+  table.month-sheet thead th.lab { background: #fafafa; }
+  table.month-sheet tr.is-nation td { background: #e6f4ff; font-weight: 700; }
+  table.month-sheet tr.is-nation td.lab { background: #e6f4ff; }
 </style>
 {% endblock %}
 {% block body %}
@@ -76,7 +102,7 @@
 <header class="ant-page-header">
   <div class="ant-page-header-heading">
     <h1>猛士周报</h1>
-    <div class="ant-page-header-sub">每周看一次。经营看季和年，指标用系统已经算好的结果。</div>
+    <div class="ant-page-header-sub">每周看一次。经营数据有当年月经营数据和季度环比。服务指标单独看。</div>
   </div>
   <form class="ant-page-header-actions" method="get" action="{{ '/reports/weekly/demo' if demo else '/reports/weekly' }}">
     {% if not demo %}
@@ -86,9 +112,9 @@
       </select>
     </label>
     {% endif %}
-    <a class="ant-btn" href="{{ '/reports/weekly/demo' if demo else '/reports/weekly' }}?week={{ model.week_start }}&view=quarter">截图：季度</a>
-    <a class="ant-btn" href="{{ '/reports/weekly/demo' if demo else '/reports/weekly' }}?week={{ model.week_start }}&view=year">截图：年度</a>
-    <a class="ant-btn" href="{{ '/reports/weekly/demo' if demo else '/reports/weekly' }}?week={{ model.week_start }}&view=indicators">截图：指标</a>
+    <a class="ant-btn" href="{{ '/reports/weekly/demo' if demo else '/reports/weekly' }}?week={{ model.week_start }}&view=months">截图：当年月经营数据</a>
+    <a class="ant-btn" href="{{ '/reports/weekly/demo' if demo else '/reports/weekly' }}?week={{ model.week_start }}&view=quarter">截图：季度环比</a>
+    <a class="ant-btn" href="{{ '/reports/weekly/demo' if demo else '/reports/weekly' }}?week={{ model.week_start }}&view=indicators">截图：服务指标</a>
     {% if model.can_import and not demo %}<a class="ant-btn" href="/reports/weekly/import?week={{ model.week_start }}">导入 Excel</a>{% endif %}
   </form>
 </header>
@@ -129,7 +155,7 @@
 
 {% macro board(panel) %}
 {% set nation = panel.rows | selectattr('region', 'equalto', '全国') | first %}
-<p class="when">{{ panel.series_current }} {{ panel.current.start }} 至 {{ panel.current.end }}　{{ panel.series_base }} {{ panel.base.start }} 至 {{ panel.base.end }}</p>
+<p class="when"><span>{{ panel.series_current }} {{ panel.current.start }} 至 {{ panel.current.end }}</span>　<span>{{ panel.series_base }} {{ panel.base.start }} 至 {{ panel.base.end }}</span></p>
 {% if nation %}
 <div class="hero-cards">
   {% for field, title, unit in (('orders', '收款工单数', '单'), ('output', '总产值', '千元'), ('vehicles', '车辆数', '辆')) %}
@@ -142,41 +168,66 @@
   {% endfor %}
 </div>
 {% else %}
-<p class="src-line">全国还没有数。</p>
+<p class="src-line">未导入</p>
 {% endif %}
-{% if panel.reconcile %}<div class="ant-alert ant-alert-warning"><div class="ant-alert-content">{{ panel.reconcile.warning }}</div></div>{% endif %}
 {{ bars(panel, 'orders', '各区收款工单数（单）', '单') | safe }}
 {{ bars(panel, 'output', '各区总产值（千元）', '千元') | safe }}
 {{ bars(panel, 'vehicles', '各区来厂车辆数（去重）', '辆') | safe }}
 {% endmacro %}
 
-{% if not view or view in ('quarter', 'year') %}
+{% if not view or view == 'months' or view == 'quarter' %}
 <section class="board" id="shot-operation">
   <h2>经营数据</h2>
-  <div class="switch">
+  <div class="switch" data-operation-tabs>
+    <a class="{{ 'on' if view != 'quarter' else '' }}" href="?week={{ model.week_start }}&view=months">当年月经营数据</a>
     <a class="{{ 'on' if view == 'quarter' else '' }}" href="?week={{ model.week_start }}&view=quarter">季度环比</a>
-    <a class="{{ 'on' if view == 'year' else '' }}" href="?week={{ model.week_start }}&view=year">年度同比</a>
   </div>
-  {% if not view or view == 'quarter' %}
+  {% if view == 'quarter' %}
   <article id="shot-quarter">
     <h3 style="font-size:22px;margin:8px 0">季度环比</h3>
     <p class="src-line">来自DMS收款报表</p>
     {% if model.operation.quarter.current %}{{ board(model.operation.quarter) | safe }}{% else %}<p class="src-line">未导入</p>{% endif %}
   </article>
-  {% endif %}
-  {% if not view or view == 'year' %}
-  <article id="shot-year">
-    <h3 style="font-size:22px;margin:8px 0">年度同比</h3>
-    <p class="src-line">来自DMS收款报表</p>
-    {% if model.operation.year.current %}{{ board(model.operation.year) | safe }}{% else %}<p class="src-line">未导入</p>{% endif %}
-  </article>
-  {% endif %}
   <details class="weekly-audit">
     <summary>比对方式和核对</summary>
     <p>{{ model.operation.note }}</p>
     {% if model.operation.quarter.progress_note %}<p>{{ model.operation.quarter.progress_note }} {{ model.operation.quarter.default_note }}</p>{% endif %}
     {% if model.operation.quarter.reconcile %}<p>{{ model.operation.quarter.reconcile.warning }}</p>{% endif %}
   </details>
+  {% else %}
+  <article id="shot-months">
+  <p class="src-line">来自DMS收款报表。截止 {{ model.operation.months.as_of }}。</p>
+  <div class="month-scroll" role="region" aria-label="当年月经营数据" tabindex="0">
+    <table class="month-sheet" data-cards="off">
+      <thead>
+        <tr>
+          <th class="lab" rowspan="2">区域</th>
+          {% for column in model.operation.months.columns %}<th colspan="3">{{ column.label }}</th>{% endfor %}
+        </tr>
+        <tr>
+          {% for column in model.operation.months.columns %}
+          <th data-month="{{ column.key }}">产值（千元）</th>
+          <th data-month="{{ column.key }}">收款工单数</th>
+          <th data-month="{{ column.key }}">来厂车辆数（去重）</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in model.operation.months.rows %}
+        <tr class="{{ 'is-nation' if row.region == '全国' }}" data-region="{{ row.region }}">
+          <td class="lab">{{ row.region }}</td>
+          {% for column in model.operation.months.columns %}
+          <td data-month="{{ column.key }}" data-metric="output" data-state="{{ 'imported' if row.cells[column.key].imported else 'missing' }}">{{ row.cells[column.key].output }}</td>
+          <td data-month="{{ column.key }}" data-metric="orders" data-state="{{ 'imported' if row.cells[column.key].imported else 'missing' }}">{{ row.cells[column.key].orders }}</td>
+          <td data-month="{{ column.key }}" data-metric="vehicles" data-state="{{ 'imported' if row.cells[column.key].imported else 'missing' }}">{{ row.cells[column.key].vehicles }}</td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  </article>
+  {% endif %}
 </section>
 {% endif %}
 
@@ -185,38 +236,34 @@
   <h2>服务指标</h2>
   <p class="src-line">使用系统计算结果{% if model.indicators.status == 'ready' %}　数据日期 {{ model.indicators.snapshot_date }}{% endif %}</p>
   {% if model.indicators.status == 'ready' %}
-  <div class="metric-grid">
-    {% for metric in model.indicators.metrics %}
-    {% set nation = metric.cells[0] %}
-    <article class="metric-card">
-      <h3>{{ metric.title }}</h3>
-      <p class="natline">全国 {{ nation.rate_text }}　橙线是全国</p>
-      <div class="mplot">
-        <div class="marea">
-          {% if nation.rate is not none %}<i class="nhline" style="bottom: {{ (nation.rate * 78)|round(1) }}%" title="全国 {{ nation.rate_text }}"></i>{% endif %}
-          {% for cell in metric.cells if cell.region != '全国' %}
-          <div class="mslot">
-            {% if cell.rate is not none %}
-            {% set h = (cell.rate * 78)|round(1) %}
-            <b class="mv {{ 'down' if cell.below else '' }}" style="bottom: calc({{ h }}% + 3px)">{{ cell.rate_text }}</b>
-            <i class="mbar {{ 'bad' if cell.below else '' }}" style="height: {{ h }}%" data-rate="{{ cell.rate_text }}" title="{{ cell.region }} {{ cell.rate_text }}"></i>
-            {% else %}<span class="mnone">暂无数据</span>{% endif %}
-          </div>
-          {% endfor %}
-        </div>
-        <div class="mnames">
-          {% for cell in metric.cells if cell.region != '全国' %}<span>{{ cell.region }}</span>{% endfor %}
-        </div>
-      </div>
-    </article>
-    {% endfor %}
+  <div class="metric-scroll" role="region" aria-label="服务指标表" tabindex="0">
+  <table class="kpi-sheet" data-cards="off">
+    <thead>
+      <tr>
+        <th class="lab">区域</th>
+        {% for metric in model.indicators.metrics %}<th>{{ metric.title }}</th>{% endfor %}
+        <th>原因</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for cell in model.indicators.metrics[0].cells %}
+      <tr class="{{ 'is-nation' if cell.region == '全国' }}" data-region="{{ cell.region }}">
+        <td class="lab">{{ cell.region }}</td>
+        {% for metric in model.indicators.metrics %}
+        {% set picked = namespace(item=None) %}
+        {% for candidate in metric.cells if candidate.region == cell.region %}{% set picked.item = candidate %}{% endfor %}
+        <td class="{{ 'bad' if picked.item and picked.item.below else '' }}" data-rate="{{ picked.item.rate_text if picked.item else '' }}">{% if not picked.item or picked.item.rate is none %}暂无数据{% else %}{{ picked.item.rate_text }}{% endif %}</td>
+        {% endfor %}
+        <td class="reason" title="{{ model.commentary.get(cell.region, '') }}">{{ model.commentary.get(cell.region, '') or '未填写' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
   </div>
   {% else %}
   <p class="src-line">待计算</p>
+  <p class="reason">原因：未填写</p>
   {% endif %}
-  {% if model.commentary.values() | select | list %}
-  <p class="reason-line">{% for region, body in model.commentary.items() if body %}{{ region }}：{{ body }}　{% endfor %}</p>
-  {% else %}<p class="reason-line">原因：未填写</p>{% endif %}
   <details class="weekly-audit">
     <summary>计算说明</summary>
     <p>{{ model.indicators.period_note }}</p>
@@ -244,6 +291,7 @@
 <section class="ant-card history-card">
   <div class="ant-card-head"><h2 class="ant-card-head-title">历史</h2></div>
   <div class="ant-card-body">
+    <div class="tw ant-table-wrap" data-ds-primary>
     <table class="wshot">
       <thead><tr><th>周次</th><th>种类</th><th>范围</th><th>期间</th><th>时间</th><th>状态</th><th>文件</th></tr></thead>
       <tbody>
@@ -260,6 +308,7 @@
         {% else %}<tr><td colspan="7" class="gmiss">还没有记录。</td></tr>{% endfor %}
       </tbody>
     </table>
+    </div>
   </div>
 </section>
 {% else %}

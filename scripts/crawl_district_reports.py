@@ -180,13 +180,30 @@ def set_download_dir(cdp_session: Any, output_dir: Path) -> None:
         print(f"  [WARN] setDownloadBehavior failed: {exc}")
 
 
-def wait_new_download(output_dir: Path, before: dict[str, float], timeout_s: float = 180) -> Optional[Path]:
+def wait_new_download(output_dir: Path, before: dict[str, float], timeout_s: float = 180, pump=None) -> Optional[Path]:
+    """Poll the download directory.
+
+    The daily crawler keeps using time.sleep. The weekly crawler passes pump
+    so sync Playwright can deliver response events during the wait. time.sleep
+    does not.
+    """
+    def pause(seconds: float) -> None:
+        if pump is None:
+            time.sleep(seconds)
+        else:
+            pump(seconds)
+
+    def finish(found: Optional[Path]) -> Optional[Path]:
+        if pump is not None:
+            pause(0.1)
+        return found
+
     deadline = time.monotonic() + timeout_s
     new_file: Optional[Path] = None
     stable_size: Optional[int] = None
     stable_since = 0.0
     while time.monotonic() < deadline:
-        time.sleep(0.5)
+        pause(0.5)
         for path in output_dir.iterdir():
             if not path.is_file() or path.name.startswith("."):
                 continue
@@ -214,8 +231,8 @@ def wait_new_download(output_dir: Path, before: dict[str, float], timeout_s: flo
                 stable_since = time.monotonic()
                 continue
             if size == stable_size and time.monotonic() - stable_since >= 1.5:
-                return path
-    return new_file
+                return finish(path)
+    return finish(new_file)
 
 
 def click_named_button(page: Page, label: str, selectors: str) -> str:
@@ -243,6 +260,7 @@ def click_export_and_save(
     *,
     button_texts: list[str],
     save_prefix: str,
+    pump=None,
 ) -> Optional[Path]:
     before = {f.name: f.stat().st_mtime for f in output_dir.iterdir() if f.is_file()}
     clicked = ""
@@ -257,7 +275,7 @@ def click_export_and_save(
     if not clicked:
         raise RuntimeError(f"导出按钮未找到: {button_texts}")
     print(f"  Clicked export ({clicked!r}), waiting...")
-    new_file = wait_new_download(output_dir, before)
+    new_file = wait_new_download(output_dir, before, pump=pump)
     if new_file is None:
         print("  [WARN] no download within timeout")
         return None

@@ -15,9 +15,11 @@ from .tables import PCT0, fmt_value
 from .weekly_parse import (
     change,
     norm_region,
+    month_window,
     parse_operation_xlsx,
     quarter_compare,
     year_compare,
+    WeeklyParseError,
 )
 
 OPERATION_SPANS = {"quarter", "quarter_base", "year", "year_base"}
@@ -37,14 +39,17 @@ class SnapshotConflict(Exception):
     pass
 
 
-def collect_weekly_sources(**_kwargs):
-    """自动采集入口。本轮故意不可用，避免和每日 08:30 抢 DMS 浏览器。"""
-    raise NotImplementedError(
-        "周报尚未启用自动采集。本函数不会登录 DMS，也不会修改 08:30 调度。"
-        "以后若要采集，必须复用 scripts/dfmc_browser_utils.acquire_export_lock，并遵守 "
-        f"{DMS_BROWSER_DOC} 的浏览器锁与错峰，不能与每日流水线并发导出。"
-        "当前请使用 python -m reportdb.weekly_import 或页面上的 Excel 导入。"
-    )
+def collect_weekly_sources(*, as_of: str | None = None, regions: list[str] | None = None, live: bool = False, **_kwargs):
+    """计划周五采集。live=True 也不在这里打开浏览器，现场用 scripts/weekly_operation_crawl.py --live。"""
+    if live:
+        raise RuntimeError(
+            "不要从这里连接 DMS。现场使用 scripts/weekly_operation_crawl.py --live，"
+            f"并遵守 {DMS_BROWSER_DOC} 的共用锁。不能和每天 08:30 同时导出。"
+        )
+    from .weekly_crawl import describe_plan
+    from datetime import date as _date
+    day = _date.fromisoformat(as_of) if as_of else _date.today()
+    return describe_plan(as_of=day, regions=list(regions or []))
 
 
 def import_operation(conn, blob: bytes, *, week_start: str, period_start: str, period_end: str,
@@ -56,10 +61,31 @@ def import_operation(conn, blob: bytes, *, week_start: str, period_start: str, p
         raise WeeklyImportError("经营周报只接受统计类型「收款」，不接受结算或其他类型")
     if report_type != "日报":
         raise WeeklyImportError("经营周报只接受报表类型「日报」")
-    if span not in OPERATION_SPANS:
-        raise WeeklyImportError("经营比较必须指定 quarter、quarter_base、year 或 year_base。不再按周几天做环比或同比。")
+    if span != "month" and span not in OPERATION_SPANS:
+        raise WeeklyImportError("经营比较必须指定 quarter、quarter_base、year、year_base 或 month。")
     week = _monday(week_start)
     start, end = _date(period_start), _date(period_end)
+    if span == "month":
+        if not as_of:
+            raise WeeklyImportError("月度原件必须填写本次更新的截止日 as_of")
+        cutoff = _date(as_of)
+        if not (week <= cutoff <= week + timedelta(days=6)):
+            raise WeeklyImportError("截止日必须落在所选更新周内。周次只表示这次归档，不是比较区间。")
+        try:
+            window = month_window(cutoff, period_start[:7])
+        except WeeklyParseError as exc:
+            raise WeeklyImportError(str(exc)) from exc
+        if start != window["start"] or end != window["end"]:
+            raise WeeklyImportError(
+                f"月度区间 {start.isoformat()} 至 {end.isoformat()} 不符合 {window['month']}。"
+                f"应为 {window['start'].isoformat()} 至 {window['end'].isoformat()}。"
+                "不能把季度或年度文件拆成月，也不能把月中文件当成已结束月。"
+            )
+        role = f"month:{window['month']}"
+        parsed = parse_operation_xlsx(blob)
+        return _save_operation(conn, blob, parsed, role=role, week=week, start=start, end=end,
+                               scope=scope, filename=filename, actor=actor, allow_revision=allow_revision,
+                               stat_type=stat_type, report_type=report_type, exported_at=exported_at, timezone=timezone)
     compare = quarter_compare if span.startswith("quarter") else year_compare
     if span in {"quarter", "year"}:
         if not (week <= end <= week + timedelta(days=6)):
@@ -81,6 +107,13 @@ def import_operation(conn, blob: bytes, *, week_start: str, period_start: str, p
             "周区间、上周同进度、减 364 天，或 11 月 1 日至 19 日，都不能当作季度环比或年度同比。"
         )
     parsed = parse_operation_xlsx(blob)
+    return _save_operation(conn, blob, parsed, role=span, week=week, start=start, end=end,
+                           scope=scope, filename=filename, actor=actor, allow_revision=allow_revision,
+                           stat_type=stat_type, report_type=report_type, exported_at=exported_at, timezone=timezone)
+
+
+def _save_operation(conn, blob, parsed, *, role, week, start, end, scope, filename, actor,
+                    allow_revision, stat_type, report_type, exported_at, timezone) -> dict:
     file_scope = parsed["scope"]
     if scope:
         asked = "全国" if norm_region(scope) == "全国" else norm_region(scope)
@@ -103,7 +136,7 @@ def import_operation(conn, blob: bytes, *, week_start: str, period_start: str, p
     }
     return _save(conn, blob, {
         "kind": "operation",
-        "compare_role": span,
+        "compare_role": role,
         "week_start": week.isoformat(),
         "scope": file_scope,
         "period_start": start.isoformat(),
@@ -232,6 +265,7 @@ def build_weekly_page(conn, week: str | None = None, *, today: date | None = Non
             extra.append(scope)
     scopes = ["全国", *known, *sorted(set(extra))]
     operation = _operation_section(active, week_start.isoformat(), scopes, known)
+    operation["months"] = _month_section(active, week_start, week_end, today, scopes)
     indicators = _indicators_section(active.get(("indicators", week_start.isoformat(), "全国", "")))
     weeks = {week_start.isoformat()}
     for row in conn.execute("SELECT DISTINCT week_start FROM weekly_imports"):
@@ -255,6 +289,85 @@ def build_weekly_page(conn, week: str | None = None, *, today: date | None = Non
     }
 
 
+def _snapshot_as_of(active, week_start: date, week_end: date, today: date) -> date:
+    found = []
+    for key, row in active.items():
+        if key[0] != "operation" or key[1] != week_start.isoformat():
+            continue
+        end = _date(row["period_end"])
+        if week_start <= end <= week_end:
+            found.append(end)
+    if found:
+        return max(found)
+    if week_start <= today <= week_end:
+        return today
+    return week_end
+
+
+def _month_section(active, week_start: date, week_end: date, today: date, scopes: list[str]) -> dict:
+    as_of = _snapshot_as_of(active, week_start, week_end, today)
+    columns = []
+    for mon in range(1, as_of.month + 1):
+        window = month_window(as_of, f"{as_of.year:04d}-{mon:02d}")
+        columns.append({
+            "key": window["month"],
+            "label": f"{mon}月",
+            "start": window["start"].isoformat(),
+            "end": window["end"].isoformat(),
+            "closed": window["closed"],
+        })
+    rows = []
+    for scope in scopes:
+        cells = {}
+        for column in columns:
+            row = active.get(("operation", week_start.isoformat(), scope, f"month:{column['key']}"))
+            values = None
+            if row is not None and row["period_start"] == column["start"] and row["period_end"] == column["end"]:
+                values = _op_values(row)
+            cells[column["key"]] = {
+                "orders": _fmt(None if values is None else values["orders"]),
+                "output": _fmt(None if values is None else values["output"], money=True),
+                "vehicles": _fmt(None if values is None else values["vehicles"]),
+                "imported": values is not None,
+            }
+        rows.append({"region": scope, "cells": cells})
+    return {
+        "as_of": as_of.isoformat(),
+        "columns": columns,
+        "rows": rows,
+        "note": "各月分别取该月收款日报的汇总行。全国是独立汇总，不由各区相加。车辆、工单和产值都不跨月相加。没有该月原件就是未导入，不用季度或年度拆分。",
+    }
+
+
+def _demo_months() -> dict:
+    areas = ["全国", "华北", "华东", "华南", "华中1", "西南", "西北", "华中2"]
+    columns = []
+    for mon in range(1, 12):
+        window = month_window(date(2026, 11, 20), f"2026-{mon:02d}")
+        columns.append({"key": window["month"], "label": f"{mon}月", "start": window["start"].isoformat(),
+                        "end": window["end"].isoformat(), "closed": window["closed"]})
+    rows = []
+    for index, name in enumerate(areas):
+        cells = {}
+        for mon in range(1, 12):
+            orders = 80 + index * 3 + mon
+            vehicles = 20 + index + mon
+            yuan = Decimal(18000 + index * 500 + mon * 100)
+            cells[f"2026-{mon:02d}"] = {
+                "orders": str(orders),
+                "output": _fmt(yuan, money=True),
+                "vehicles": str(vehicles),
+                "imported": True,
+            }
+        rows.append({"region": name, "cells": cells})
+    return {
+        "as_of": "2026-11-20",
+        "columns": columns,
+        "rows": rows,
+        "note": "示例数据，不是从季度或年度拆出来的。",
+    }
+
+
 def _operation_section(active, week: str, scopes: list[str], known: list[str]) -> dict:
     quarter_as = _role_as_of(active, week, "quarter")
     year_as = _role_as_of(active, week, "year")
@@ -265,10 +378,10 @@ def _operation_section(active, week: str, scopes: list[str], known: list[str]) -
         quarter["quality"].append(f"季度截止日 {quarter_as.isoformat()} 与年度截止日 {year_as.isoformat()} 不一致，两张卡各自使用自己的截止日。")
         year["quality"].append(f"年度截止日 {year_as.isoformat()} 与季度截止日 {quarter_as.isoformat()} 不一致，两张卡各自使用自己的截止日。")
     return {
-        "title": "经营数据：季度环比 / 年度同比",
+        "title": "经营数据：季度环比",
         "imported": quarter["imported"] or year["imported"],
         "source": "dms_service_operation_receipt",
-        "note": "收款工单数、总产值、车辆数只来自 DMS 服务经营报表「收款 · 日报」导出的汇总行，不用总表自算结果代替。收款工单数按收款时间统计已收款工单，含仅备件销售，不是严格来厂台次。车辆数用汇总行去重值，不跨业务类型或区域相加。总产值源数据单位为元（2026-11-20 确认），页面按千元展示，保留两位小数。涨跌按原始元计算。是否含税未注明。环比、同比只按对应期间的这些导出值计算。",
+        "note": "收款工单数、总产值、车辆数只来自 DMS 服务经营报表「收款 · 日报」导出的汇总行，不用总表自算结果代替。收款工单数按收款时间统计已收款工单，含仅备件销售，不是严格来厂台次。车辆数用汇总行去重值，不跨业务类型或区域相加。总产值源数据单位为元（2026-11-20 确认），页面按千元展示，保留两位小数。涨跌按原始元计算。是否含税未注明。页面和自动采集只比较本季度和上季度同期。库里已有的年度记录保留，不作为缺口。",
         "quarter": quarter,
         "year": year,
     }
@@ -700,7 +813,7 @@ def demo_board() -> dict:
             "base": {"start": base[0], "end": base[1]},
             "series_current": series_c, "series_base": series_b, "change_label": change_label,
             "label_current": "", "label_base": "",
-            "progress_note": "同进度是系统默认的比法，用来对齐还没过完的季度或年度。",
+            "progress_note": "同进度是系统默认的比法，用来对齐还没过完的季度。",
             "default_note": "",
             "reconcile": None, "exports": [], "quality": [], "rows": rows,
         }
@@ -757,11 +870,12 @@ def demo_board() -> dict:
         "week_start": "2026-11-16", "week_end": "2026-11-22", "is_current_week": False,
         "weeks": [{"start": "2026-11-16", "label": "2026-11-16 至 2026-11-22"}],
         "operation": {
-            "title": "经营数据：季度环比 / 年度同比",
+            "title": "经营数据：季度环比",
             "imported": True,
             "source": "demo",
             "note": "示例",
             "quarter": quarter, "year": year,
+            "months": _demo_months(),
         },
         "indicators": {
             "status": "ready",

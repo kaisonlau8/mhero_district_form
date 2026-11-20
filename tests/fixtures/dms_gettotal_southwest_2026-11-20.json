@@ -1,0 +1,25 @@
+{
+  "observed_at": "2026-11-20T18:10:20+08:00",
+  "source": "页面点查询后，Chrome 开发者工具 Network 面板中的 getTotal。没有另行请求。",
+  "gui": {
+    "统计类型": "收款",
+    "报表类型": "日报",
+    "区域": "西南区",
+    "业务门店": "",
+    "开始日期": "2025-01-01",
+    "结束日期": "2025-11-20"
+  },
+  "selected_option_value": "009",
+  "detail_total": 130,
+  "request_body": "{\"statisticalType\":\"2\",\"statisticalType\":\"2\",\"reportType\":\"1\",\"reportType\":\"1\",\"bigAreaId\":\"009\",\"bigAreaId\":\"009\",\"dateStart\":\"2025-01-01\",\"dateStart\":\"2025-01-01\",\"dateEnd\":\"2025-11-20\",\"dateEnd\":\"2025-11-20\",\"dateStart1\":\"2025-01-01\",\"dateStart1\":\"2025-01-01\",\"dateEnd1\":\"2025-11-20\",\"dateEnd1\":\"2025-11-20\",\"dateStart1,dateEnd1\":[\"2026-11-01\", \"2026-11-30\"],\"dateStart1,dateEnd1\":[\"2026-11-01\", \"2026-11-30\"],\"monthStart,monthEnd\":[],\"monthStart,monthEnd\":[],\"dirCode\":\"\",\"dirCode\":\"\",\"retRepairType\":\"\",\"retRepairType\":\"\",\"month\":\"\",\"month\":\"\",\"monthEnd\":\"\",\"monthEnd\":\"\",\"monthStart\":\"\",\"monthStart\":\"\",\"year\":\"\",\"year\":\"\",\"monthStartEnd\":[],\"monthStartEnd\":[]}",
+  "response_body": {
+    "result": "1",
+    "msg": "查询成功",
+    "rows": {
+      "bigAreaName": "汇总",
+      "repairOrderNum": 4998,
+      "vinNum": 1272,
+      "totalAmount": "7,620,333.56"
+    }
+  }
+}

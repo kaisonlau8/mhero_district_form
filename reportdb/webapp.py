@@ -1636,14 +1636,18 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             model = weekly_mod.build_weekly_page(conn, week or None)
         except weekly_mod.WeeklyImportError as exc:
             raise HTTPException(400, str(exc))
-        if view not in {"quarter", "year", "indicators"}:
+        if view == "year":
+            view = "quarter"
+        if view not in {"quarter", "indicators", "months"}:
             view = ""
         return _TPL.TemplateResponse(request, "weekly.html", _weekly_ctx(request, conn, user, model, msg=msg, view=view, demo=False))
 
     @app.get("/reports/weekly/demo", response_class=HTMLResponse)
-    def weekly_demo(request: Request, view: str = "quarter", conn=Depends(get_conn), user=Depends(login_required)):
-        if view not in {"quarter", "year", "indicators"}:
+    def weekly_demo(request: Request, view: str = "months", conn=Depends(get_conn), user=Depends(login_required)):
+        if view == "year":
             view = "quarter"
+        if view not in {"quarter", "indicators", "months"}:
+            view = "months"
         model = weekly_mod.demo_board()
         model["can_import"] = False
         model["can_edit"] = False
