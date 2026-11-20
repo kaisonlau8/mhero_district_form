@@ -33,6 +33,9 @@ KPI_HEADERS = [
 
 def xlsx(headers, rows, sheet="数据"):
     wb = Workbook()
+    fixed = datetime(2026, 1, 1, 0, 0, 0)
+    wb.properties.created = fixed
+    wb.properties.modified = fixed
     ws = wb.active
     ws.title = sheet
     ws.append(headers)
@@ -802,24 +805,42 @@ def test_live_fetch_result_imports_the_same_summary(conn, tmp_path, monkeypatch)
         def read_filters(self):
             return dict(self.values)
         def query(self):
+            self.page.last_filters = dict(self.values)
             post = json.dumps(self.values, ensure_ascii=False)
             if self.page.mode == "noise":
                 self.page.emit(Resp(200, "https://m-dms.dfmc.com.cn/ping", "", {"ok": True}))
                 self.page.emit(Resp(200, "https://m-dms.dfmc.com.cn/note", "华东收款日报2026-10-01", {"kind": "summary", "orders": "15", "vehicles": "9", "output": "120.00"}))
                 return
+            if self.page.mode == "late":
+                old = dict(self.values)
+                old["开始日期"] = "2024-01-01"
+                old["结束日期"] = "2024-01-02"
+                self.page.emit(Resp(200, "https://m-dms.dfmc.com.cn/old", json.dumps(old, ensure_ascii=False), {
+                    "kind": "summary", "orders": "998", "vehicles": "1272", "output": "7620333.56",
+                }))
+                return
             self.page.emit(Resp(200, "https://m-dms.dfmc.com.cn/detail", post, {"rows": [{"区域名称": self.values["区域"]}]}))
             orders, vehicles, output = ("15", "9", "120.00") if self.values["区域"] == "全国" else ("6", "4", "40.00")
             self.page.emit(Resp(200, "https://m-dms.dfmc.com.cn/summary", post, {"kind": "summary", "orders": orders, "vehicles": vehicles, "output": output}))
 
+    same_bytes = {"全国": national_blob(), "华东": east_blob()}
+
     def export(page, output_dir, **kw):
-        blob = national_blob() if "全国" in kw.get("save_prefix", "") else east_blob()
-        path = Path(output_dir) / f"{kw.get('save_prefix', 'x')}{Path(output_dir).joinpath('n').stat().st_mtime_ns if False else len(list(Path(output_dir).glob('*.xlsx')))}.xlsx"
+        if getattr(page, "mode", "") == "late":
+            post = json.dumps(page.last_filters, ensure_ascii=False)
+            page.emit(Resp(200, "https://m-dms.dfmc.com.cn/summary", post, {
+                "kind": "summary", "orders": "15", "vehicles": "9", "output": "120.00",
+            }))
+            page.emit(Resp(200, "https://m-dms.dfmc.com.cn/detail", post, {"rows": [{"区域名称": "全国"}]}))
+        blob = same_bytes["全国" if "全国" in kw.get("save_prefix", "") else "华东"]
+        path = Path(output_dir) / f"{kw.get('save_prefix', 'x')}{len(list(Path(output_dir).glob('*.xlsx')))}.xlsx"
         path.write_bytes(blob)
         return path
 
     monkeypatch.setattr(crawl, "click_export_and_save", export)
     monkeypatch.setattr(weekly_script, "open_operation_page", lambda page: None)
     monkeypatch.setattr(weekly_script, "PlaywrightForm", Form)
+    monkeypatch.setattr(weekly_script, "beijing_now", lambda: datetime(2026, 11, 20, 14, 45, 0))
 
     filters = {"统计类型": "收款", "报表类型": "日报", "区域": "全国", "业务门店": "", "开始日期": "2026-10-01", "结束日期": "2026-11-20"}
     assert classify_page_response({"status": 200, "url": "https://x/?q=华东收款日报2026-10-01", "post_data": "", "body": {"kind": "summary", "orders": "15", "vehicles": "9", "output": "120.00"}}, "q", filters) is None
@@ -851,6 +872,15 @@ def test_live_fetch_result_imports_the_same_summary(conn, tmp_path, monkeypatch)
     second = run_weekly_crawl(conn, as_of="2026-11-20", regions=[], fetch=live_fetch(Page("match"), out), output_dir=out, resume=False, clock=lambda: datetime(2026, 11, 20, 14, 45))
     assert second["complete"] is True
     assert all(item["idempotent"] for item in second["results"])
+    late = tmp_path / "late-chain"
+    late_run = run_weekly_crawl(
+        conn, as_of="2026-11-20", regions=[], fetch=live_fetch(Page("late"), late),
+        output_dir=late, resume=False, clock=lambda: datetime(2026, 11, 20, 14, 45),
+    )
+    assert late_run["complete"] is True, late_run["results"][0].get("error")
+    late_meta = json.loads((late / "quarter_全国.json").read_text(encoding="utf-8"))
+    assert late_meta["summary"]["orders"] == "15"
+    assert "998" not in json.dumps(late_meta["summary"])
     assert past_friday_deadline(datetime(2026, 11, 20, 16, 57)) is True
     assert past_friday_deadline(datetime(2026, 11, 20, 17, 0)) is True
     assert past_friday_deadline(datetime(2026, 11, 20, 16, 56)) is False
@@ -861,15 +891,36 @@ def test_friday_window_does_not_start_new_exports_and_keeps_other_schedules(conn
     from datetime import datetime
     from reportdb.weekly_crawl import merge_weekly_schedule, run_weekly_crawl
 
+    from reportdb.weekly_crawl import WeeklyCrawlError
     original = {"pre_minutes": 3, "entries": [
         {"id": "district-form", "time": "08:30"},
         {"id": "accident-evening", "time": "17:00"},
     ]}
-    merged = merge_weekly_schedule(json.loads(json.dumps(original)))
-    assert merged["entries"][0] == original["entries"][0]
-    assert merged["entries"][1] == original["entries"][1]
-    assert merged["entries"][2]["time"] == "14:45"
+    with pytest.raises(WeeklyCrawlError, match="不看星期"):
+        merge_weekly_schedule(json.loads(json.dumps(original)))
     calls = []
+
+    ticks = {"n": 0}
+
+    def crossing_clock():
+        ticks["n"] += 1
+        if ticks["n"] <= 2:
+            return datetime(2026, 11, 20, 16, 56)
+        return datetime(2026, 11, 20, 16, 57)
+
+    def failing(job):
+        calls.append(job["key"])
+        raise RuntimeError("下载超时")
+
+    crossed = run_weekly_crawl(
+        conn, as_of="2026-11-20", regions=[], fetch=failing, output_dir=tmp_path / "cross",
+        resume=False, clock=crossing_clock,
+    )
+    assert calls == ["2026-11-20:quarter:全国"]
+    assert crossed["complete"] is False
+    assert "16:57" in crossed["results"][0]["error"]
+
+    calls.clear()
 
     def fetch(job):
         calls.append(job["key"])

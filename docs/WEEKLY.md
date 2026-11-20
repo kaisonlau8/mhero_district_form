@@ -27,7 +27,7 @@ deploy/ubuntu-weekly-crawl.sh verify
 deploy/ubuntu-weekly-crawl.sh uninstall --apply
 ```
 
-`install --apply` 需要当时环境里已有 `DFMC_DMS_SESSION_HOME`，并且共享时刻表文件已经存在。它不新建一份时刻表，也不改 08:30 和 17:00 的条目。现有避让按每天的钟点计算，不辨星期，加上 14:45 之后每天 14:42 到约 15:30 都会避开强刷。
+`install --apply` 只写当前用户的 crontab，不改共享时刻表。本仓库的 `refresh_block_reason` 只看钟点、不看星期，而且生产上的 keepalive 不在这个仓库里跑。把 14:45 写进去会让每天 14:42 到约 15:30 都停止强刷。所以安装明确不写这条。周任务只在真正运行时拿导出锁。要做仅周五的提前避让，必须先改正在运行 keepalive 的那份代码，不能在这里假装已经完成。
 
 页面：登录后打开「报表 → 猛士周报」。管理员在「导入 Excel」上传。命令行：
 

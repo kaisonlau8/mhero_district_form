@@ -135,7 +135,7 @@ case "$ACTION" in
     fi
     mkdir -p "$LOG_DIR"
     install_cron
-    merge_schedule
+    echo "不写入共享时刻表。现有 keepalive 不看星期，写入 14:45 会让每天都改变强刷。"
     verify
     ;;
   uninstall)

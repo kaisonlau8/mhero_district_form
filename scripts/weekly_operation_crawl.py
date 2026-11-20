@@ -158,29 +158,17 @@ def live_fetch(page, output_dir: Path):
             page.on("response", on_response)
             attached = True
             readback_after = finish_query(form, job["filters"])
-            responses = []
-            for event in seen:
-                item = classify_page_response(event, query_id, job["filters"])
-                if item:
-                    responses.append(item)
-            try:
-                confirm_query_responses(job["filters"], query_id, responses)
-            except WeeklyCrawlError:
-                return {
-                    "blob": b"",
-                    "exported_at": beijing_now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "readback_before": readback_before,
-                    "readback_after": readback_after,
-                    "query_id": query_id,
-                    "responses": responses,
-                    "download_is_new": False,
-                }
             path = click_export_and_save(
                 page, output_dir,
                 button_texts=["导出", "Export"],
                 save_prefix=f"{job['span']}_{job['scope']}_",
             )
             content = path.read_bytes() if path is not None and path.exists() else b""
+            responses = []
+            for event in seen:
+                item = classify_page_response(event, query_id, job["filters"])
+                if item:
+                    responses.append(item)
             return {
                 "blob": content,
                 "exported_at": beijing_now().strftime("%Y-%m-%d %H:%M:%S"),

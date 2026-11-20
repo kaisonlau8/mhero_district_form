@@ -246,14 +246,16 @@ WEEKLY_SCHEDULE_ENTRY = {
 
 
 def merge_weekly_schedule(data: dict) -> dict:
-    """只替换本任务的时刻表项。08:30 和 17:00 的其他条目保持原样。"""
-    if not isinstance(data, dict) or not isinstance(data.get("entries"), list):
-        raise WeeklyCrawlError("共享时刻表缺少 entries，不新建一份，避免盖掉已有任务")
-    entries = [item for item in data["entries"] if item.get("id") != SCHEDULE_ID]
-    entries.append(dict(WEEKLY_SCHEDULE_ENTRY))
-    merged = dict(data)
-    merged["entries"] = entries
-    return merged
+    """不把 14:45 写进共享时刻表。
+
+    正在使用的 keepalive 只按钟点计算避让，不看星期。启用的 14:45 会让每天
+    14:42 到约 15:30 都停止强刷。本仓库里的 refresh_block_reason 没有被调用，
+    生产上的消费者在别的仓库；这里改了也不等于那边已改。周任务只在真正运行时持锁。
+    """
+    raise WeeklyCrawlError(
+        "不能把 district-form-weekly 写进共享时刻表：现有 keepalive 不看星期，"
+        "每天 14:42–15:30 都会改变强刷。星期感知要等实际运行 keepalive 的那份代码先改。"
+    )
 
 
 def run_weekly_crawl(conn, *, as_of: str | date, regions: list[str], fetch, output_dir: Path,
@@ -284,6 +286,9 @@ def run_weekly_crawl(conn, *, as_of: str | date, regions: list[str], fetch, outp
         attempts_used = 0
         for attempt in range(1, MAX_ATTEMPTS + 1):
             attempts_used = attempt
+            if in_accident_prewindow(clock()):
+                last_error = "已到周五 16:57，这一次不再重试，也不再发起新的查询。正在进行的请求会做完并释放锁，不会关掉浏览器。"
+                break
             try:
                 got = fetch(job)
                 before = got.get("readback_before")
