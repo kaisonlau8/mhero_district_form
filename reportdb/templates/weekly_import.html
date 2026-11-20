@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block body %}
+<header class="ant-page-header">
+  <div class="ant-page-header-heading">
+    <h1>导入猛士周报</h1>
+    <div class="ant-page-header-sub">Excel 里没有统计期间、收款类型和导出时间，这些必须在这里填写。相同文件重复导入是幂等的；内容不同默认拒绝覆盖。</div>
+  </div>
+  <div class="ant-page-header-actions"><a class="ant-btn" href="/reports/weekly{% if week %}?week={{ week }}{% endif %}">返回周报</a></div>
+</header>
+{% if err %}<div class="ant-alert ant-alert-error"><div class="ant-alert-content">{{ err }}</div></div>{% endif %}
+<div class="ant-card">
+  <div class="ant-card-head"><h2 class="ant-card-head-title">经营报表（收款 · 日报）</h2></div>
+  <div class="ant-card-body">
+    <p>全国一份、每个区域一份。全国文件不能拆区域。统计起日必须是所选周的周一，止日必须在该周内。2026-11-01 至 2026-11-19 这种跨周区间不能绑成某一周。</p>
+    <form method="post" action="/reports/weekly/import" enctype="multipart/form-data">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="kind" value="operation">
+      <p><label>文件 <input type="file" name="file" accept=".xlsx" required></label></p>
+      <p><label>周一 <input name="week" value="{{ week }}" required placeholder="2026-11-16"></label></p>
+      <p><label>统计起日 <input name="period_start" required placeholder="2026-11-16"></label>
+         <label>统计止日 <input name="period_end" required placeholder="2026-11-19"></label></p>
+      <p><label>导出时间 <input name="exported_at" required placeholder="2026-11-20 14:25:35"></label>
+         <label>时区 <input name="timezone" value="+08:00" required></label></p>
+      <p><label>统计类型 <input name="stat_type" value="收款" required></label>
+         <label>报表类型 <input name="report_type" value="日报" required></label></p>
+      <p><label><input type="checkbox" name="allow_revision" value="1"> 保留旧快照并写入新修订</label></p>
+      <button class="ant-btn ant-btn-primary" type="submit">导入经营 Excel</button>
+    </form>
+  </div>
+</div>
+<div class="ant-card">
+  <div class="ant-card-head"><h2 class="ant-card-head-title">服务管理主表（季度累计）</h2></div>
+  <div class="ant-card-body">
+    <p>使用通用导出的主表，不是每日流水线里的 5 份具名明细。周期列决定年份和季度。截至日是这次导出所代表的累计截止日，必须落在所选周内，也必须落在该季度内。2026 年第四季度的起日是 2026-10-01。</p>
+    <form method="post" action="/reports/weekly/import" enctype="multipart/form-data">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="kind" value="kpi">
+      <p><label>文件 <input type="file" name="file" accept=".xlsx" required></label></p>
+      <p><label>周一 <input name="week" value="{{ week }}" required placeholder="2026-11-16"></label>
+         <label>截至日 <input name="as_of" required placeholder="2026-11-20"></label></p>
+      <p><label>导出时间 <input name="exported_at" required placeholder="2026-11-20 14:25:35"></label>
+         <label>时区 <input name="timezone" value="+08:00" required></label></p>
+      <p><label><input type="checkbox" name="allow_revision" value="1"> 保留旧快照并写入新修订</label></p>
+      <button class="ant-btn ant-btn-primary" type="submit">导入指标 Excel</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

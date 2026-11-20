@@ -9,7 +9,7 @@ from app.excel_values import WorkbookCalculator
 from app.processor import build_report, load_rows_from_workbook, normalize_stock_rows
 from reportdb import calc, ingest
 from reportdb.datasets import BY_KEY
-from reportdb.db import connect, migrate, schema_version
+from reportdb.db import SCHEMA_VERSION, connect, migrate, schema_version
 from reportdb.loaders import load_aligned, to_db_rows
 
 NANNING = "猛士汽车南宁江南用户中心"
@@ -215,7 +215,7 @@ def test_ingest_export_file_and_historical_sheet(conn, tmp_path):
 def test_migrate_v7_database_adds_store_code(tmp_path):
     path = tmp_path / "v7.sqlite3"
     conn = connect(path)
-    assert migrate(conn) == schema_version(conn) == 8
+    assert migrate(conn) == schema_version(conn) == SCHEMA_VERSION
     conn.execute("DROP INDEX IF EXISTS idx_stock_items_code")
     conn.execute("ALTER TABLE stock_items DROP COLUMN store_code")
     conn.execute(
@@ -226,7 +226,7 @@ def test_migrate_v7_database_adds_store_code(tmp_path):
     conn.commit()
     assert "store_code" not in {r[1] for r in conn.execute("PRAGMA table_info(stock_items)")}
     assert schema_version(conn) == 7
-    assert migrate(conn) == 8
+    assert migrate(conn) == SCHEMA_VERSION
     cols = [r[1] for r in conn.execute("PRAGMA table_info(stock_items)")]
     assert "store_code" in cols
     row = conn.execute("SELECT store_name, part_no, available_qty, store_code, part_key FROM stock_items").fetchone()
@@ -235,7 +235,7 @@ def test_migrate_v7_database_adds_store_code(tmp_path):
     assert conn.execute(
         "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_stock_items_code'"
     ).fetchone()[0] == 1
-    assert migrate(conn) == 8  # 幂等
+    assert migrate(conn) == SCHEMA_VERSION  # 幂等
 
 
 def test_stock_detail_search_region_and_quality(conn, tmp_path):

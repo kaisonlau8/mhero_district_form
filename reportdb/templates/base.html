@@ -135,7 +135,8 @@
         <div class="dd ant-dropdown" role="menu">
           {% for slug, t in table_titles.items() %}{{ item('/tables/' ~ slug, t[0]) }}{% endfor %}
           {% if not summary_only %}<a href="/stores{% if date %}?date={{ date }}{% endif %}" class="{{ 'cur' if P.startswith('/stores') }}">门店指标</a>{% endif %}
-          <hr>{{ item('/reports/daily', '日报下载') }}</div></div>
+          <hr>{{ item('/reports/daily', '日报下载') }}
+          <a href="/reports/weekly" class="{{ 'cur' if P.startswith('/reports/weekly') }}">猛士周报</a></div></div>
       {% if not summary_only %}<div class="mi {{ 'on' if P.startswith('/data') }}"><button type="button" aria-haspopup="true" aria-expanded="false"><svg class="ai dd-caret" aria-hidden="true"><use href="#i-caret-down"/></svg>明细数据</button>
         <div class="dd ant-dropdown" role="menu">{% for d in datasets %}{{ item('/data/' ~ d.key, d.title.split('（')[0]) }}{% endfor %}</div></div>{% endif %}
       {% if can_request_nav %}<div class="mi {{ 'on' if P.startswith('/exemptions') or P.startswith('/exclusions') }}"><button type="button" aria-haspopup="true" aria-expanded="false"><svg class="ai dd-caret" aria-hidden="true"><use href="#i-caret-down"/></svg>督导申请</button>

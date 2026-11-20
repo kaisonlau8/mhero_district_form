@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+{% block head %}
+<style>
+  .weekly-shot { background:#fff; border:1px solid #d9d9d9; border-radius:8px; padding:18px 20px 12px; margin:16px 0 28px; }
+  .weekly-shot h2 { margin:0 0 8px; font-size:20px; }
+  .weekly-meta { color:#595959; font-size:13px; line-height:1.7; margin:0 0 10px; }
+  table.wshot { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+  table.wshot th, table.wshot td { border:1px solid #f0f0f0; padding:6px 8px; font-size:13px; text-align:right; white-space:nowrap; vertical-align:top; }
+  table.wshot th { background:#fafafa; text-align:center; }
+  table.wshot td.lab, table.wshot th.lab { text-align:left; white-space:normal; }
+  td.miss { color:#8c8c8c; }
+  td.bad { color:#cf1322; font-weight:600; background:#fff1f0; }
+  .sub { display:block; color:#8c8c8c; font-weight:400; font-size:12px; }
+  textarea.note { width:180px; min-height:52px; }
+</style>
+{% endblock %}
+{% block body %}
+<header class="ant-page-header">
+  <div class="ant-page-header-heading">
+    <h1>猛士周报</h1>
+    <div class="ant-page-header-sub">当周经营及同环比；指标为每周导出时的季度累计。不是每日 08:30 的 7 张源表。</div>
+  </div>
+  <form class="ant-page-header-actions" method="get" action="/reports/weekly">
+    <label>周次
+      <select class="ant-select" name="week" aria-label="周次" onchange="this.form.submit()">
+        {% for w in model.weeks %}<option value="{{ w.start }}" {% if w.start == model.week_start %}selected{% endif %}>{{ w.label }}</option>{% endfor %}
+      </select>
+    </label>
+    <noscript><button class="ant-btn" type="submit">切换</button></noscript>
+    {% if model.can_import %}<a class="ant-btn" href="/reports/weekly/import?week={{ model.week_start }}">导入 Excel</a>{% endif %}
+  </form>
+</header>
+{% if msg %}<div class="ant-alert ant-alert-success"><div class="ant-alert-content">{{ msg }}</div></div>{% endif %}
+
+<section class="weekly-shot" id="shot-operation">
+  <h2>当周经营数据及同比 / 环比</h2>
+  <p class="weekly-meta">
+    {% if model.operation.periods %}
+    当周 {{ model.operation.periods.current.start }} 至 {{ model.operation.periods.current.end }}（收款 · 日报，截至日 {{ model.operation.periods.current.end }}）。
+    上周同进度 {{ model.operation.periods.wow.start }} 至 {{ model.operation.periods.wow.end }}。
+    去年可比周同进度（向前 52 周，星期对齐）{{ model.operation.periods.yoy.start }} 至 {{ model.operation.periods.yoy.end }}。
+    {% else %}
+    本周 {{ model.week_start }} 至 {{ model.week_end }}。经营数据未导入，还不能确定同进度截至日。
+    {% endif %}
+    {{ model.operation.note }}
+  </p>
+  {% if model.operation.reconcile %}<div class="ant-alert ant-alert-warning"><div class="ant-alert-content">{{ model.operation.reconcile.warning }}</div></div>{% endif %}
+  {% for line in model.operation.quality %}<p class="weekly-meta">{{ line }}</p>{% endfor %}
+  <div style="overflow:auto">
+    <table class="wshot" data-ds-primary>
+      <thead>
+        <tr>
+          <th class="lab" rowspan="2">区域</th>
+          <th colspan="5">收款工单数</th>
+          <th colspan="5">总产值</th>
+          <th colspan="5">车辆数（去重）</th>
+        </tr>
+        <tr>
+          <th>当周</th><th>上周同进度</th><th>环比</th><th>去年可比周</th><th>同比</th>
+          <th>当周</th><th>上周同进度</th><th>环比</th><th>去年可比周</th><th>同比</th>
+          <th>当周</th><th>上周同进度</th><th>环比</th><th>去年可比周</th><th>同比</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in model.operation.rows %}
+        <tr>
+          <td class="lab">{{ row.region }}</td>
+          {% for field in ('orders', 'output', 'vehicles') %}
+          {% set cell = row[field] %}
+          <td class="{{ 'miss' if cell.current == '未导入' else '' }}">{{ cell.current }}</td>
+          <td class="{{ 'miss' if cell.wow == '未导入' else '' }}">{{ cell.wow }}</td>
+          <td class="{{ 'miss' if cell.wow_change in ('未导入', '不可比') else '' }}">{{ cell.wow_change }}</td>
+          <td class="{{ 'miss' if cell.yoy == '未导入' else '' }}">{{ cell.yoy }}</td>
+          <td class="{{ 'miss' if cell.yoy_change in ('未导入', '不可比') else '' }}">{{ cell.yoy_change }}</td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <h3>当周产值构成</h3>
+  <p class="weekly-meta">总产值取各文件汇总行，等于工时 + 备件 + 其他时应一致；不一致则保留差额，不改写汇总。源表未注明金额单位，页面不附加单位。</p>
+  <table class="wshot" data-ds-primary>
+    <thead><tr><th class="lab">区域</th><th>工时</th><th>备件</th><th>其他</th></tr></thead>
+    <tbody>
+      {% for row in model.operation.rows %}
+      <tr><td class="lab">{{ row.region }}</td><td>{{ row.labor }}</td><td>{{ row.parts }}</td><td>{{ row.other }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="weekly-shot" id="shot-kpi">
+  <h2>季度累计指标</h2>
+  <p class="weekly-meta">
+    {% if model.kpi.imported %}
+    季度起日 {{ model.kpi.quarter_start }}，截至日 {{ model.kpi.as_of }}，实际导出时间 {{ model.kpi.exported_at }}（录入值；Excel 单元格里没有导出时间，也没有统计起止日）。
+    来源文件 {{ model.kpi.filename or '未命名' }}，周期 {{ model.kpi.periods_label }}，{{ model.kpi.row_count }} 行、{{ model.kpi.unique_stores }} 个门店编码，重复组 {{ model.kpi.duplicate_groups }}。
+    DMS 区域为空 {{ model.kpi.blank_region_rows }} 行，标为无区域，没有用门店表或飞书改归属。全国加权包含这些行。
+    {% else %}
+    本周季度累计指标未导入。没有文件时不显示 0。
+    {% endif %}
+    达成率按分子/分母加权，不是各店百分比的平均。低于全国加权达成率标红。分母为 0 显示不可比。
+  </p>
+  {% for line in model.kpi.quality %}<p class="weekly-meta">{{ line }}</p>{% endfor %}
+  {% if model.kpi.blockers %}<div class="ant-alert ant-alert-error"><div class="ant-alert-content">不可汇总：{{ model.kpi.blockers|join('；') }}</div></div>{% endif %}
+  {% if model.kpi.metrics %}
+  <div style="overflow:auto">
+    <table class="wshot" data-ds-primary>
+      <thead>
+        <tr>
+          <th class="lab">指标</th>
+          {% for cell in model.kpi.metrics[0].cells %}<th>{{ cell.region }}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for metric in model.kpi.metrics %}
+        <tr>
+          <td class="lab">{{ metric.title }}<span class="sub">{{ metric.note }}</span></td>
+          {% for cell in metric.cells %}
+          <td class="{{ 'bad' if cell.below else '' }}">{{ cell.rate_text }}<span class="sub">{{ cell.sub }}</span></td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% elif not model.kpi.imported %}
+  <p>未导入</p>
+  {% endif %}
+  <h3>督导原因分析</h3>
+  <p class="weekly-meta">留空待填写。下面的空不是原因，系统也不会编一句。</p>
+  <table class="wshot" data-ds-primary>
+    <thead><tr><th class="lab">区域</th><th class="lab">原因分析</th></tr></thead>
+    <tbody>
+      {% for region, body in model.commentary.items() %}
+      <tr>
+        <td class="lab">{{ region }}</td>
+        <td class="lab">
+          {% if not body %}<span class="miss">未填写</span>{% endif %}
+          {% if model.can_edit %}
+          <form method="post" action="/reports/weekly/commentary">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="hidden" name="week" value="{{ model.week_start }}">
+            <input type="hidden" name="region" value="{{ region }}">
+            <textarea class="note" name="body" placeholder="待填写" aria-label="{{ region }}原因分析">{{ body }}</textarea>
+            <button class="ant-btn" type="submit">保存</button>
+          </form>
+          {% elif body %}{{ body }}{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="ant-card">
+  <div class="ant-card-head"><h2 class="ant-card-head-title">历史快照</h2></div>
+  <div class="ant-card-body">
+    <p class="weekly-meta">同一周、同一范围再次导入相同文件不会新增。内容不同时默认拒绝覆盖；只有勾选修订才会保留旧行并另存。</p>
+    <table class="wshot" data-ds-primary>
+      <thead><tr><th>周次</th><th>种类</th><th>范围</th><th>期间</th><th>导出时间</th><th>修订</th><th>状态</th><th class="lab">文件</th></tr></thead>
+      <tbody>
+        {% for h in model.history %}
+        <tr>
+          <td><a href="/reports/weekly?week={{ h.week_start }}">{{ h.week_start }}</a></td>
+          <td>{{ '经营' if h.kind == 'operation' else '季度指标' }}</td>
+          <td>{{ h.scope }}</td>
+          <td>{{ h.period_start or '' }} 至 {{ h.period_end or '' }}</td>
+          <td>{{ h.exported_at }}</td>
+          <td>{{ h.revision }}</td>
+          <td>{{ '使用中' if h.status == 'active' else '已保留的旧修订' }}</td>
+          <td class="lab">{{ h.source_filename or '' }}{% if model.can_import %} · <a href="/reports/weekly/imports/{{ h.id }}/source.xlsx">原件</a>{% endif %}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" class="miss">还没有周快照。</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

@@ -272,10 +272,57 @@ def _migrate_v8(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_stock_items_code ON stock_items(snapshot_date, store_code)")
 
 
+def _migrate_v9(conn: sqlite3.Connection) -> None:
+    """猛士周报快照。活跃行不可静默覆盖；修订另存，旧行标 superseded。"""
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS weekly_imports (
+            id INTEGER PRIMARY KEY,
+            kind TEXT NOT NULL,
+            week_start TEXT NOT NULL,
+            scope TEXT NOT NULL,
+            period_start TEXT,
+            period_end TEXT,
+            quarter_start TEXT,
+            year INTEGER,
+            quarter INTEGER,
+            stat_type TEXT,
+            report_type TEXT,
+            exported_at TEXT NOT NULL,
+            source_filename TEXT,
+            sha256 TEXT NOT NULL,
+            sheet_name TEXT,
+            revision INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            superseded_by INTEGER,
+            created_at TEXT NOT NULL,
+            created_by TEXT,
+            quality_json TEXT NOT NULL,
+            summary_json TEXT NOT NULL,
+            payload BLOB NOT NULL
+        )"""
+    )
+    conn.execute(
+        """CREATE UNIQUE INDEX IF NOT EXISTS idx_weekly_imports_active
+           ON weekly_imports(kind, week_start, scope) WHERE status='active'"""
+    )
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS weekly_commentary (
+            week_start TEXT NOT NULL,
+            region TEXT NOT NULL,
+            metric TEXT NOT NULL DEFAULT '',
+            body TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            updated_by TEXT NOT NULL,
+            PRIMARY KEY (week_start, region, metric)
+        )"""
+    )
+
+
 # 迁移列表：下标+1 == user_version。只追加，不改旧条目。元素可以是 SQL 脚本或 callable(conn)。
 MIGRATIONS: list = [
     CORE_DDL + "\n" + "\n".join(ddl(d) for d in DATASETS),
     _migrate_v2, _migrate_v3, _migrate_v4, _migrate_v5, _migrate_v6, _migrate_v7, _migrate_v8,
+    _migrate_v9,
 ]
 SCHEMA_VERSION = len(MIGRATIONS)
 

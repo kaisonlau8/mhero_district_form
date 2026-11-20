@@ -11,8 +11,8 @@ from reportdb.webapp import create_app
 from test_reportdb_calc import make_data
 
 PAGES = ["/", "/tables/summary", "/tables/region-ranking", "/tables/direct-stores", "/tables/direct-ranking",
-         "/tables/spare-parts", "/data/stock", "/data/task", "/data/first-service", "/data/second-service",
-         "/data/new-policy", "/data/renewal"]
+         "/tables/spare-parts", "/reports/weekly", "/data/stock", "/data/task", "/data/first-service",
+         "/data/second-service", "/data/new-policy", "/data/renewal"]
 
 
 @pytest.fixture(autouse=True)

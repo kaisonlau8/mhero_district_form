@@ -34,6 +34,8 @@ from .forbidden_page import DEFAULT_HUB_URL, render_no_access
 from .auth.oidc import STATE_COOKIE
 from .masking import mask_row, mask_vin
 from . import store_indicators as si_mod
+from . import weekly_report as weekly_mod
+from .weekly_parse import WeeklyParseError
 from dataclasses import replace
 
 from .tables import PCT1 as PCT1_FMT, Sheet, fmt_value
@@ -185,8 +187,9 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         return p
 
     _SUMMARY_PREFIXES = ("/tables/", "/export/tables/", "/export/tables-view/", "/api/tables")
-    _SUMMARY_EXACT = {"/", "/export/home.xlsx", "/api/snapshots", "/api/health", "/reports/daily", "/export/daily-history.xlsx",
-                      "/export/daily-report.xlsx", "/account/password", "/logout", "/admin/preview/exit"}
+    _SUMMARY_EXACT = {"/", "/export/home.xlsx", "/api/snapshots", "/api/health", "/reports/daily", "/reports/weekly",
+                      "/export/daily-history.xlsx", "/export/daily-report.xlsx", "/account/password", "/logout",
+                      "/admin/preview/exit"}
 
     def _summary_path(request: Request) -> bool:
         """用户（viewer）只看汇总：首页、各汇总表、日报（不含明细版）。"""
@@ -1619,6 +1622,77 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         return xl_response(f"备件名单设置_{today}.xlsx", [
             (f"当前名单v{active['id']}", ["#", "备件号", "备件名称", "计入分母", "标准量", "分组"], items),
             ("版本历史", ["版本", "生效日期", "创建", "来源", "备件数", "计入数", "备注"], hist)])
+
+    # ------------------------------------------------------------------ 猛士周报
+    def _weekly_ctx(request, conn, user, model, **extra):
+        model["can_import"] = user.role == "admin" and not getattr(user, "preview_admin", "")
+        model["can_edit"] = user.role in {"admin", "supervisor"} and not getattr(user, "preview_admin", "")
+        ctx = common(conn, request, None, user, need_snapshot=False)
+        return {**ctx, "model": model, **extra}
+
+    @app.get("/reports/weekly", response_class=HTMLResponse)
+    def weekly_page(request: Request, week: str = "", msg: str = "", conn=Depends(get_conn), user=Depends(login_required)):
+        try:
+            model = weekly_mod.build_weekly_page(conn, week or None)
+        except weekly_mod.WeeklyImportError as exc:
+            raise HTTPException(400, str(exc))
+        return _TPL.TemplateResponse(request, "weekly.html", _weekly_ctx(request, conn, user, model, msg=msg))
+
+    @app.get("/reports/weekly/import", response_class=HTMLResponse)
+    def weekly_import_page(request: Request, week: str = "", err: str = "", conn=Depends(get_conn), user=Depends(admin_required)):
+        return page(request, "weekly_import.html", conn, user, week=week, err=err)
+
+    @app.post("/reports/weekly/import")
+    def weekly_import_submit(request: Request, kind: str = Form(""), week: str = Form(""), period_start: str = Form(""),
+                             period_end: str = Form(""), as_of: str = Form(""), exported_at: str = Form(""),
+                             timezone: str = Form("+08:00"), stat_type: str = Form("收款"), report_type: str = Form("日报"),
+                             year: str = Form(""), quarter: str = Form(""), allow_revision: str = Form(""),
+                             csrf: str = Form(""), file: UploadFile = File(...), conn=Depends(get_conn),
+                             user=Depends(admin_required)):
+        check_csrf(user, csrf)
+        blob = file.file.read()
+        if len(blob) > 30 * 1024 * 1024:
+            return page(request, "weekly_import.html", conn, user, week=week, err="文件超过 30MB")
+        try:
+            if kind == "operation":
+                weekly_mod.import_operation(
+                    conn, blob, week_start=week, period_start=period_start, period_end=period_end,
+                    exported_at=exported_at, timezone=timezone or "+08:00", stat_type=stat_type or "收款",
+                    report_type=report_type or "日报", filename=file.filename or "", actor=user.username,
+                    allow_revision=allow_revision == "1",
+                )
+            elif kind == "kpi":
+                weekly_mod.import_kpi(
+                    conn, blob, week_start=week, as_of=as_of, exported_at=exported_at, timezone=timezone or "+08:00",
+                    year=int(year) if year.strip() else None, quarter=int(quarter) if quarter.strip() else None,
+                    filename=file.filename or "", actor=user.username, allow_revision=allow_revision == "1",
+                )
+            else:
+                raise weekly_mod.WeeklyImportError("请选择经营报表或季度指标")
+        except (weekly_mod.WeeklyImportError, weekly_mod.SnapshotConflict, WeeklyParseError) as exc:
+            return page(request, "weekly_import.html", conn, user, week=week, err=str(exc))
+        return RedirectResponse(f"/reports/weekly?week={quote(week)}&msg={quote('已写入周快照')}", status_code=303)
+
+    @app.post("/reports/weekly/commentary")
+    def weekly_commentary(week: str = Form(""), region: str = Form(""), body: str = Form(""), csrf: str = Form(""),
+                          conn=Depends(get_conn), user=Depends(login_required)):
+        check_csrf(user, csrf)
+        if user.role not in {"admin", "supervisor"} or getattr(user, "preview_admin", ""):
+            raise HTTPException(403, "只有督导或管理员可以填写原因")
+        try:
+            weekly_mod.save_commentary(conn, week, region, body, user.username)
+        except weekly_mod.WeeklyImportError as exc:
+            raise HTTPException(400, str(exc))
+        return RedirectResponse(f"/reports/weekly?week={quote(week)}&msg={quote('已保存原因')}", status_code=303)
+
+    @app.get("/reports/weekly/imports/{import_id}/source.xlsx")
+    def weekly_source(import_id: int, conn=Depends(get_conn), user=Depends(admin_required)):
+        row = conn.execute("SELECT payload, source_filename FROM weekly_imports WHERE id=?", (import_id,)).fetchone()
+        if row is None:
+            raise HTTPException(404, "没有这份周报原件")
+        name = row["source_filename"] or f"weekly-{import_id}.xlsx"
+        return Response(row["payload"], media_type=XLSX_MIME,
+                        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}"})
 
     return app
 
