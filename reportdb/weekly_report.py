@@ -201,6 +201,12 @@ def build_weekly_page(conn, week: str | None = None, *, today: date | None = Non
             extra.append(scope)
     scopes = ["全国", *known, *sorted(extra)]
     rows = [_operation_row(active, scope, week_start, windows, national) for scope in scopes]
+    _attach_bars(rows)
+    exports = []
+    for scope in scopes:
+        src = active.get(("operation", week_start.isoformat(), scope))
+        if src is not None:
+            exports.append({"scope": scope, "exported_at": src["exported_at"], "filename": src["source_filename"] or ""})
     operation = {
         "imported": national is not None or any(row["imported"] for row in rows),
         "periods": None if windows is None else {
@@ -210,6 +216,7 @@ def build_weekly_page(conn, week: str | None = None, *, today: date | None = Non
         "rows": rows,
         "reconcile": _reconcile(national, rows, known) if national else None,
         "quality": _qualities(national, active, week_start, scopes),
+        "exports": exports,
         "note": "收款工单数按收款时间统计已收款工单，含仅备件销售，不是严格来厂台次。车辆数是各文件汇总行的去重值，不可跨业务类型或区域相加。金额单位与是否含税源表未注明。",
     }
     kpi_row = active.get(("kpi", week_start.isoformat(), "全国"))
@@ -234,6 +241,23 @@ def build_weekly_page(conn, week: str | None = None, *, today: date | None = Non
         "commentary": notes,
         "history": history,
     }
+
+
+def _attach_bars(rows: list[dict]) -> None:
+    """给当周已导入的数字一个 0–100 的柱宽。未导入保持 None，不画成 0。"""
+    for field in ("orders", "output"):
+        vals = []
+        for row in rows:
+            text = row[field]["current"]
+            vals.append(None if text in {"未导入", "不可比", ""} else Decimal(text))
+        peak = max((v for v in vals if v is not None and v > 0), default=None)
+        for row, val in zip(rows, vals):
+            if val is None:
+                row[field]["bar"] = None
+            elif peak is None:
+                row[field]["bar"] = 0
+            else:
+                row[field]["bar"] = int((val / peak * Decimal(100)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
 def _operation_row(active, scope: str, week_start: date, windows, national) -> dict:

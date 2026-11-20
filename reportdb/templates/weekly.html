@@ -1,24 +1,45 @@
 {% extends "base.html" %}
 {% block head %}
 <style>
-  .weekly-shot { background:#fff; border:1px solid #d9d9d9; border-radius:8px; padding:18px 20px 12px; margin:16px 0 28px; }
-  .weekly-shot h2 { margin:0 0 8px; font-size:20px; }
-  .weekly-meta { color:#595959; font-size:13px; line-height:1.7; margin:0 0 10px; }
+  /* weekly-topbar-flat: 本页顶栏不粘住，滚动或截图时不会压住下面的表。 */
+  body:has(#shot-operation) .topbar { position: static; }
+  .weekly-shot { background:#fff; border:1px solid #d9d9d9; border-radius:8px; padding:16px 18px 12px; margin:12px 0 20px; break-inside: avoid; }
+  .weekly-shot h2 { margin:0 0 6px; font-size:20px; }
+  .weekly-meta { color:#595959; font-size:13px; line-height:1.55; margin:0 0 8px; }
+  .bar-chart { margin:8px 0 12px; }
+  .chart-legend { font-size:12px; color:#595959; margin-bottom:6px; }
+  .swatch { display:inline-block; width:10px; height:10px; border-radius:2px; margin:0 4px 0 8px; vertical-align:-1px; }
+  .swatch.orders, .chart-track i.orders { background:#1677ff; }
+  .swatch.output, .chart-track i.output { background:#13a8a8; }
+  .chart-row { display:grid; grid-template-columns:4.2em minmax(80px,1fr) 4.6em minmax(80px,1fr) 6.2em; gap:4px 8px; align-items:center; margin:3px 0; font-size:12px; }
+  .chart-name { font-weight:600; }
+  .chart-track { background:#f5f5f5; height:14px; border-radius:2px; overflow:hidden; }
+  .chart-track i { display:block; height:100%; min-width:0; }
+  .chart-track em { display:block; color:#8c8c8c; font-style:normal; font-size:11px; line-height:14px; padding-left:4px; }
+  .chart-val { text-align:right; font-variant-numeric:tabular-nums; }
   table.wshot { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
-  table.wshot th, table.wshot td { border:1px solid #f0f0f0; padding:6px 8px; font-size:13px; text-align:right; white-space:nowrap; vertical-align:top; }
+  table.wshot th, table.wshot td { border:1px solid #f0f0f0; padding:4px 6px; font-size:12px; text-align:right; white-space:nowrap; vertical-align:top; }
   table.wshot th { background:#fafafa; text-align:center; }
   table.wshot td.lab, table.wshot th.lab { text-align:left; white-space:normal; }
-  td.miss { color:#8c8c8c; }
+  td.miss, .miss { color:#8c8c8c; }
   td.bad { color:#cf1322; font-weight:600; background:#fff1f0; }
-  .sub { display:block; color:#8c8c8c; font-weight:400; font-size:12px; }
-  textarea.note { width:180px; min-height:52px; }
+  .sub { display:block; color:#8c8c8c; font-weight:400; font-size:11px; }
+  details.weekly-audit, details.weekly-edit { margin:8px 0 16px; }
+  details.weekly-audit summary, details.weekly-edit summary { cursor:pointer; color:#1677ff; }
+  textarea.note { width:min(420px, 100%); min-height:44px; }
+  @media print {
+    .topbar, .ant-header { position: static !important; }
+    .nav-backdrop, .burger, .weekly-edit, .ant-page-header-actions { display: none !important; }
+    details.weekly-audit:not([open]) > :not(summary) { display: none !important; }
+    .weekly-shot { border-color:#ccc; }
+  }
 </style>
 {% endblock %}
 {% block body %}
 <header class="ant-page-header">
   <div class="ant-page-header-heading">
     <h1>猛士周报</h1>
-    <div class="ant-page-header-sub">当周经营及同环比；指标为每周导出时的季度累计。不是每日 08:30 的 7 张源表。</div>
+    <div class="ant-page-header-sub">当周经营及同环比；指标为每周导出时的季度累计。未导入的周不会用别的日期填上。</div>
   </div>
   <form class="ant-page-header-actions" method="get" action="/reports/weekly">
     <label>周次
@@ -36,16 +57,30 @@
   <h2>当周经营数据及同比 / 环比</h2>
   <p class="weekly-meta">
     {% if model.operation.periods %}
-    当周 {{ model.operation.periods.current.start }} 至 {{ model.operation.periods.current.end }}（收款 · 日报，截至日 {{ model.operation.periods.current.end }}）。
+    当周 {{ model.operation.periods.current.start }} 至 {{ model.operation.periods.current.end }}（收款 · 日报）。
     上周同进度 {{ model.operation.periods.wow.start }} 至 {{ model.operation.periods.wow.end }}。
-    去年可比周同进度（向前 52 周，星期对齐）{{ model.operation.periods.yoy.start }} 至 {{ model.operation.periods.yoy.end }}。
+    去年可比周 {{ model.operation.periods.yoy.start }} 至 {{ model.operation.periods.yoy.end }}。
     {% else %}
     本周 {{ model.week_start }} 至 {{ model.week_end }}。经营数据未导入，还不能确定同进度截至日。
     {% endif %}
-    {{ model.operation.note }}
+    {% if model.operation.exports %}
+    导出时间：{% for item in model.operation.exports %}{{ item.scope }} {{ item.exported_at }}{% if not loop.last %}；{% endif %}{% endfor %}。
+    {% else %}没有导出时间。{% endif %}
   </p>
+  <p class="weekly-meta">{{ model.operation.note }}</p>
   {% if model.operation.reconcile %}<div class="ant-alert ant-alert-warning"><div class="ant-alert-content">{{ model.operation.reconcile.warning }}</div></div>{% endif %}
-  {% for line in model.operation.quality %}<p class="weekly-meta">{{ line }}</p>{% endfor %}
+  <div class="bar-chart" role="img" aria-label="当周收款工单数与总产值。未导入的区域不画柱，也不当成 0。">
+    <div class="chart-legend"><span class="swatch orders"></span>收款工单数（当周）<span class="swatch output"></span>总产值（当周）</div>
+    {% for row in model.operation.rows %}
+    <div class="chart-row">
+      <span class="chart-name">{{ row.region }}</span>
+      <span class="chart-track">{% if row.orders.bar is not none %}<i class="orders" style="width: {{ row.orders.bar }}%"></i>{% else %}<em>未导入</em>{% endif %}</span>
+      <span class="chart-val">{{ row.orders.current }}</span>
+      <span class="chart-track">{% if row.output.bar is not none %}<i class="output" style="width: {{ row.output.bar }}%"></i>{% else %}<em>未导入</em>{% endif %}</span>
+      <span class="chart-val">{{ row.output.current }}</span>
+    </div>
+    {% endfor %}
+  </div>
   <div style="overflow:auto">
     <table class="wshot" data-ds-primary>
       <thead>
@@ -78,31 +113,32 @@
       </tbody>
     </table>
   </div>
-  <h3>当周产值构成</h3>
-  <p class="weekly-meta">总产值取各文件汇总行，等于工时 + 备件 + 其他时应一致；不一致则保留差额，不改写汇总。源表未注明金额单位，页面不附加单位。</p>
-  <table class="wshot" data-ds-primary>
-    <thead><tr><th class="lab">区域</th><th>工时</th><th>备件</th><th>其他</th></tr></thead>
-    <tbody>
-      {% for row in model.operation.rows %}
-      <tr><td class="lab">{{ row.region }}</td><td>{{ row.labor }}</td><td>{{ row.parts }}</td><td>{{ row.other }}</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <details class="weekly-audit">
+    <summary>来源核对与产值构成</summary>
+    <p class="weekly-meta">总产值取各文件汇总行。工时 + 备件 + 其他与汇总不一致时保留差额，不改写。下面是导入时记下的核对，不参与截图主区域。</p>
+    {% for line in model.operation.quality %}<p class="weekly-meta">{{ line }}</p>{% endfor %}
+    <table class="wshot" data-ds-primary>
+      <thead><tr><th class="lab">区域</th><th>工时</th><th>备件</th><th>其他</th></tr></thead>
+      <tbody>
+        {% for row in model.operation.rows %}
+        <tr><td class="lab">{{ row.region }}</td><td>{{ row.labor }}</td><td>{{ row.parts }}</td><td>{{ row.other }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
 </section>
 
 <section class="weekly-shot" id="shot-kpi">
   <h2>季度累计指标</h2>
   <p class="weekly-meta">
     {% if model.kpi.imported %}
-    季度起日 {{ model.kpi.quarter_start }}，截至日 {{ model.kpi.as_of }}，实际导出时间 {{ model.kpi.exported_at }}（录入值；Excel 单元格里没有导出时间，也没有统计起止日）。
-    来源文件 {{ model.kpi.filename or '未命名' }}，周期 {{ model.kpi.periods_label }}，{{ model.kpi.row_count }} 行、{{ model.kpi.unique_stores }} 个门店编码，重复组 {{ model.kpi.duplicate_groups }}。
-    DMS 区域为空 {{ model.kpi.blank_region_rows }} 行，标为无区域，没有用门店表或飞书改归属。全国加权包含这些行。
+    季度起日 {{ model.kpi.quarter_start }}，截至日 {{ model.kpi.as_of }}，导出时间 {{ model.kpi.exported_at }}。
+    周期 {{ model.kpi.periods_label }}。DMS 区域为空 {{ model.kpi.blank_region_rows }} 行，标为无区域，未改归属。
     {% else %}
     本周季度累计指标未导入。没有文件时不显示 0。
     {% endif %}
-    达成率按分子/分母加权，不是各店百分比的平均。低于全国加权达成率标红。分母为 0 显示不可比。
+    达成率按分子/分母加权，低于全国标红。分母为 0 显示不可比。
   </p>
-  {% for line in model.kpi.quality %}<p class="weekly-meta">{{ line }}</p>{% endfor %}
   {% if model.kpi.blockers %}<div class="ant-alert ant-alert-error"><div class="ant-alert-content">不可汇总：{{ model.kpi.blockers|join('；') }}</div></div>{% endif %}
   {% if model.kpi.metrics %}
   <div style="overflow:auto">
@@ -129,30 +165,44 @@
   <p>未导入</p>
   {% endif %}
   <h3>督导原因分析</h3>
-  <p class="weekly-meta">留空待填写。下面的空不是原因，系统也不会编一句。</p>
   <table class="wshot" data-ds-primary>
-    <thead><tr><th class="lab">区域</th><th class="lab">原因分析</th></tr></thead>
+    <thead><tr><th class="lab">区域</th><th class="lab">原因</th></tr></thead>
     <tbody>
       {% for region, body in model.commentary.items() %}
       <tr>
         <td class="lab">{{ region }}</td>
-        <td class="lab">
-          {% if not body %}<span class="miss">未填写</span>{% endif %}
-          {% if model.can_edit %}
-          <form method="post" action="/reports/weekly/commentary">
-            <input type="hidden" name="csrf" value="{{ csrf }}">
-            <input type="hidden" name="week" value="{{ model.week_start }}">
-            <input type="hidden" name="region" value="{{ region }}">
-            <textarea class="note" name="body" placeholder="待填写" aria-label="{{ region }}原因分析">{{ body }}</textarea>
-            <button class="ant-btn" type="submit">保存</button>
-          </form>
-          {% elif body %}{{ body }}{% endif %}
-        </td>
+        <td class="lab">{% if body %}{{ body }}{% else %}<span class="miss">未填写</span>{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
+  <details class="weekly-audit">
+    <summary>指标来源与核验</summary>
+    {% if model.kpi.imported %}
+    <p class="weekly-meta">来源文件 {{ model.kpi.filename or '未命名' }}，{{ model.kpi.row_count }} 行、{{ model.kpi.unique_stores }} 个门店编码，重复组 {{ model.kpi.duplicate_groups }}。导出时间是导入时录入的，Excel 单元格里没有导出时间和统计起止。</p>
+    {% endif %}
+    {% for line in model.kpi.quality %}<p class="weekly-meta">{{ line }}</p>{% endfor %}
+    {% if model.kpi.unverified_columns %}<p class="weekly-meta">公式未核验、不纳入加权：{{ model.kpi.unverified_columns|join('、') }}。</p>{% endif %}
+  </details>
 </section>
+
+{% if model.can_edit %}
+<details class="weekly-edit" id="weekly-edit">
+  <summary>编辑督导原因</summary>
+  <p class="weekly-meta">写在截图区域外面。空着保存会清空，系统不代写原因。</p>
+  {% for region, body in model.commentary.items() %}
+  <form method="post" action="/reports/weekly/commentary">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="week" value="{{ model.week_start }}">
+    <input type="hidden" name="region" value="{{ region }}">
+    <label>{{ region }} <textarea class="note" name="body" placeholder="待填写" aria-label="{{ region }}原因分析">{{ body }}</textarea></label>
+    <button class="ant-btn" type="submit">保存</button>
+  </form>
+  {% endfor %}
+</details>
+{% else %}
+<div id="weekly-edit" hidden></div>
+{% endif %}
 
 <section class="ant-card">
   <div class="ant-card-head"><h2 class="ant-card-head-title">历史快照</h2></div>

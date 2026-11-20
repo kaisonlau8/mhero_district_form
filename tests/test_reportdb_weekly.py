@@ -418,6 +418,14 @@ def test_weekly_page_nav_and_roles(conn, tmp_path):
     assert "2026-11-09" in shown.text and "2025-11-17" in shown.text
     assert ">15<" in shown.text or "15" in shown.text
     assert "未填写" in shown.text
+    assert "weekly-topbar-flat" in shown.text
+    shot_op = shown.text.split('id="shot-operation"', 1)[1].split('id="shot-kpi"', 1)[0]
+    shot_kpi = shown.text.split('id="shot-kpi"', 1)[1].split('id="weekly-edit"', 1)[0]
+    assert 'class="bar-chart"' in shot_op
+    assert "<textarea" not in shot_kpi
+    assert "<details class=\"weekly-audit\">" in shot_op
+    assert "<details class=\"weekly-audit\" open" not in shot_op
+    assert "不摊分" in shot_op
     link = re.search(r'href="(/reports/weekly/imports/\d+/source.xlsx)"', shown.text)
     assert link
     assert admin.get(link.group(1)).status_code == 200
