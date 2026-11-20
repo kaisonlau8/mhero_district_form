@@ -268,10 +268,10 @@ def _operation_section(active, week: str, scopes: list[str], known: list[str]) -
         quarter["quality"].append(f"季度截止日 {quarter_as.isoformat()} 与年度截止日 {year_as.isoformat()} 不一致，两张卡各自使用自己的截止日。")
         year["quality"].append(f"年度截止日 {year_as.isoformat()} 与季度截止日 {quarter_as.isoformat()} 不一致，两张卡各自使用自己的截止日。")
     return {
-        "title": "经营数据：季度环比 / 年度同比",
+        "title": "经营数据：季度环比",
         "imported": quarter["imported"] or year["imported"],
         "source": "dms_service_operation_receipt",
-        "note": "收款工单数、总产值、车辆数只来自 DMS 服务经营报表「收款 · 日报」导出的汇总行，不用总表自算结果代替。收款工单数按收款时间统计已收款工单，含仅备件销售，不是严格来厂台次。车辆数用汇总行去重值，不跨业务类型或区域相加。总产值源数据单位为元（2026-11-20 确认），页面按千元展示，保留两位小数。涨跌按原始元计算。是否含税未注明。环比、同比只按对应期间的这些导出值计算。",
+        "note": "收款工单数、总产值、车辆数只来自 DMS 服务经营报表「收款 · 日报」导出的汇总行，不用总表自算结果代替。收款工单数按收款时间统计已收款工单，含仅备件销售，不是严格来厂台次。车辆数用汇总行去重值，不跨业务类型或区域相加。总产值源数据单位为元（2026-11-20 确认），页面按千元展示，保留两位小数。涨跌按原始元计算。是否含税未注明。页面和自动采集只比较本季度和上季度同期。库里已有的年度记录保留，不作为缺口。",
         "quarter": quarter,
         "year": year,
     }
@@ -703,7 +703,7 @@ def demo_board() -> dict:
             "base": {"start": base[0], "end": base[1]},
             "series_current": series_c, "series_base": series_b, "change_label": change_label,
             "label_current": "", "label_base": "",
-            "progress_note": "同进度是系统默认的比法，用来对齐还没过完的季度或年度。",
+            "progress_note": "同进度是系统默认的比法，用来对齐还没过完的季度。",
             "default_note": "",
             "reconcile": None, "exports": [], "quality": [], "rows": rows,
         }
@@ -760,7 +760,7 @@ def demo_board() -> dict:
         "week_start": "2026-11-16", "week_end": "2026-11-22", "is_current_week": False,
         "weeks": [{"start": "2026-11-16", "label": "2026-11-16 至 2026-11-22"}],
         "operation": {
-            "title": "经营数据：季度环比 / 年度同比",
+            "title": "经营数据：季度环比",
             "imported": True,
             "source": "demo",
             "note": "示例",

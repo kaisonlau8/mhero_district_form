@@ -9,5 +9,5 @@
   "command": "/home/ubuntu/m-hero-run/venvs/mhero_district_form/bin/python /home/ubuntu/m-hero-prod/mhero_district_form/scripts/weekly_operation_crawl.py --live --db /home/ubuntu/m-hero-run/data/reportdb/reportdb.sqlite3",
   "daily_schedule_unchanged": "08:30",
   "install": "deploy/ubuntu-weekly-crawl.sh install --apply",
-  "note": "Ubuntu cron 周五 14:45。16:57 起不再开始新的地区或期间，把锁留给 17:00 事故任务。不改 08:30。真实 DMS 尚未联调。"
+  "note": "Ubuntu cron 周五 14:45。只采本季度和上季度同期，不采年度。16:57 起不再开始新的地区或期间，把锁留给 17:00 事故任务。不改 08:30。getTotal 只记录了 2026-11-20 西南这一次页面查询，其他区码没有，整段自动采集仍未开启。"
 }

@@ -345,5 +345,5 @@ pytest：`tests/test_reportdb_parity.py`（每项约 40 秒，`REPORTDB_SKIP_PAR
 
 ## 猛士周报（2026-11-20）
 
-导航「报表 → 猛士周报」（`/reports/weekly`）。这不是每天 08:30 的 7 张源表，也不改那次调度。每周归档一次；经营比较是季度环比和年度同比，不是周对周。服务指标是一张表，用系统算好的结果。经营文件可以用 `scripts/weekly_operation_crawl.py` 在周五采集，不加 `--live` 不会连接 DMS。说明见 [WEEKLY.md](WEEKLY.md)。快照按周保留；相同文件再导入是幂等的，内容不同默认拒绝覆盖。
+导航「报表 → 猛士周报」（`/reports/weekly`）。这不是每天 08:30 的 7 张源表，也不改那次调度。每周归档一次；经营比较只做季度环比，不是周对周，也不再采集年度。服务指标是一张表，用系统算好的结果。经营文件可以用 `scripts/weekly_operation_crawl.py` 在周五采集，不加 `--live` 不会连接 DMS。说明见 [WEEKLY.md](WEEKLY.md)。快照按周保留；相同文件再导入是幂等的，内容不同默认拒绝覆盖。库里已有的年度记录不删除。
 

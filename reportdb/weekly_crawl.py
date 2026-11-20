@@ -7,7 +7,7 @@ from pathlib import Path
 
 from decimal import Decimal
 
-from .weekly_parse import norm_region, parse_operation_xlsx, quarter_compare, year_compare
+from .weekly_parse import norm_region, parse_operation_xlsx, quarter_compare
 from .weekly_report import SnapshotConflict, WeeklyImportError, import_operation
 
 SCHEDULE_ID = "district-form-weekly"
@@ -16,10 +16,15 @@ ACCIDENT_LOCK_AT = (17, 0)
 ACCIDENT_PRE_MINUTES = 3
 SCHEDULE_WEEKDAY = "friday"
 DMS_BROWSER_DOC = "https://github.com/kaisonlau8/m-hero/blob/main/docs/SHARED_DMS_BROWSER.md"
-SPANS = ("quarter", "quarter_base", "year", "year_base")
+SPANS = ("quarter", "quarter_base")
 EMPTY_MARKS = {"", "请选择", "请输入", "please choose", "please input"}
 MAX_ATTEMPTS = 3
 SUMMARY_KEYS = ("orders", "vehicles", "output")
+# 2026-11-20 18:10:20+08，页面点查询后从 Chrome Network 面板读到的 getTotal。
+# 收款对应 statisticalType "2"，日报对应 reportType "1"。只证实了这一组。
+# 西南区当时选中项的值是 "009"。别的区域没有读到编码，不能按名称编一个。
+VERIFIED_STATISTICAL_TYPE = {"收款": "2"}
+VERIFIED_REPORT_TYPE = {"日报": "1"}
 
 
 class WeeklyCrawlError(RuntimeError):
@@ -36,7 +41,7 @@ def describe_plan(*, as_of: str | date, regions: list[str]) -> dict:
         "time": SCHEDULE_TIME,
         "weekday": SCHEDULE_WEEKDAY,
         "doc": DMS_BROWSER_DOC,
-        "note": "只生成计划。未连接 DMS，现场端到端尚未执行。生产命令要另加 --live，并且不能和每天 08:30 同时跑。",
+        "note": "只生成计划，只有本季度和上季度同期。不查询年度。未连接 DMS。getTotal 的字段只记录了 2026-11-20 西南这一次页面查询，其他区没有编码，不能据此自动采集。",
         "week_start": _monday(day).isoformat(),
         "as_of": day.isoformat(),
         "jobs": jobs,
@@ -148,17 +153,22 @@ def confirm_query_responses(expected: dict, query_id: str, responses) -> dict:
 
 
 def classify_page_response(event: dict, query_id: str, expected: dict) -> dict | None:
-    """只接受能按字段对上本次筛选的页面响应。值出现在别的字段里不算。"""
+    """只接受请求契约和本次筛选对得上的页面响应。界面上的中文标签不算请求字段。"""
     fields = parse_request_fields(event.get("url") or "", event.get("post_data") or "")
-    if not structured_filters_match(fields, expected):
+    if not request_matches_observed_contract(fields, expected):
         return None
     body = event.get("body")
+    gui_filters = {
+        key: expected[key]
+        for key in ("统计类型", "报表类型", "区域", "业务门店", "开始日期", "结束日期")
+        if key in expected
+    }
     if isinstance(body, dict) and body.get("summary_from") == "detail_sum":
         return {
             "query_id": query_id,
             "kind": "summary",
             "status": int(event.get("status") or 0),
-            "filters": {key: fields[_compact(key)] for key in expected},
+            "filters": gui_filters,
             "summary_from": "detail_sum",
             "summary": body.get("summary") or {},
         }
@@ -169,7 +179,7 @@ def classify_page_response(event: dict, query_id: str, expected: dict) -> dict |
         "query_id": query_id,
         "kind": kind,
         "status": int(event.get("status") or 0),
-        "filters": {key: fields[_compact(key)] for key in expected},
+        "filters": gui_filters,
         "summary_from": "response_body",
     }
     if kind == "summary":
@@ -359,12 +369,9 @@ def run_weekly_crawl(conn, *, as_of: str | date, regions: list[str], fetch, outp
 
 def _spans(as_of: date) -> dict:
     quarter = quarter_compare(as_of)
-    year = year_compare(as_of)
     return {
         "quarter": quarter["current"],
         "quarter_base": quarter["base"],
-        "year": year["current"],
-        "year_base": year["base"],
     }
 
 
@@ -387,41 +394,102 @@ def _same_filter(key: str, want, got) -> bool:
     return _compact(got) == _compact(want)
 
 
-def parse_request_fields(url: str, post_data: str) -> dict | None:
+class RequestPayload(dict):
+    """保留重复键。相同值可以重复，值冲突记下来，调用方必须拒绝。"""
+
+    def __init__(self):
+        super().__init__()
+        self.conflicts: list[str] = []
+
+
+def parse_request_fields(url: str, post_data: str) -> RequestPayload | None:
     """只解析请求自己的字段。不把整段文字里碰巧出现的值当成筛选。"""
     from urllib.parse import parse_qs, urlparse
 
     text = (post_data or "").strip()
     if text.startswith("{"):
         try:
-            data = json.loads(text)
+            data = json.loads(text, object_pairs_hook=_pairs_to_payload)
         except json.JSONDecodeError:
             data = None
-        if isinstance(data, dict):
+        if isinstance(data, RequestPayload):
             return data
     if text and "=" in text:
         parsed = parse_qs(text, keep_blank_values=True)
         if parsed:
-            return {key: values[0] if isinstance(values, list) else values for key, values in parsed.items()}
+            return _payload_from_lists(parsed)
     query = urlparse(url or "").query
     if query:
         parsed = parse_qs(query, keep_blank_values=True)
         if parsed:
-            return {key: values[0] if isinstance(values, list) else values for key, values in parsed.items()}
+            return _payload_from_lists(parsed)
     return None
 
 
-def structured_filters_match(fields: dict | None, expected: dict) -> bool:
-    if not isinstance(fields, dict):
+def request_matches_observed_contract(fields: RequestPayload | None, expected: dict) -> bool:
+    """对照 2026-11-20 西南 getTotal 的请求形状。对不上就拒绝，不猜另一套字段。"""
+    if not isinstance(fields, RequestPayload) or fields.conflicts:
         return False
-    normalized = {_compact(str(key)): value for key, value in fields.items()}
-    for key, want in expected.items():
-        name = _compact(key)
-        if name not in normalized:
+    stat = VERIFIED_STATISTICAL_TYPE.get(str(expected.get("统计类型") or ""))
+    report = VERIFIED_REPORT_TYPE.get(str(expected.get("报表类型") or ""))
+    area_code = str(expected.get("area_code") or "")
+    if not stat or not report or not area_code:
+        return False
+    if fields.get("statisticalType") != stat or fields.get("reportType") != report:
+        return False
+    if str(fields.get("bigAreaId") or "") != area_code:
+        return False
+    start = _date_text(expected.get("开始日期"))
+    end = _date_text(expected.get("结束日期"))
+    if not start or not end:
+        return False
+    day_keys = {
+        "dateStart": start,
+        "dateEnd": end,
+        "dateStart1": start,
+        "dateEnd1": end,
+    }
+    for key, want in day_keys.items():
+        if key not in fields or _date_text(fields.get(key)) != want:
             return False
-        if not _same_filter(key, want, normalized[name]):
+    if "dirCode" not in fields or "retRepairType" not in fields:
+        return False
+    if not _blank(fields.get("dirCode")) or not _blank(fields.get("retRepairType")):
+        return False
+    for key in ("month", "monthEnd", "monthStart", "year"):
+        if key in fields and not _blank(fields.get(key)):
             return False
+    if "monthStartEnd" in fields and fields.get("monthStartEnd") not in ([], ""):
+        return False
+    if "monthStart,monthEnd" in fields and fields.get("monthStart,monthEnd") not in ([], ""):
+        return False
     return True
+
+
+def structured_filters_match(fields: dict | None, expected: dict) -> bool:
+    return request_matches_observed_contract(fields, expected)
+
+
+def _pairs_to_payload(pairs) -> RequestPayload:
+    payload = RequestPayload()
+    for key, value in pairs:
+        if key in payload and payload[key] != value:
+            payload.conflicts.append(str(key))
+        payload[key] = value
+    return payload
+
+
+def _payload_from_lists(parsed: dict) -> RequestPayload:
+    payload = RequestPayload()
+    for key, values in parsed.items():
+        seen = []
+        for value in values:
+            if value not in seen:
+                seen.append(value)
+        if len(seen) > 1:
+            payload.conflicts.append(str(key))
+        payload[key] = values[-1] if values else ""
+    return payload
 
 
 def _kind_from_body(body):
@@ -434,16 +502,45 @@ def _kind_from_body(body):
         return None, None
     if body.get("summary_from") == "detail_sum":
         return "summary", None
-    summary = body.get("summary") if isinstance(body.get("summary"), dict) else body
-    if isinstance(summary, dict) and all(key in summary and summary[key] not in ("", None) for key in SUMMARY_KEYS):
-        if body.get("kind") == "detail":
-            return "detail", None
-        if body.get("kind") == "summary" or any(key in body for key in SUMMARY_KEYS):
-            return "summary", {key: summary[key] for key in SUMMARY_KEYS}
-    rows = body.get("rows")
-    if isinstance(rows, list) and rows and isinstance(rows[0], dict) and "区域名称" in rows[0]:
+    summary = _summary_from_get_total(body)
+    if summary is not None:
+        return "summary", summary
+    if "Total" in body and not isinstance(body.get("rows"), dict):
+        try:
+            Decimal(str(body.get("Total")).replace(",", ""))
+        except Exception:
+            return None, None
         return "detail", None
     return None, None
+
+
+def _summary_from_get_total(body: dict) -> dict | None:
+    if str(body.get("result")) != "1" or body.get("msg") != "查询成功":
+        return None
+    rows = body.get("rows")
+    if not isinstance(rows, dict) or isinstance(rows, list):
+        return None
+    if rows.get("bigAreaName") != "汇总":
+        return None
+    if any(key not in rows for key in ("repairOrderNum", "vinNum", "totalAmount")):
+        return None
+    try:
+        return {
+            "orders": _plain_number(rows["repairOrderNum"]),
+            "vehicles": _plain_number(rows["vinNum"]),
+            "output": _plain_number(rows["totalAmount"]),
+        }
+    except (ArithmeticError, ValueError):
+        return None
+
+
+def _plain_number(value) -> str:
+    if isinstance(value, bool) or value is None:
+        raise ValueError("empty number")
+    text = str(value).strip().replace(",", "").replace("，", "")
+    if not text:
+        raise ValueError("empty number")
+    return format(Decimal(text), "f")
 
 
 def _blank(value) -> bool:

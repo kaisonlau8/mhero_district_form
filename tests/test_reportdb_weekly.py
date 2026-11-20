@@ -249,6 +249,46 @@ def test_quarter_and_year_windows():
     assert march["base"]["end"] == date(2023, 3, 1)
 
 
+def _day_payload(start, end, area, **replace):
+    fields = [
+        ("statisticalType", "2"),
+        ("reportType", "1"),
+        ("bigAreaId", area),
+        ("dateStart", start),
+        ("dateEnd", end),
+        ("dateStart1", start),
+        ("dateEnd1", end),
+        ("dateStart1,dateEnd1", ["2026-11-01", "2026-11-30"]),
+        ("monthStart,monthEnd", []),
+        ("dirCode", ""),
+        ("retRepairType", ""),
+        ("month", ""),
+        ("monthEnd", ""),
+        ("monthStart", ""),
+        ("year", ""),
+        ("monthStartEnd", []),
+    ]
+    fields = [(key, replace.get(key, value)) for key, value in fields]
+    parts = []
+    for key, value in fields:
+        piece = json.dumps(key, ensure_ascii=False) + ":" + json.dumps(value, ensure_ascii=False)
+        parts.extend([piece, piece])
+    return "{" + ",".join(parts) + "}"
+
+
+def _total_body(orders, vehicles, output):
+    return {
+        "result": "1",
+        "msg": "查询成功",
+        "rows": {
+            "bigAreaName": "汇总",
+            "repairOrderNum": int(orders),
+            "vinNum": int(vehicles),
+            "totalAmount": output,
+        },
+    }
+
+
 def _op_meta(**over):
     meta = dict(week_start="2026-11-16", span="quarter", period_start="2026-10-01", period_end="2026-11-20",
                 exported_at="2026-11-20 14:25:35", timezone="+08:00", filename="op.xlsx", actor="test")
@@ -360,9 +400,14 @@ def test_quarter_base_zero_and_year_missing(conn):
     assert national["orders"]["current"] == "15"
     assert national["orders"]["base"] == "0"
     assert national["orders"]["change"] == "不可比"
+    import_operation(conn, national_blob(), **_op_meta(
+        span="year", period_start="2026-01-01", period_end="2026-11-20", filename="year.xlsx"))
+    page = build_weekly_page(conn, "2026-11-16", today=date(2026, 11, 20))
     year = next(r for r in page["operation"]["year"]["rows"] if r["region"] == "全国")
-    assert year["orders"]["current"] == "未导入"
-    assert year["orders"]["change"] == "未导入"
+    assert year["orders"]["current"] == "15"
+    assert conn.execute(
+        "SELECT COUNT(*) FROM weekly_imports WHERE compare_role='year' AND status='active'"
+    ).fetchone()[0] == 1
 
 
 def test_indicators_use_summary_and_operation_stays_on_receipt_export(conn):
@@ -442,8 +487,13 @@ def test_collector_plans_without_dms_and_keeps_daily_schedule():
     assert plan["live"] is False and plan["verified_against_dms"] is False
     assert plan["time"] == "14:45" and plan["weekday"] == "friday"
     assert [job["span"] for job in plan["jobs"] if job["scope"] == "全国"] == [
-        "quarter", "quarter_base", "year", "year_base",
+        "quarter", "quarter_base",
     ]
+    seven = ["华北", "华东", "华南", "华中1", "西南", "西北", "华中2"]
+    full = collect_weekly_sources(as_of="2026-11-20", regions=seven)
+    assert len(full["jobs"]) == 16
+    assert {job["span"] for job in full["jobs"]} == {"quarter", "quarter_base"}
+    assert not any("year" in job["span"] for job in full["jobs"])
     assert plan["jobs"][0]["filters"]["统计类型"] == "收款"
     assert plan["jobs"][0]["filters"]["报表类型"] == "日报"
     assert plan["jobs"][0]["filters"]["业务门店"] == ""
@@ -512,7 +562,8 @@ def test_weekly_page_nav_and_roles(conn, tmp_path):
     )
     assert posted.status_code == 303
     shown = admin.get("/reports/weekly", params={"week": "2026-11-16"})
-    assert "经营数据" in shown.text and "季度环比" in shown.text and "年度同比" in shown.text
+    assert "经营数据" in shown.text and "季度环比" in shown.text
+    assert "年度同比" not in shown.text and "shot-year" not in shown.text and "截图：年度" not in shown.text
     assert "来自DMS收款报表" in shown.text
     assert "2026-10-01" in shown.text and "2026-08-20" in shown.text
     assert "实现默认" in shown.text
@@ -565,9 +616,8 @@ def test_weekly_page_nav_and_roles(conn, tmp_path):
     assert "折线" not in demo_q.text
     assert "calc.compute" not in qchunk
     demo_y = admin.get("/reports/weekly/demo", params={"view": "year"})
-    assert "2025-01-01" in demo_y.text and "2025-11-20" in demo_y.text
-    ychunk = demo_y.text.split('id="shot-year"', 1)[1].split("<details", 1)[0]
-    assert "去年同期" in ychunk and "对比期" not in ychunk and "141,050.00" in ychunk
+    assert "shot-year" not in demo_y.text and "年度同比" not in demo_y.text and "去年同期" not in demo_y.text
+    assert "上季度同期" in demo_y.text
     demo_i = admin.get("/reports/weekly/demo", params={"view": "indicators"})
     ichunk = demo_i.text.split('id="shot-kpi"', 1)[1].split("<details", 1)[0]
     assert "使用系统计算结果" in ichunk
@@ -616,7 +666,7 @@ def test_weekly_crawl_imports_serial_and_keeps_partial_failure(conn, tmp_path):
 
     def fetch(job):
         calls.append(job["key"])
-        if job["key"].endswith(":year_base:华东"):
+        if job["key"].endswith(":quarter_base:华东"):
             raise RuntimeError("下载超时")
         blob = national_blob() if job["scope"] == "全国" else east_blob()
         return _captured(job, blob)
@@ -624,22 +674,22 @@ def test_weekly_crawl_imports_serial_and_keeps_partial_failure(conn, tmp_path):
     out = tmp_path / "weekly"
     first = run_weekly_crawl(conn, as_of="2026-11-20", regions=["华东"], fetch=fetch, output_dir=out, clock=lambda: datetime(2026, 11, 20, 14, 45))
     assert first["complete"] is False
-    assert first["failed"] == ["2026-11-20:year_base:华东"]
+    assert first["failed"] == ["2026-11-20:quarter_base:华东"]
     assert first["verified_against_dms"] is False
     assert (out / "quarter_全国.xlsx").is_file()
     saved = conn.execute(
         "SELECT COUNT(*) FROM weekly_imports WHERE kind='operation' AND status='active'"
     ).fetchone()[0]
-    assert saved == 7
+    assert saved == 3
     calls.clear()
     second = run_weekly_crawl(conn, as_of="2026-11-20", regions=["华东"], fetch=fetch, output_dir=out, clock=lambda: datetime(2026, 11, 20, 14, 45))
-    assert calls == ["2026-11-20:year_base:华东"] * 3
+    assert calls == ["2026-11-20:quarter_base:华东"] * 3
     assert second["complete"] is False
     calls.clear()
     later = run_weekly_crawl(conn, as_of="2026-11-27", regions=["华东"], fetch=fetch, output_dir=out, clock=lambda: datetime(2026, 11, 20, 14, 45))
     assert later["complete"] is False
     assert calls.count("2026-11-27:quarter:全国") == 1
-    assert calls.count("2026-11-27:year_base:华东") == 3
+    assert calls.count("2026-11-27:quarter_base:华东") == 3
 
     def wrong(job):
         bad = dict(job["filters"])
@@ -711,14 +761,14 @@ def test_stale_summary_and_old_file_are_not_imported(conn, tmp_path):
     def fetch(job):
         blob = national_blob() if job["scope"] == "全国" else east_blob()
         got = _captured(job, blob)
-        if job["span"] == "year" and job["scope"] == "华东":
+        if job["span"] == "quarter_base" and job["scope"] == "华东":
             got["responses"][1]["summary"] = {"orders": "843", "vehicles": "522", "output": "1923650.23"}
         return got
 
     out = tmp_path / "kept"
     result = run_weekly_crawl(conn, as_of="2026-11-20", regions=["华东"], fetch=fetch, output_dir=out, resume=False, clock=lambda: datetime(2026, 11, 20, 14, 45))
     assert result["complete"] is False
-    failed = [item for item in result["results"] if item["span"] == "year" and item["scope"] == "华东"]
+    failed = [item for item in result["results"] if item["span"] == "quarter_base" and item["scope"] == "华东"]
     assert failed and failed[0]["status"] == "failed"
     assert "不一致" in failed[0]["error"]
     assert kept.read_bytes() == b"already-good"
@@ -804,34 +854,30 @@ def test_live_fetch_result_imports_the_same_summary(conn, tmp_path, monkeypatch)
             self.values = dict(filters)
         def read_filters(self):
             return dict(self.values)
+        def read_area_code(self):
+            return "SEL"
         def query(self):
             self.page.last_filters = dict(self.values)
-            post = json.dumps(self.values, ensure_ascii=False)
             if self.page.mode == "noise":
                 self.page.emit(Resp(200, "https://m-dms.dfmc.com.cn/ping", "", {"ok": True}))
                 self.page.emit(Resp(200, "https://m-dms.dfmc.com.cn/note", "华东收款日报2026-10-01", {"kind": "summary", "orders": "15", "vehicles": "9", "output": "120.00"}))
                 return
             if self.page.mode == "late":
-                old = dict(self.values)
-                old["开始日期"] = "2024-01-01"
-                old["结束日期"] = "2024-01-02"
-                self.page.emit(Resp(200, "https://m-dms.dfmc.com.cn/old", json.dumps(old, ensure_ascii=False), {
-                    "kind": "summary", "orders": "998", "vehicles": "1272", "output": "7620333.56",
-                }))
+                post = _day_payload("2024-01-01", "2024-01-02", "SEL")
+                self.page.emit(Resp(200, "https://m-dms.dfmc.com.cn/old", post, _total_body(998, 1272, "7,620,333.56")))
                 return
-            self.page.emit(Resp(200, "https://m-dms.dfmc.com.cn/detail", post, {"rows": [{"区域名称": self.values["区域"]}]}))
+            post = _day_payload(self.values["开始日期"], self.values["结束日期"], "SEL")
             orders, vehicles, output = ("15", "9", "120.00") if self.values["区域"] == "全国" else ("6", "4", "40.00")
-            self.page.emit(Resp(200, "https://m-dms.dfmc.com.cn/summary", post, {"kind": "summary", "orders": orders, "vehicles": vehicles, "output": output}))
+            self.page.emit(Resp(200, "https://m-dms.dfmc.com.cn/detail", post, {"Total": 130}))
+            self.page.emit(Resp(200, "https://m-dms.dfmc.com.cn/getTotal", post, _total_body(orders, vehicles, output)))
 
     same_bytes = {"全国": national_blob(), "华东": east_blob()}
 
     def export(page, output_dir, **kw):
         if getattr(page, "mode", "") == "late":
-            post = json.dumps(page.last_filters, ensure_ascii=False)
-            page.emit(Resp(200, "https://m-dms.dfmc.com.cn/summary", post, {
-                "kind": "summary", "orders": "15", "vehicles": "9", "output": "120.00",
-            }))
-            page.emit(Resp(200, "https://m-dms.dfmc.com.cn/detail", post, {"rows": [{"区域名称": "全国"}]}))
+            post = _day_payload(page.last_filters["开始日期"], page.last_filters["结束日期"], "SEL")
+            page.emit(Resp(200, "https://m-dms.dfmc.com.cn/getTotal", post, _total_body(15, 9, "120.00")))
+            page.emit(Resp(200, "https://m-dms.dfmc.com.cn/detail", post, {"Total": 130}))
         blob = same_bytes["全国" if "全国" in kw.get("save_prefix", "") else "华东"]
         path = Path(output_dir) / f"{kw.get('save_prefix', 'x')}{len(list(Path(output_dir).glob('*.xlsx')))}.xlsx"
         path.write_bytes(blob)
@@ -1049,6 +1095,57 @@ def test_real_samples_parse_and_do_not_bind_as_current_week(conn):
     assert "6402712.72" not in json.dumps(page, ensure_ascii=False)
 
 
+def test_gettotal_contract_accepts_day_mode_and_rejects_conflicts():
+    from reportdb.weekly_crawl import classify_page_response, confirm_query_responses
+
+    fixture = json.loads((Path(__file__).parent / "fixtures" / "dms_gettotal_southwest_2026-11-20.json").read_text(encoding="utf-8"))
+    expected = dict(fixture["gui"])
+    expected["area_code"] = fixture["selected_option_value"]
+    raw = fixture["request_body"]
+    summary = classify_page_response(
+        {"status": 200, "url": "https://m-dms.dfmc.com.cn/getTotal", "post_data": raw, "body": fixture["response_body"]},
+        "q", expected,
+    )
+    detail = classify_page_response(
+        {"status": 200, "url": "https://m-dms.dfmc.com.cn/detail", "post_data": raw, "body": {"Total": fixture["detail_total"]}},
+        "q", expected,
+    )
+    assert summary["kind"] == "summary"
+    assert summary["summary"] == {"orders": "4998", "vehicles": "1272", "output": "7620333.56"}
+    assert detail["kind"] == "detail"
+    assert confirm_query_responses(fixture["gui"], "q", [detail, summary])["orders"] == "4998"
+    assert "dateStart1,dateEnd1" in raw and "2026-11-30" in raw
+
+    conflict = raw.replace('"dateStart":"2025-01-01"', '"dateStart":"2024-01-01"', 1)
+    assert classify_page_response(
+        {"status": 200, "url": "https://m-dms.dfmc.com.cn/getTotal", "post_data": conflict, "body": fixture["response_body"]},
+        "q", expected,
+    ) is None
+    other_area = dict(expected)
+    other_area["area_code"] = "001"
+    assert classify_page_response(
+        {"status": 200, "url": "https://m-dms.dfmc.com.cn/getTotal", "post_data": raw, "body": fixture["response_body"]},
+        "q", other_area,
+    ) is None
+    unlabeled = dict(expected)
+    unlabeled["area_code"] = ""
+    assert classify_page_response(
+        {"status": 200, "url": "https://m-dms.dfmc.com.cn/getTotal", "post_data": raw, "body": fixture["response_body"]},
+        "q", unlabeled,
+    ) is None
+    for key, value in (("dirCode", "S1"), ("retRepairType", "保修")):
+        changed = raw.replace(f'"{key}":""', f'"{key}":"{value}"')
+        assert classify_page_response(
+            {"status": 200, "url": "https://m-dms.dfmc.com.cn/getTotal", "post_data": changed, "body": fixture["response_body"]},
+            "q", expected,
+        ) is None
+    chinese = json.dumps(fixture["gui"], ensure_ascii=False)
+    assert classify_page_response(
+        {"status": 200, "url": "https://m-dms.dfmc.com.cn/getTotal", "post_data": chinese, "body": fixture["response_body"]},
+        "q", expected,
+    ) is None
+
+
 def test_real_playwright_download_wait_rejects_late_wrong_period(conn, tmp_path, monkeypatch):
     """下载等待必须让同步 Playwright 派发响应。不能靠测试代码把响应塞进列表。"""
     import threading
@@ -1074,7 +1171,7 @@ def test_real_playwright_download_wait_rejects_late_wrong_period(conn, tmp_path,
 document.querySelector("button").addEventListener("click", () => {
   setTimeout(() => {
     fetch("/late", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({"统计类型":"收款","报表类型":"日报","区域":"全国","业务门店":"","开始日期":"2024-01-01","结束日期":"2024-01-02"})});
+      body: JSON.stringify({"statisticalType":"2","reportType":"1","bigAreaId":"009","dateStart":"2024-01-01","dateEnd":"2024-01-02","dateStart1":"2024-01-01","dateEnd1":"2024-01-02","dateStart1,dateEnd1":["2026-11-01","2026-11-30"],"monthStart,monthEnd":[],"dirCode":"","retRepairType":"","month":"","monthEnd":"","monthStart":"","year":"","monthStartEnd":[]})});
   }, 200);
 });
 </script>"""
@@ -1094,7 +1191,10 @@ document.querySelector("button").addEventListener("click", () => {
             self.rfile.read(length)
             (out / "late-download.xlsx").write_bytes(blob)
             served["n"] += 1
-            payload = json.dumps({"kind": "summary", "orders": "998", "vehicles": "1272", "output": "7620333.56"}).encode()
+            payload = json.dumps({
+                "result": "1", "msg": "查询成功",
+                "rows": {"bigAreaName": "汇总", "repairOrderNum": 998, "vinNum": 1272, "totalAmount": "7,620,333.56"},
+            }).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(payload)))
@@ -1120,6 +1220,8 @@ document.querySelector("button").addEventListener("click", () => {
             return dict(self.values)
         def query(self):
             return None
+        def read_area_code(self):
+            return "009"
 
     monkeypatch.setattr(weekly_script, "open_operation_page", lambda page: None)
     monkeypatch.setattr(weekly_script, "PlaywrightForm", Form)

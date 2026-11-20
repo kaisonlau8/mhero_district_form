@@ -92,7 +92,7 @@
 <header class="ant-page-header">
   <div class="ant-page-header-heading">
     <h1>猛士周报</h1>
-    <div class="ant-page-header-sub">每周看一次。经营看季和年，指标用系统已经算好的结果。</div>
+    <div class="ant-page-header-sub">每周看一次。经营看本季度和上季度同期，指标用系统已经算好的结果。</div>
   </div>
   <form class="ant-page-header-actions" method="get" action="{{ '/reports/weekly/demo' if demo else '/reports/weekly' }}">
     {% if not demo %}
@@ -103,7 +103,6 @@
     </label>
     {% endif %}
     <a class="ant-btn" href="{{ '/reports/weekly/demo' if demo else '/reports/weekly' }}?week={{ model.week_start }}&view=quarter">截图：季度</a>
-    <a class="ant-btn" href="{{ '/reports/weekly/demo' if demo else '/reports/weekly' }}?week={{ model.week_start }}&view=year">截图：年度</a>
     <a class="ant-btn" href="{{ '/reports/weekly/demo' if demo else '/reports/weekly' }}?week={{ model.week_start }}&view=indicators">截图：指标</a>
     {% if model.can_import and not demo %}<a class="ant-btn" href="/reports/weekly/import?week={{ model.week_start }}">导入 Excel</a>{% endif %}
   </form>
@@ -165,33 +164,19 @@
 {{ bars(panel, 'vehicles', '各区来厂车辆数（去重）', '辆') | safe }}
 {% endmacro %}
 
-{% if not view or view in ('quarter', 'year') %}
+{% if not view or view == 'quarter' %}
 <section class="board" id="shot-operation">
   <h2>经营数据</h2>
-  <div class="switch">
-    <a class="{{ 'on' if view == 'quarter' else '' }}" href="?week={{ model.week_start }}&view=quarter">季度环比</a>
-    <a class="{{ 'on' if view == 'year' else '' }}" href="?week={{ model.week_start }}&view=year">年度同比</a>
-  </div>
-  {% if not view or view == 'quarter' %}
   <article id="shot-quarter">
     <h3 style="font-size:22px;margin:8px 0">季度环比</h3>
     <p class="src-line">来自DMS收款报表</p>
     {% if model.operation.quarter.current %}{{ board(model.operation.quarter) | safe }}{% else %}<p class="src-line">未导入</p>{% endif %}
   </article>
-  {% endif %}
-  {% if not view or view == 'year' %}
-  <article id="shot-year">
-    <h3 style="font-size:22px;margin:8px 0">年度同比</h3>
-    <p class="src-line">来自DMS收款报表</p>
-    {% if model.operation.year.current %}{{ board(model.operation.year) | safe }}{% else %}<p class="src-line">未导入</p>{% endif %}
-  </article>
-  {% endif %}
   <details class="weekly-audit">
     <summary>比对方式和核对</summary>
     <p>{{ model.operation.note }}</p>
     {% if model.operation.quarter.progress_note %}<p>{{ model.operation.quarter.progress_note }} {{ model.operation.quarter.default_note }}</p>{% endif %}
     {% if model.operation.quarter.reconcile %}<p>{{ model.operation.quarter.reconcile.warning }}</p>{% endif %}
-    {% if model.operation.year.reconcile %}<p>{{ model.operation.year.reconcile.warning }}</p>{% endif %}
   </details>
 </section>
 {% endif %}

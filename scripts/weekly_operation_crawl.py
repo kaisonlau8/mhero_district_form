@@ -72,6 +72,29 @@ class PlaywrightForm:
         from crawl_district_reports import click_query
         click_query(self.page)
 
+    def read_area_code(self) -> str:
+        """读区域下拉当前选中项自己的 value。读不到就返回空，不用名称去编编码。"""
+        return self.page.evaluate(
+            """() => {
+              const items = Array.from(document.querySelectorAll('.el-form-item'));
+              const item = items.find((el) => {
+                const label = (el.querySelector('.el-form-item__label')?.innerText || '')
+                  .replace(/\\s+/g, '').replace(/[:：]/g, '');
+                return label === '区域';
+              });
+              const select = item ? item.querySelector('.el-select') : null;
+              const vue = select && select.__vue__;
+              if (vue) {
+                const raw = vue.value != null ? vue.value : (vue.selected && vue.selected.value);
+                if (raw != null && String(raw) !== '') return String(raw);
+              }
+              const selected = document.querySelector('.el-select-dropdown__item.selected');
+              const option = selected && selected.__vue__;
+              if (option && option.value != null && String(option.value) !== '') return String(option.value);
+              return '';
+            }"""
+        ) or ""
+
 
 def _set_labeled(page, label: str, value: str) -> None:
     item = page.locator(".el-form-item").filter(has_text=label).first
@@ -171,9 +194,12 @@ def live_fetch(page, output_dir: Path):
             if hasattr(page, "wait_for_timeout"):
                 page.wait_for_timeout(100)
             content = path.read_bytes() if path is not None and path.exists() else b""
+            expected = dict(job["filters"])
+            reader = getattr(form, "read_area_code", None)
+            expected["area_code"] = reader() if reader else ""
             responses = []
             for event in seen:
-                item = classify_page_response(event, query_id, job["filters"])
+                item = classify_page_response(event, query_id, expected)
                 if item:
                     responses.append(item)
             return {

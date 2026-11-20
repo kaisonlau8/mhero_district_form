@@ -65,7 +65,7 @@ def audit_site(conn, tmp_path):
             "summary", "region-indicators", "direct-stores", "spare-parts")],
             *[f"/data/{key}" for key in data], "/stores", f"/stores/{store}",
             "/reports/daily", "/reports/weekly?week=2026-11-16", "/reports/weekly/demo",
-            "/reports/weekly/demo?view=year", "/reports/weekly/demo?view=indicators",
+            "/reports/weekly/demo?view=indicators",
             "/reports/weekly/import", "/account/password", "/exemptions/new", "/exemptions/mine",
             "/exclusions/new", "/settings/exclusion-rules", "/settings/spare-parts",
             f"/settings/spare-parts/preview/{draft}", "/admin/users", f"/admin/users/{supervisor}/stores",
@@ -150,7 +150,7 @@ def test_reportdb_layout(chromium, audit_site, width):
                 check(sheet.evaluate("el => el.scrollWidth > el.clientWidth"), "总表应仅在表内横滚")
                 check(sheet.locator("tbody tr:first-child td:nth-child(2)").evaluate(
                     "el => getComputedStyle(el).position") == "sticky", "总表区域列未固定")
-            if path in {"/reports/weekly/demo", "/reports/weekly/demo?view=year"}:
+            if path == "/reports/weekly/demo":
                 check(page.locator(".vbar").count() > 0, "未覆盖有数据的经营竖柱图")
                 check(page.locator(".vplot").evaluate_all("els => els.every(el => {"
                       "const r = el.getBoundingClientRect(); return r.right <= innerWidth + 1 && "
@@ -176,12 +176,8 @@ def test_reportdb_layout(chromium, audit_site, width):
             if path == "/reports/weekly?week=2026-11-16":
                 east = page.locator('#shot-quarter [data-chart="orders"] .vgroup').filter(has_text="华东")
                 check(east.locator('.vbar.prev[data-value="6"]').count() == 1, "未覆盖华东季度对比期")
-                year = page.locator("#shot-year")
-                east_year = year.locator('[data-chart="orders"] .vgroup').filter(has_text="华东")
-                check(east_year.locator(".vslot").get_by_text("未导入", exact=True).count() == 2
-                      and not east_year.locator(".vbar").count(),
-                      "华东缺年度角色时不得复用季度数据")
-                check("未导入" in year.locator('[data-card="orders"] .sub').inner_text(), "全国缺年度对比期时不得回填")
+                check(page.locator("#shot-year").count() == 0 and "年度同比" not in page.content(),
+                      "周报不应再显示年度入口")
             if path == "/reports/weekly/import" and mobile:
                 fields = page.locator('form[action="/reports/weekly/import"] :is(input, select):visible')
                 check(fields.evaluate_all("els => els.slice(0, -1).every(el => "
