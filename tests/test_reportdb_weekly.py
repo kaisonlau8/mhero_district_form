@@ -1050,6 +1050,7 @@ def test_cli_month_import_keeps_history_and_rejects_bad_windows(conn, tmp_path, 
     from reportdb.weekly_import import main
     from reportdb.weekly_report import build_weekly_page, import_operation
 
+    import_operation(conn, national_blob(), **_op_meta())
     import_operation(conn, national_blob(), **_op_meta(
         span="year", period_start="2026-01-01", period_end="2026-11-20", filename="year.xlsx"))
     db = Path(conn.execute("PRAGMA database_list").fetchone()[2])
@@ -1084,6 +1085,24 @@ def test_cli_month_import_keeps_history_and_rejects_bad_windows(conn, tmp_path, 
     assert "18.10" not in json.dumps(page["operation"]["months"])
     missing = {job["month"] for job in plan_month_backfill(date(2026, 11, 23), [], conn)}
     assert "2026-01" not in missing and "2026-10" in missing
+    revised = ["2026-11-23 18:00:00" if item == "2026-11-23 09:10:00" else item for item in base]
+    assert main([*revised, "--span", "month", "--period-start", "2026-01-01", "--period-end", "2026-01-31"]) == 2
+    assert main([*revised, "--span", "month", "--period-start", "2026-01-01", "--period-end", "2026-01-31", "--revision"]) == 0
+    assert conn.execute(
+        "SELECT COUNT(*) FROM weekly_imports WHERE compare_role='month:2026-01' AND status='active'"
+    ).fetchone()[0] == 1
+    assert conn.execute(
+        "SELECT COUNT(*) FROM weekly_imports WHERE compare_role='month:2026-01' AND status='superseded'"
+    ).fetchone()[0] == 1
+    assert conn.execute(
+        "SELECT exported_at FROM weekly_imports WHERE compare_role='month:2026-01' AND status='active'"
+    ).fetchone()[0].startswith("2026-11-23 18:00:00")
+    assert conn.execute(
+        "SELECT COUNT(*) FROM weekly_imports WHERE compare_role='quarter' AND status='active'"
+    ).fetchone()[0] == 1
+    assert conn.execute(
+        "SELECT COUNT(*) FROM weekly_imports WHERE compare_role='year' AND status='active'"
+    ).fetchone()[0] == 1
 
 
 def _sample_dir():
