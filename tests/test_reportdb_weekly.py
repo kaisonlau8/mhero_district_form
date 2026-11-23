@@ -1045,6 +1045,47 @@ def test_cli_import(conn, tmp_path, monkeypatch):
     assert conn.execute("SELECT COUNT(*) FROM weekly_imports").fetchone()[0] == 1
 
 
+def test_cli_month_import_keeps_history_and_rejects_bad_windows(conn, tmp_path, monkeypatch):
+    from reportdb.weekly_crawl import plan_month_backfill
+    from reportdb.weekly_import import main
+    from reportdb.weekly_report import build_weekly_page, import_operation
+
+    import_operation(conn, national_blob(), **_op_meta(
+        span="year", period_start="2026-01-01", period_end="2026-11-20", filename="year.xlsx"))
+    db = Path(conn.execute("PRAGMA database_list").fetchone()[2])
+    monkeypatch.setenv("REPORTDB_PATH", str(db))
+    national = tmp_path / "national-jan.xlsx"
+    national.write_bytes(national_blob())
+    base = [
+        "operation", "--file", str(national), "--week", "2026-11-23", "--scope", "全国",
+        "--exported-at", "2026-11-23 09:10:00", "--as-of", "2026-11-23", "--actor", "cli",
+    ]
+    assert main([*base, "--span", "month", "--period-start", "2026-01-01", "--period-end", "2026-01-31"]) == 0
+    assert main([*base, "--span", "month", "--period-start", "2026-01-01", "--period-end", "2026-01-31"]) == 0
+    assert main([*base, "--span", "month", "--period-start", "2026-11-01", "--period-end", "2026-11-23"]) == 0
+    assert main([*base, "--span", "month", "--period-start", "2026-01-01", "--period-end", "2026-01-30"]) == 1
+    assert main([*base, "--span", "month", "--period-start", "2026-02-01", "--period-end", "2026-01-31"]) == 1
+    assert main([*base, "--span", "month", "--period-start", "2026-11-01", "--period-end", "2026-11-30"]) == 1
+    assert main([*base, "--span", "month", "--period-start", "2026-01-01", "--period-end", "2026-01-31", "--scope", "华东"]) == 1
+    row = conn.execute(
+        "SELECT compare_role, period_start, period_end, exported_at FROM weekly_imports WHERE compare_role='month:2026-01' AND status='active'"
+    ).fetchone()
+    assert row["period_start"] == "2026-01-01" and row["period_end"] == "2026-01-31"
+    assert row["exported_at"].startswith("2026-11-23 09:10:00")
+    assert conn.execute(
+        "SELECT COUNT(*) FROM weekly_imports WHERE compare_role='year' AND status='active'"
+    ).fetchone()[0] == 1
+    page = build_weekly_page(conn, "2026-11-23", today=date(2026, 11, 23))
+    nation = next(item for item in page["operation"]["months"]["rows"] if item["region"] == "全国")
+    assert nation["cells"]["2026-01"]["imported"] is True
+    assert nation["cells"]["2026-01"]["orders"] == "15"
+    assert nation["cells"]["2026-11"]["orders"] == "15"
+    assert nation["cells"]["2026-10"]["orders"] == "未导入"
+    assert "18.10" not in json.dumps(page["operation"]["months"])
+    missing = {job["month"] for job in plan_month_backfill(date(2026, 11, 23), [], conn)}
+    assert "2026-01" not in missing and "2026-10" in missing
+
+
 def _sample_dir():
     env = os.environ.get("MHERO_WEEKLY_SAMPLE_DIR", "").strip()
     candidates = [Path(env)] if env else []
