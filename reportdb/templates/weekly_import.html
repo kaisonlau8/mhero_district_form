@@ -11,28 +11,40 @@
 <div class="ant-card">
   <div class="ant-card-head"><h2 class="ant-card-head-title">经营报表（收款 · 日报）</h2></div>
   <div class="ant-card-body">
-    <p>全国一份、每个区域一份。比较的是季度累计或年度累计，不是这一周。未结束的季度或年度按同进度（实现默认，不是业务指定）。2026-11-01 至 2026-11-19 以及任意「周一到周内某天」都不能导入成季度或年度。</p>
+    <p>全国一份、每个区域一份。自动采集和这张周报只做本季度对上季度同期。库里已经有的年度文件保留，不删。年度选项只用于补录已有文件，不会再向 DMS 查询年度。2026-11-01 至 2026-11-19 以及任意「周一到周内某天」都不能导入成季度或年度。</p>
     <form method="post" action="/reports/weekly/import" enctype="multipart/form-data">
       <input type="hidden" name="csrf" value="{{ csrf }}">
       <input type="hidden" name="kind" value="operation">
-      <p><label>文件 <input type="file" name="file" accept=".xlsx" required></label></p>
-      <p><label>更新周的周一 <input name="week" value="{{ week }}" required placeholder="2026-11-16"></label>
-         <label>角色
-           <select name="span" required>
+      <div class="ant-form-item"><label class="ant-form-item-label" for="weekly-file">文件</label>
+        <input class="ant-input" id="weekly-file" type="file" name="file" accept=".xlsx" required></div>
+      <div class="ant-form-row">
+        <label class="ant-form-item"><span class="ant-form-item-label">更新周的周一</span>
+          <input class="ant-input" type="date" name="week" value="{{ week }}" required></label>
+        <label class="ant-form-item"><span class="ant-form-item-label">比较角色</span>
+           <select class="ant-select" name="span" required>
              <option value="quarter">季度累计</option>
              <option value="quarter_base">季度环比对比期</option>
-             <option value="year">年度累计</option>
-             <option value="year_base">年度同比对比期</option>
+             <option value="year">年度累计（只补录旧文件）</option>
+             <option value="year_base">年度同比对比期（只补录旧文件）</option>
+             <option value="month">月度原件</option>
            </select>
-         </label></p>
-      <p><label>统计起日 <input name="period_start" required placeholder="2026-10-01"></label>
-         <label>统计止日 <input name="period_end" required placeholder="2026-11-20"></label></p>
-      <p><label>本次更新截止日（对比期必填，须落在更新周内） <input name="as_of" placeholder="2026-11-20"></label></p>
-      <p><label>导出时间 <input name="exported_at" required placeholder="2026-11-20 14:25:35"></label>
-         <label>时区 <input name="timezone" value="+08:00" required></label></p>
-      <p><label>统计类型 <input name="stat_type" value="收款" required></label>
-         <label>报表类型 <input name="report_type" value="日报" required></label></p>
-      <p><label><input type="checkbox" name="allow_revision" value="1"> 保留旧快照并写入新修订</label></p>
+        </label>
+        <label class="ant-form-item"><span class="ant-form-item-label">统计起日</span>
+          <input class="ant-input" type="date" name="period_start" required></label>
+        <label class="ant-form-item"><span class="ant-form-item-label">统计止日</span>
+          <input class="ant-input" type="date" name="period_end" required></label>
+        <label class="ant-form-item"><span class="ant-form-item-label">本次更新截止日（对比期必填）</span>
+          <input class="ant-input" type="date" name="as_of"><small class="muted">须在更新周内</small></label>
+        <label class="ant-form-item"><span class="ant-form-item-label">导出时间</span>
+          <input class="ant-input" name="exported_at" required placeholder="2026-11-20 14:25:35"></label>
+        <label class="ant-form-item"><span class="ant-form-item-label">时区</span>
+          <input class="ant-input" name="timezone" value="+08:00" required></label>
+        <label class="ant-form-item"><span class="ant-form-item-label">统计类型</span>
+          <input class="ant-input" name="stat_type" value="收款" required></label>
+        <label class="ant-form-item"><span class="ant-form-item-label">报表类型</span>
+          <input class="ant-input" name="report_type" value="日报" required></label>
+      </div>
+      <p><label class="ant-checkbox"><input type="checkbox" name="allow_revision" value="1"> 保留旧快照并写入新修订</label></p>
       <button class="ant-btn ant-btn-primary" type="submit">导入经营 Excel</button>
     </form>
   </div>

@@ -56,6 +56,7 @@
     .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; vertical-align: -1px; margin: 0 3px 0 8px; }
     /* 筛选卡合并后的行内标题（修正结果 / 剔除申请页的「筛选车辆」） */
     .filter-title { font-size: var(--ant-font-size-table); font-weight: 600; color: var(--ant-color-text); white-space: nowrap; }
+    .sheet-hint { display: none; }
 
     /* ---- ② 备件矩阵单元格（未备=辅助灰、已备=success 弱底） ---- */
     .cell0 { color: var(--ant-color-text-tertiary); }
@@ -103,6 +104,11 @@
        首列（#/名次）不再粘性、随内容横滑；门店表的 # 列直接隐藏省出宽度。
        粘性列限宽 + 裁省略号，避免长店名把可横滑区挤没；背景保持不透明。 */
     @media (max-width: 768px) {
+      .reportdb .ant-form-row { grid-template-columns: minmax(0, 1fr); gap: 0; }
+      .reportdb input[type="file"].ant-input { width: 100%; min-width: 0; min-height: 44px; }
+      .reportdb .ant-form-item :is(.ant-input, .ant-select) { min-width: 0; max-width: 100%; width: 100%; }
+      .reportdb .ant-alert-content { min-width: 0; overflow-wrap: anywhere; }
+      .sheet-hint { display: block; margin: 0 0 6px; color: var(--ant-color-text-secondary); font-size: var(--ant-font-size-sm); }
       table.xl th:first-child, table.xl td:first-child { position: static; }
       table.xl th:nth-child(2), table.xl td:nth-child(2) {
         left: 0; min-width: 0; max-width: 46vw;
@@ -120,13 +126,13 @@
   </style>
   {% block head %}{% endblock %}
 </head>
-<body>
+<body class="reportdb">
   {# 本地图标 sprite（阿里 Ant Design Icons，MIT）：<svg class="ai"><use href="#i-xxx"/></svg> #}
   {{ ds_sprite|safe }}
   {% set P = request.url.path %}
   {% macro item(href, label) %}<a href="{{ href }}{% if date and '?' not in href %}?date={{ date }}{% endif %}" class="{{ 'cur' if P == href }}" {% if P == href %}aria-current="page"{% endif %}>{{ label }}</a>{% endmacro %}
   {# 顶栏：ant-header / ant-menu 规格（历史 hook .topbar/.menu/.mi/.dd 由 antd-lite.css 与 ant-* 共享规则承接） #}
-  <header class="topbar" id="topbar"><div class="in">
+  <header class="topbar" id="topbar" data-no-auto-burger><div class="in">
     <a class="brand" href="/{% if date %}?date={{ date }}{% endif %}"><img class="brand-logo" src="/ds/brand/logo-blue.png" srcset="/ds/brand/logo-blue@2x.png 2x" alt="猛士" height="28">区域报表</a>
     <button class="burger" id="burger" type="button" aria-label="打开菜单" aria-expanded="false" aria-controls="mainmenu"><svg class="ai burger-ico burger-ico-menu" aria-hidden="true"><use href="#i-menu"/></svg><svg class="ai burger-ico burger-ico-close" aria-hidden="true"><use href="#i-close"/></svg></button>
     <nav class="menu ant-menu" id="mainmenu" aria-label="主导航">
@@ -164,6 +170,7 @@
     function closeAll(except){items.forEach(function(m){if(m!==except){m.classList.remove('open');var b=m.querySelector('button');if(b)b.setAttribute('aria-expanded','false');}});}
     function setDrawer(open){
       if(!mobileMq.matches) open=false;
+      var wasOpen=bar.classList.contains('open');
       bar.classList.toggle('open', !!open);
       document.body.classList.toggle('nav-open', !!open);
       burger.setAttribute('aria-expanded', open?'true':'false');
@@ -174,7 +181,10 @@
         if(hide) menu.setAttribute('inert',''); else menu.removeAttribute('inert');
       }
       if(backdrop) backdrop.setAttribute('aria-hidden', open?'false':'true');
-      if(!open) closeAll();
+      if(!open){
+        closeAll();
+        if(wasOpen && mobileMq.matches) burger.focus();
+      }
     }
     items.forEach(function(m){var b=m.querySelector(':scope > button'); if(!b) return;
       b.addEventListener('click',function(e){e.stopPropagation();var o=!m.classList.contains('open');closeAll(m);m.classList.toggle('open',o);b.setAttribute('aria-expanded',o);});

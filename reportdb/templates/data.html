@@ -41,7 +41,7 @@
 
 <div class="ant-card">
   <div class="ant-card-body">
-  <div class="tw ant-table-wrap"><table class="sticky1"><thead><tr>
+  <div class="tw ant-table-wrap" data-ds-primary><table class="sticky1"><thead><tr>
     <th class="nosort num">#</th>
     {% set NS = namespace(t=false) %}{% for c, l in cols %}{% if not NS.t and (c == 'vin' or c == 'store_name') %}{% set NS.t = true %}<th class="nosort" data-card-title onclick="location.href='?{{ qs(sort=c, dir=('desc' if (sort==c and dir=='asc') else 'asc'), page=1) }}'">{{ l }}{% if sort==c %} <span class="arr"><svg class="ai" aria-hidden="true"><use href="#i-caret-{{ 'up' if dir=='asc' else 'down' }}"/></svg></span>{% endif %}</th>
     {% else %}<th onclick="location.href='?{{ qs(sort=c, dir=('desc' if (sort==c and dir=='asc') else 'asc'), page=1) }}'">{{ l }}{% if sort==c %} <span class="arr"><svg class="ai" aria-hidden="true"><use href="#i-caret-{{ 'up' if dir=='asc' else 'down' }}"/></svg></span>{% endif %}</th>{% endif %}{% endfor %}</tr></thead>

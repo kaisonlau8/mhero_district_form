@@ -2,7 +2,7 @@
 import io
 import json
 import os
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -33,6 +33,9 @@ KPI_HEADERS = [
 
 def xlsx(headers, rows, sheet="数据"):
     wb = Workbook()
+    fixed = datetime(2026, 1, 1, 0, 0, 0)
+    wb.properties.created = fixed
+    wb.properties.modified = fixed
     ws = wb.active
     ws.title = sheet
     ws.append(headers)
@@ -246,6 +249,46 @@ def test_quarter_and_year_windows():
     assert march["base"]["end"] == date(2023, 3, 1)
 
 
+def _day_payload(start, end, area, **replace):
+    fields = [
+        ("statisticalType", "2"),
+        ("reportType", "1"),
+        ("bigAreaId", area),
+        ("dateStart", start),
+        ("dateEnd", end),
+        ("dateStart1", start),
+        ("dateEnd1", end),
+        ("dateStart1,dateEnd1", ["2026-11-01", "2026-11-30"]),
+        ("monthStart,monthEnd", []),
+        ("dirCode", ""),
+        ("retRepairType", ""),
+        ("month", ""),
+        ("monthEnd", ""),
+        ("monthStart", ""),
+        ("year", ""),
+        ("monthStartEnd", []),
+    ]
+    fields = [(key, replace.get(key, value)) for key, value in fields]
+    parts = []
+    for key, value in fields:
+        piece = json.dumps(key, ensure_ascii=False) + ":" + json.dumps(value, ensure_ascii=False)
+        parts.extend([piece, piece])
+    return "{" + ",".join(parts) + "}"
+
+
+def _total_body(orders, vehicles, output):
+    return {
+        "result": "1",
+        "msg": "查询成功",
+        "rows": {
+            "bigAreaName": "汇总",
+            "repairOrderNum": int(orders),
+            "vinNum": int(vehicles),
+            "totalAmount": output,
+        },
+    }
+
+
 def _op_meta(**over):
     meta = dict(week_start="2026-11-16", span="quarter", period_start="2026-10-01", period_end="2026-11-20",
                 exported_at="2026-11-20 14:25:35", timezone="+08:00", filename="op.xlsx", actor="test")
@@ -357,9 +400,14 @@ def test_quarter_base_zero_and_year_missing(conn):
     assert national["orders"]["current"] == "15"
     assert national["orders"]["base"] == "0"
     assert national["orders"]["change"] == "不可比"
+    import_operation(conn, national_blob(), **_op_meta(
+        span="year", period_start="2026-01-01", period_end="2026-11-20", filename="year.xlsx"))
+    page = build_weekly_page(conn, "2026-11-16", today=date(2026, 11, 20))
     year = next(r for r in page["operation"]["year"]["rows"] if r["region"] == "全国")
-    assert year["orders"]["current"] == "未导入"
-    assert year["orders"]["change"] == "未导入"
+    assert year["orders"]["current"] == "15"
+    assert conn.execute(
+        "SELECT COUNT(*) FROM weekly_imports WHERE compare_role='year' AND status='active'"
+    ).fetchone()[0] == 1
 
 
 def test_indicators_use_summary_and_operation_stays_on_receipt_export(conn):
@@ -432,17 +480,37 @@ def test_current_week_without_import_is_blank(conn):
     assert page["operation"]["year"]["current"] is None
 
 
-def test_collector_is_disabled_and_schedule_untouched():
+def test_collector_plans_without_dms_and_keeps_daily_schedule():
     from reportdb.weekly_report import collect_weekly_sources
 
-    with pytest.raises(NotImplementedError, match="SHARED_DMS_BROWSER"):
-        collect_weekly_sources()
+    plan = collect_weekly_sources(as_of="2026-11-20", regions=["华东"])
+    assert plan["live"] is False and plan["verified_against_dms"] is False
+    assert plan["time"] == "14:45" and plan["weekday"] == "friday"
+    assert [job["span"] for job in plan["jobs"] if job["scope"] == "全国"] == [
+        "quarter", "quarter_base", "month",
+    ]
+    seven = ["华北", "华东", "华南", "华中1", "西南", "西北", "华中2"]
+    full = collect_weekly_sources(as_of="2026-11-20", regions=seven)
+    quarter_jobs = [job for job in full["jobs"] if job["span"] in {"quarter", "quarter_base"}]
+    month_jobs = [job for job in full["jobs"] if job["span"] == "month"]
+    assert len(quarter_jobs) == 16
+    assert len(month_jobs) == 8
+    assert {job["period_end"] for job in month_jobs} == {"2026-11-20"}
+    assert len(full["month_backfill"]) == 80
+    assert not any(job["span"] in {"year", "year_base"} for job in full["jobs"] + full["month_backfill"])
+    assert plan["jobs"][0]["filters"]["统计类型"] == "收款"
+    assert plan["jobs"][0]["filters"]["报表类型"] == "日报"
+    assert plan["jobs"][0]["filters"]["业务门店"] == ""
+    with pytest.raises(RuntimeError, match="不要从这里连接 DMS"):
+        collect_weekly_sources(live=True)
     root = Path(__file__).resolve().parent.parent
     settings = json.loads((root / "config" / "crawl_settings.json").read_text())
     assert settings["schedule"] == "08:30"
+    weekly = json.loads((root / "config" / "weekly_crawl.json").read_text())
+    assert weekly["time"] == "14:45" and weekly["daily_schedule_unchanged"] == "08:30"
     pipeline = (root / "scripts" / "run_pipeline.py").read_text()
     assert "weekly_import" not in pipeline
-    assert "collect_weekly_sources" not in pipeline
+    assert "weekly_operation_crawl" not in pipeline
 
 
 def _login(client, username, password):
@@ -470,12 +538,16 @@ def test_weekly_page_nav_and_roles(conn, tmp_path):
     assert page.status_code == 200
     assert "猛士周报" in page.text
     assert 'href="/reports/weekly"' in page.text
+    assert "当年月经营数据" in page.text and "季度环比" in page.text
+    assert page.text.find("当年月经营数据") < page.text.find("季度环比")
+    assert "服务指标" in page.text
     assert "收款工单数" in page.text
     assert "未导入" in page.text
-    assert "不是严格来厂台次" in page.text
+    quarter_note = viewer.get("/reports/weekly", params={"view": "quarter"})
+    assert "不是严格来厂台次" in quarter_note.text
     assert "万元" not in page.text
     assert "不含税" not in page.text
-    assert "未注明" in page.text
+    assert "未注明" in quarter_note.text
     assert "6402712" not in page.text
     assert viewer.get("/reports/weekly/import").status_code == 403
     admin = TestClient(create_app(db))
@@ -498,20 +570,31 @@ def test_weekly_page_nav_and_roles(conn, tmp_path):
     )
     assert posted.status_code == 303
     shown = admin.get("/reports/weekly", params={"week": "2026-11-16"})
-    assert "经营数据" in shown.text and "季度环比" in shown.text and "年度同比" in shown.text
+    assert "经营数据" in shown.text and "当年月经营数据" in shown.text and "季度环比" in shown.text
+    assert shown.text.find("当年月经营数据") < shown.text.find("季度环比")
+    assert shown.text.find("<h2>经营数据</h2>") < shown.text.find("<h2>服务指标</h2>")
+    assert "年度同比" not in shown.text and "shot-year" not in shown.text and "截图：年度" not in shown.text
     assert "来自DMS收款报表" in shown.text
-    assert "2026-10-01" in shown.text and "2026-08-20" in shown.text
-    assert "实现默认" in shown.text
-    assert "上周同进度" not in shown.text and "364" not in shown.text
-    assert ">15<" in shown.text or "15" in shown.text
     assert "未填写" in shown.text
     assert "weekly-topbar-flat" in shown.text
-    shot_op = shown.text.split('id="shot-operation"', 1)[1].split('id="shot-kpi"', 1)[0]
+    assert "shot-months" in shown.text and "shot-quarter" not in shown.text
+    assert "view=months&metric" not in shown.text
+    assert "产值（千元）" in shown.text and "收款工单数" in shown.text and "来厂车辆数（去重）" in shown.text
+    assert "18.10" not in shown.text
+    quarter = admin.get("/reports/weekly", params={"week": "2026-11-16", "view": "quarter"})
+    assert "2026-10-01" in quarter.text and "2026-08-20" in quarter.text
+    assert "实现默认" in quarter.text
+    assert "上周同进度" not in quarter.text and "364" not in quarter.text
+    assert ">15<" in quarter.text or "15" in quarter.text
+    shot_op = quarter.text.split('id="shot-operation"', 1)[1].split('id="shot-quarter"', 1)[1]
     shot_kpi = shown.text.split('id="shot-kpi"', 1)[1].split('id="weekly-edit"', 1)[0]
     assert 'class="bar-chart"' in shot_op
     assert "<textarea" not in shot_kpi
     assert "<details class=\"weekly-audit\">" in shot_op
     assert "<details class=\"weekly-audit\" open" not in shot_op
+    visible_op = shot_op.split("<details", 1)[0]
+    assert "不摊分" not in visible_op
+    assert "差额保留" not in visible_op
     assert "不摊分" in shot_op
     link = re.search(r'href="(/reports/weekly/imports/\d+/source.xlsx)"', shown.text)
     assert link
@@ -547,18 +630,395 @@ def test_weekly_page_nav_and_roles(conn, tmp_path):
     assert "折线" not in demo_q.text
     assert "calc.compute" not in qchunk
     demo_y = admin.get("/reports/weekly/demo", params={"view": "year"})
-    assert "2025-01-01" in demo_y.text and "2025-11-20" in demo_y.text
-    ychunk = demo_y.text.split('id="shot-year"', 1)[1].split("<details", 1)[0]
-    assert "去年同期" in ychunk and "对比期" not in ychunk and "141,050.00" in ychunk
+    assert "shot-year" not in demo_y.text and "年度同比" not in demo_y.text and "去年同期" not in demo_y.text
+    assert "上季度同期" in demo_y.text
     demo_i = admin.get("/reports/weekly/demo", params={"view": "indicators"})
     ichunk = demo_i.text.split('id="shot-kpi"', 1)[1].split("<details", 1)[0]
     assert "使用系统计算结果" in ichunk
     assert "暂无数据" in ichunk
-    assert "mbar bad" in ichunk
-    assert "nhline" in ichunk
+    assert "首保实施率" in ichunk and "招揽实施率" in ichunk
+    assert 'class="bad"' in ichunk
+    assert "mbar" not in ichunk
+    assert "到店比上季少" in ichunk
+    assert ichunk.find('data-region="全国"') < ichunk.find('data-region="华北"')
     assert "横轴" not in ichunk
     assert "calc.compute" not in ichunk
     assert "980" not in again
+
+
+def _captured(job, blob, **overrides):
+    from reportdb.weekly_parse import parse_operation_xlsx
+
+    parsed = parse_operation_xlsx(blob)
+    echoed = dict(job["filters"])
+    echoed["开始日期"] = job["filters"]["开始日期"].replace("-", "/")
+    summary = {key: str(parsed["summary"][key]) for key in ("orders", "vehicles", "output")}
+    got = {
+        "blob": blob, "exported_at": "2026-11-20 13:40:00",
+        "readback_before": echoed, "readback_after": dict(echoed),
+        "download_is_new": True,
+        "query_id": "q-this",
+        "summary": summary,
+    }
+    got.update(overrides)
+    if "responses" not in overrides:
+        got["responses"] = [
+            {"query_id": got["query_id"], "kind": "detail", "status": 200, "filters": dict(job["filters"])},
+            {
+                "query_id": got["query_id"], "kind": "summary", "status": 200,
+                "filters": dict(job["filters"]), "summary_from": "response_body",
+                "summary": dict(got["summary"]),
+            },
+        ]
+    return got
+
+
+def test_weekly_crawl_imports_serial_and_keeps_partial_failure(conn, tmp_path):
+    from reportdb.weekly_crawl import prepare_export, readback_mismatches, run_weekly_crawl
+
+    calls = []
+
+    def fetch(job):
+        calls.append(job["key"])
+        if job["key"].endswith(":quarter_base:华东"):
+            raise RuntimeError("下载超时")
+        blob = national_blob() if job["scope"] == "全国" else east_blob()
+        return _captured(job, blob)
+
+    out = tmp_path / "weekly"
+    first = run_weekly_crawl(conn, as_of="2026-11-20", regions=["华东"], fetch=fetch, output_dir=out, clock=lambda: datetime(2026, 11, 20, 14, 45))
+    assert first["complete"] is False
+    assert first["failed"] == ["2026-11-20:quarter_base:华东"]
+    assert first["verified_against_dms"] is False
+    assert (out / "quarter_全国.xlsx").is_file()
+    saved = conn.execute(
+        "SELECT COUNT(*) FROM weekly_imports WHERE kind='operation' AND status='active'"
+    ).fetchone()[0]
+    assert saved == 5
+    calls.clear()
+    second = run_weekly_crawl(conn, as_of="2026-11-20", regions=["华东"], fetch=fetch, output_dir=out, clock=lambda: datetime(2026, 11, 20, 14, 45))
+    assert calls == ["2026-11-20:quarter_base:华东"] * 3
+    assert second["complete"] is False
+    calls.clear()
+    later = run_weekly_crawl(conn, as_of="2026-11-27", regions=["华东"], fetch=fetch, output_dir=out, clock=lambda: datetime(2026, 11, 20, 14, 45))
+    assert later["complete"] is False
+    assert calls.count("2026-11-27:quarter:全国") == 1
+    assert calls.count("2026-11-27:quarter_base:华东") == 3
+
+    def wrong(job):
+        bad = dict(job["filters"])
+        bad["统计类型"] = "结算"
+        blob = national_blob() if job["scope"] == "全国" else east_blob()
+        return {"blob": blob, "exported_at": "2026-11-20 13:40:00", "readback_before": bad, "readback_after": bad}
+
+    blocked = run_weekly_crawl(
+        conn, as_of="2026-11-20", regions=["华东"], fetch=wrong, output_dir=tmp_path / "bad", resume=False,
+        clock=lambda: datetime(2026, 11, 20, 14, 45),
+    )
+    assert blocked["complete"] is False
+    assert "结算" in blocked["results"][0]["error"]
+    assert readback_mismatches({"业务门店": ""}, {"业务门店": "请选择", "备注": ""}) == []
+    assert readback_mismatches({"业务门店": ""}, {"业务门店": "", "隐藏条件": "某店"})
+
+    class Form:
+        def __init__(self):
+            self.values = {}
+            self.queries = 0
+        def set_filters(self, filters):
+            self.values = dict(filters)
+            self.values["统计类型"] = "结算"
+        def read_filters(self):
+            return dict(self.values)
+        def query(self):
+            self.queries += 1
+
+    form = Form()
+    with pytest.raises(Exception, match="查询前"):
+        prepare_export(form, {"统计类型": "收款", "报表类型": "日报", "区域": "华东", "业务门店": "", "开始日期": "2026-10-01", "结束日期": "2026-11-20"})
+    assert form.queries == 0
+
+
+def test_stale_summary_and_old_file_are_not_imported(conn, tmp_path):
+    from reportdb.weekly_crawl import accept_operation_result, run_weekly_crawl
+
+    kept = tmp_path / "kept" / "year_华东.xlsx"
+    kept.parent.mkdir()
+    kept.write_bytes(b"already-good")
+    filters = {"统计类型": "收款", "报表类型": "日报", "区域": "华东", "业务门店": "", "开始日期": "2026-01-01", "结束日期": "2026-11-20"}
+    stale = _captured(
+        {"scope": "华东", "filters": filters},
+        east_blob(),
+        download_is_new=False,
+        responses=[
+            {"query_id": "q-this", "kind": "detail", "status": 200, "filters": filters},
+            {"query_id": "q-this", "kind": "summary", "status": 504, "filters": filters, "summary_from": "response_body"},
+            {"query_id": "other", "kind": "summary", "status": 200, "filters": filters, "summary_from": "response_body",
+             "summary": {"orders": "843", "vehicles": "522", "output": "1923650.23"}},
+        ],
+    )
+    stale["blob"] = b""
+    with pytest.raises(Exception, match="汇总请求失败"):
+        accept_operation_result({"scope": "华东", "filters": filters}, stale)
+
+    summed = _captured(
+        {"scope": "华东", "filters": filters},
+        east_blob(),
+        responses=[
+            {"query_id": "q-this", "kind": "detail", "status": 200, "filters": filters},
+            {"query_id": "q-this", "kind": "summary", "status": 200, "filters": filters, "summary_from": "detail_sum",
+             "summary": {"orders": "6", "vehicles": "5", "output": "40.00"}},
+        ],
+    )
+    with pytest.raises(Exception, match="不能把明细"):
+        accept_operation_result({"scope": "华东", "filters": filters}, summed)
+
+    def fetch(job):
+        blob = national_blob() if job["scope"] == "全国" else east_blob()
+        got = _captured(job, blob)
+        if job["span"] == "quarter_base" and job["scope"] == "华东":
+            got["responses"][1]["summary"] = {"orders": "843", "vehicles": "522", "output": "1923650.23"}
+        return got
+
+    out = tmp_path / "kept"
+    result = run_weekly_crawl(conn, as_of="2026-11-20", regions=["华东"], fetch=fetch, output_dir=out, resume=False, clock=lambda: datetime(2026, 11, 20, 14, 45))
+    assert result["complete"] is False
+    failed = [item for item in result["results"] if item["span"] == "quarter_base" and item["scope"] == "华东"]
+    assert failed and failed[0]["status"] == "failed"
+    assert "不一致" in failed[0]["error"]
+    assert kept.read_bytes() == b"already-good"
+    assert conn.execute(
+        "SELECT COUNT(*) FROM weekly_imports WHERE scope='华东' AND compare_role='year'"
+    ).fetchone()[0] == 0
+
+
+def test_summary_response_must_belong_to_this_query(conn, tmp_path):
+    from reportdb.weekly_crawl import confirm_query_responses, run_weekly_crawl
+
+    filters = {"统计类型": "收款", "报表类型": "日报", "区域": "华东", "业务门店": "", "开始日期": "2026-01-01", "结束日期": "2026-11-20"}
+    summary = {"orders": "6", "vehicles": "4", "output": "40.00"}
+    unrelated = [
+        {"query_id": "q-this", "kind": "detail", "status": 200, "filters": filters},
+        {"query_id": "other", "kind": "summary", "status": 200, "filters": filters, "summary_from": "response_body", "summary": summary},
+        {"query_id": "q-this", "kind": "other", "status": 200, "filters": filters},
+    ]
+    with pytest.raises(Exception, match="汇总响应未观测到"):
+        confirm_query_responses(filters, "q-this", unrelated)
+    with pytest.raises(Exception, match="汇总响应未观测到"):
+        confirm_query_responses(filters, "q-this", [
+            {"query_id": "q-this", "kind": "detail", "status": 200, "filters": filters},
+        ])
+    same = confirm_query_responses(filters, "q-this", [
+        {"query_id": "q-this", "kind": "detail", "status": 200, "filters": filters},
+        {"query_id": "q-this", "kind": "summary", "status": 200, "filters": filters, "summary_from": "response_body", "summary": summary},
+    ])
+    assert same == summary
+
+    def fetch(job):
+        blob = national_blob() if job["scope"] == "全国" else east_blob()
+        return _captured(job, blob)
+
+    out = tmp_path / "same"
+    first = run_weekly_crawl(conn, as_of="2026-11-20", regions=[], fetch=fetch, output_dir=out, resume=False, clock=lambda: datetime(2026, 11, 20, 14, 45))
+    assert first["complete"] is True
+    second = run_weekly_crawl(conn, as_of="2026-11-20", regions=[], fetch=fetch, output_dir=out, resume=False, clock=lambda: datetime(2026, 11, 20, 14, 45))
+    assert second["complete"] is True
+    assert all(item["idempotent"] for item in second["results"])
+
+
+def test_live_fetch_result_imports_the_same_summary(conn, tmp_path, monkeypatch):
+    import crawl_district_reports as crawl
+    import scripts.weekly_operation_crawl as weekly_script
+    from datetime import datetime
+    from reportdb.weekly_crawl import classify_page_response, past_friday_deadline, run_weekly_crawl
+    from scripts.weekly_operation_crawl import live_fetch
+
+    class Req:
+        def __init__(self, post):
+            self.post_data = post
+
+    class Resp:
+        def __init__(self, status, url, post, body):
+            self.status = status
+            self.url = url
+            self.request = Req(post)
+            self._body = body
+        def json(self):
+            if not isinstance(self._body, dict):
+                raise ValueError("not json")
+            return self._body
+
+    class Page:
+        def __init__(self, mode):
+            self.listeners = []
+            self.mode = mode
+        def on(self, event, fn):
+            self.listeners.append(fn)
+        def remove_listener(self, event, fn):
+            if fn in self.listeners:
+                self.listeners.remove(fn)
+        def emit(self, resp):
+            for fn in list(self.listeners):
+                fn(resp)
+
+    class Form:
+        def __init__(self, page):
+            self.page = page
+            self.values = {}
+        def set_filters(self, filters):
+            self.values = dict(filters)
+        def read_filters(self):
+            return dict(self.values)
+        def read_area_code(self):
+            return "SEL"
+        def query(self):
+            self.page.last_filters = dict(self.values)
+            if self.page.mode == "noise":
+                self.page.emit(Resp(200, "https://m-dms.dfmc.com.cn/ping", "", {"ok": True}))
+                self.page.emit(Resp(200, "https://m-dms.dfmc.com.cn/note", "华东收款日报2026-10-01", {"kind": "summary", "orders": "15", "vehicles": "9", "output": "120.00"}))
+                return
+            if self.page.mode == "late":
+                post = _day_payload("2024-01-01", "2024-01-02", "SEL")
+                self.page.emit(Resp(200, "https://m-dms.dfmc.com.cn/old", post, _total_body(998, 1272, "7,620,333.56")))
+                return
+            post = _day_payload(self.values["开始日期"], self.values["结束日期"], "SEL")
+            orders, vehicles, output = ("15", "9", "120.00") if self.values["区域"] == "全国" else ("6", "4", "40.00")
+            self.page.emit(Resp(200, "https://m-dms.dfmc.com.cn/detail", post, {"Total": 130}))
+            self.page.emit(Resp(200, "https://m-dms.dfmc.com.cn/getTotal", post, _total_body(orders, vehicles, output)))
+
+    same_bytes = {"全国": national_blob(), "华东": east_blob()}
+
+    def export(page, output_dir, **kw):
+        if getattr(page, "mode", "") == "late":
+            post = _day_payload(page.last_filters["开始日期"], page.last_filters["结束日期"], "SEL")
+            page.emit(Resp(200, "https://m-dms.dfmc.com.cn/getTotal", post, _total_body(15, 9, "120.00")))
+            page.emit(Resp(200, "https://m-dms.dfmc.com.cn/detail", post, {"Total": 130}))
+        blob = same_bytes["全国" if "全国" in kw.get("save_prefix", "") else "华东"]
+        path = Path(output_dir) / f"{kw.get('save_prefix', 'x')}{len(list(Path(output_dir).glob('*.xlsx')))}.xlsx"
+        path.write_bytes(blob)
+        return path
+
+    monkeypatch.setattr(crawl, "click_export_and_save", export)
+    monkeypatch.setattr(weekly_script, "open_operation_page", lambda page: None)
+    monkeypatch.setattr(weekly_script, "PlaywrightForm", Form)
+    monkeypatch.setattr(weekly_script, "beijing_now", lambda: datetime(2026, 11, 20, 14, 45, 0))
+
+    filters = {"统计类型": "收款", "报表类型": "日报", "区域": "全国", "业务门店": "", "开始日期": "2026-10-01", "结束日期": "2026-11-20"}
+    assert classify_page_response({"status": 200, "url": "https://x/?q=华东收款日报2026-10-01", "post_data": "", "body": {"kind": "summary", "orders": "15", "vehicles": "9", "output": "120.00"}}, "q", filters) is None
+    swapped = dict(filters)
+    swapped["开始日期"], swapped["结束日期"] = filters["结束日期"], filters["开始日期"]
+    assert classify_page_response({"status": 200, "url": "https://m-dms.dfmc.com.cn/summary", "post_data": json.dumps(swapped, ensure_ascii=False), "body": {"kind": "summary", "orders": "15", "vehicles": "9", "output": "120.00"}}, "q", filters) is None
+    with_store = dict(filters)
+    with_store["业务门店"] = "某店"
+    assert classify_page_response({"status": 200, "url": "https://m-dms.dfmc.com.cn/summary", "post_data": json.dumps(with_store, ensure_ascii=False), "body": {"kind": "summary", "orders": "15", "vehicles": "9", "output": "120.00"}}, "q", filters) is None
+
+    noise = tmp_path / "noise"
+    missed = run_weekly_crawl(conn, as_of="2026-11-20", regions=[], fetch=live_fetch(Page("noise"), noise), output_dir=noise, resume=False, clock=lambda: datetime(2026, 11, 20, 14, 45))
+    assert missed["complete"] is False
+    assert "汇总响应未观测到" in missed["results"][0]["error"]
+    assert conn.execute("select count(*) from weekly_imports").fetchone()[0] == 0
+
+    out = tmp_path / "chain"
+    first = run_weekly_crawl(conn, as_of="2026-11-20", regions=[], fetch=live_fetch(Page("match"), out), output_dir=out, resume=False, clock=lambda: datetime(2026, 11, 20, 14, 45))
+    assert first["complete"] is True, first["results"][0].get("error")
+    meta = json.loads((out / "quarter_全国.json").read_text(encoding="utf-8"))
+    assert meta["summary"] == {"orders": "15", "vehicles": "9", "output": "120.00"}
+    assert meta["summary_body_parsed"] is True
+    stored = json.loads(conn.execute(
+        "select summary_json from weekly_imports where scope='全国' and compare_role='quarter' and status='active'"
+    ).fetchone()[0])
+    assert stored["summary"]["orders"] == "15"
+    assert stored["summary"]["vehicles"] == "9"
+    assert stored["summary"]["output"] == "120.00"
+    second = run_weekly_crawl(conn, as_of="2026-11-20", regions=[], fetch=live_fetch(Page("match"), out), output_dir=out, resume=False, clock=lambda: datetime(2026, 11, 20, 14, 45))
+    assert second["complete"] is True
+    assert all(item["idempotent"] for item in second["results"])
+    late = tmp_path / "late-chain"
+    late_run = run_weekly_crawl(
+        conn, as_of="2026-11-20", regions=[], fetch=live_fetch(Page("late"), late),
+        output_dir=late, resume=False, clock=lambda: datetime(2026, 11, 20, 14, 45),
+    )
+    assert late_run["complete"] is True, late_run["results"][0].get("error")
+    late_meta = json.loads((late / "quarter_全国.json").read_text(encoding="utf-8"))
+    assert late_meta["summary"]["orders"] == "15"
+    assert "998" not in json.dumps(late_meta["summary"])
+    assert past_friday_deadline(datetime(2026, 11, 20, 16, 57)) is True
+    assert past_friday_deadline(datetime(2026, 11, 20, 17, 0)) is True
+    assert past_friday_deadline(datetime(2026, 11, 20, 16, 56)) is False
+    assert past_friday_deadline(datetime(2026, 11, 19, 18, 0)) is False
+
+
+def test_friday_window_does_not_start_new_exports_and_keeps_other_schedules(conn, tmp_path):
+    from datetime import datetime
+    from reportdb.weekly_crawl import merge_weekly_schedule, run_weekly_crawl
+
+    from reportdb.weekly_crawl import WeeklyCrawlError
+    original = {"pre_minutes": 3, "entries": [
+        {"id": "district-form", "time": "08:30"},
+        {"id": "accident-evening", "time": "17:00"},
+    ]}
+    with pytest.raises(WeeklyCrawlError, match="不看星期"):
+        merge_weekly_schedule(json.loads(json.dumps(original)))
+    calls = []
+
+    ticks = {"n": 0}
+
+    def crossing_clock():
+        ticks["n"] += 1
+        if ticks["n"] <= 2:
+            return datetime(2026, 11, 20, 16, 56)
+        return datetime(2026, 11, 20, 16, 57)
+
+    def failing(job):
+        calls.append(job["key"])
+        raise RuntimeError("下载超时")
+
+    crossed = run_weekly_crawl(
+        conn, as_of="2026-11-20", regions=[], fetch=failing, output_dir=tmp_path / "cross",
+        resume=False, clock=crossing_clock,
+    )
+    assert calls == ["2026-11-20:quarter:全国"]
+    assert crossed["complete"] is False
+    assert "16:57" in crossed["results"][0]["error"]
+
+    calls.clear()
+
+    def fetch(job):
+        calls.append(job["key"])
+        blob = national_blob() if job["scope"] == "全国" else east_blob()
+        return _captured(job, blob)
+
+    stopped = run_weekly_crawl(
+        conn, as_of="2026-11-20", regions=["华东"], fetch=fetch, output_dir=tmp_path / "late",
+        resume=False, clock=lambda: datetime(2026, 11, 20, 16, 57),
+    )
+    assert calls == []
+    assert stopped["complete"] is False
+    assert stopped["gaps"]
+    assert conn.execute("select count(*) from weekly_imports").fetchone()[0] == 0
+
+
+def test_refresh_waits_until_lock_is_held_and_is_released_after():
+    from reportdb.weekly_crawl import close_owned_session
+
+    order = []
+    close_owned_session(None, refresh=lambda: order.append("refresh"), release=lambda _lock: order.append("release"))
+    assert order == []
+
+    def boom():
+        order.append("refresh")
+        raise RuntimeError("刷新失败")
+
+    with pytest.raises(RuntimeError, match="刷新失败"):
+        close_owned_session("lock", refresh=boom, release=lambda held: order.append(("release", held)))
+    assert order == ["refresh", ("release", "lock")]
+
+
+def test_weekly_crawl_cli_does_not_open_dms(tmp_path):
+    from scripts.weekly_operation_crawl import main
+
+    code = main(["--db", str(tmp_path / "c.sqlite3"), "--as-of", "2026-11-20", "--regions", "华东",
+                 "--output-dir", str(tmp_path / "out")])
+    assert code == 0
 
 
 def test_cli_import(conn, tmp_path, monkeypatch):
@@ -647,3 +1107,240 @@ def test_real_samples_parse_and_do_not_bind_as_current_week(conn):
     page = build_weekly_page(conn, None, today=date(2026, 11, 20))
     assert page["operation"]["imported"] is False
     assert "6402712.72" not in json.dumps(page, ensure_ascii=False)
+
+
+def test_month_windows_reuse_snapshots_and_keep_gaps(conn, tmp_path):
+    from datetime import timedelta
+    from reportdb.weekly_crawl import plan_month_backfill, run_weekly_crawl
+    from reportdb.weekly_parse import WeeklyParseError, month_window
+    from reportdb.weekly_report import WeeklyImportError, build_weekly_page, demo_board, import_operation
+
+    assert month_window(date(2026, 11, 20), "2026-11")["end"] == date(2026, 11, 20)
+    assert month_window(date(2026, 12, 4), "2026-11")["end"] == date(2026, 11, 30)
+    assert month_window(date(2024, 3, 1), "2024-02")["end"] == date(2024, 2, 29)
+    assert month_window(date(2023, 3, 1), "2023-02")["end"] == date(2023, 2, 28)
+    assert month_window(date(2027, 1, 8), "2027-01")["end"] == date(2027, 1, 8)
+    assert plan_month_backfill(date(2027, 1, 8), ["华东"]) == []
+    with pytest.raises(WeeklyParseError):
+        month_window(date(2026, 11, 20), "2026-12")
+    with pytest.raises(WeeklyImportError):
+        import_operation(conn, national_blob(), **_op_meta(
+            span="month", period_start="2026-12-01", period_end="2026-12-31", as_of="2026-11-20"))
+    with pytest.raises(WeeklyImportError):
+        import_operation(conn, national_blob(), **_op_meta(
+            week_start="2026-11-30", span="month", period_start="2026-11-01",
+            period_end="2026-11-20", as_of="2026-12-04"))
+
+    import_operation(conn, national_blob(), **_op_meta(
+        span="month", period_start="2026-11-01", period_end="2026-11-20",
+        as_of="2026-11-20", filename="nov-partial.xlsx"))
+    import_operation(conn, national_blob(), **_op_meta())
+    page = build_weekly_page(conn, "2026-11-16", today=date(2026, 11, 20))
+    months = page["operation"]["months"]
+    assert [item["label"] for item in months["columns"]] == [f"{i}月" for i in range(1, 12)]
+    nation = next(row for row in months["rows"] if row["region"] == "全国")
+    assert nation["cells"]["2026-11"]["orders"] == "15"
+    assert nation["cells"]["2026-11"]["vehicles"] == "9"
+    assert nation["cells"]["2026-10"]["orders"] == "未导入"
+    assert "2026-12" not in nation["cells"]
+
+    october_as_of = date(2026, 11, 6)
+    october_week = october_as_of - timedelta(days=october_as_of.weekday())
+    import_operation(conn, national_blob(), **_op_meta(
+        week_start=october_week.isoformat(), span="month", period_start="2026-10-01",
+        period_end="2026-10-31", as_of="2026-11-06", filename="oct.xlsx"))
+    missing = {job["month"] for job in plan_month_backfill(date(2026, 12, 4), [], conn)}
+    assert "2026-10" not in missing and "2026-11" in missing and "2026-12" not in missing
+
+    calls = []
+
+    def fetch(job):
+        calls.append(job["key"])
+        blob = national_blob() if job["scope"] == "全国" else east_blob()
+        return _captured(job, blob)
+
+    run_weekly_crawl(
+        conn, as_of="2026-12-04", regions=[], fetch=fetch, output_dir=tmp_path / "dec",
+        resume=False, clock=lambda: datetime(2026, 12, 4, 14, 45),
+    )
+    assert not any("2026-10" in key for key in calls)
+    assert any(key.endswith(":month:2026-12:全国") for key in calls)
+    december_week = date(2026, 12, 4) - timedelta(days=date(2026, 12, 4).weekday())
+    december = build_weekly_page(conn, december_week.isoformat(), today=date(2026, 12, 4))
+    row = next(item for item in december["operation"]["months"]["rows"] if item["region"] == "全国")
+    assert row["cells"]["2026-10"]["imported"] is True
+    assert row["cells"]["2026-10"]["vehicles"] == "9"
+    assert row["cells"]["2026-11"]["imported"] is False
+    assert row["cells"]["2026-12"]["vehicles"] == "9"
+    assert "2027-01" not in row["cells"]
+
+    def fail_east(job):
+        if job["scope"] == "华东" and job["span"] == "month":
+            raise RuntimeError("下载超时")
+        return fetch(job)
+
+    failed = run_weekly_crawl(
+        conn, as_of="2026-11-13", regions=["华东"], fetch=fail_east, output_dir=tmp_path / "gap",
+        resume=False, clock=lambda: datetime(2026, 11, 13, 14, 45),
+    )
+    assert any(item["span"] == "month" and item["scope"] == "华东" and item["status"] == "failed" for item in failed["results"])
+    assert any(item["span"] == "month" and item["scope"] == "全国" and item["status"] == "imported" for item in failed["results"])
+    demo = demo_board()["operation"]["months"]
+    demo_nation = next(item for item in demo["rows"] if item["region"] == "全国")
+    others = [item for item in demo["rows"] if item["region"] != "全国"]
+    assert int(demo_nation["cells"]["2026-01"]["vehicles"]) != sum(int(item["cells"]["2026-01"]["vehicles"]) for item in others)
+
+
+def test_gettotal_contract_accepts_day_mode_and_rejects_conflicts():
+    from reportdb.weekly_crawl import classify_page_response, confirm_query_responses
+
+    fixture = json.loads((Path(__file__).parent / "fixtures" / "dms_gettotal_southwest_2026-11-20.json").read_text(encoding="utf-8"))
+    expected = dict(fixture["gui"])
+    expected["area_code"] = fixture["selected_option_value"]
+    raw = fixture["request_body"]
+    summary = classify_page_response(
+        {"status": 200, "url": "https://m-dms.dfmc.com.cn/getTotal", "post_data": raw, "body": fixture["response_body"]},
+        "q", expected,
+    )
+    detail = classify_page_response(
+        {"status": 200, "url": "https://m-dms.dfmc.com.cn/detail", "post_data": raw, "body": {"Total": fixture["detail_total"]}},
+        "q", expected,
+    )
+    assert summary["kind"] == "summary"
+    assert summary["summary"] == {"orders": "4998", "vehicles": "1272", "output": "7620333.56"}
+    assert detail["kind"] == "detail"
+    assert confirm_query_responses(fixture["gui"], "q", [detail, summary])["orders"] == "4998"
+    assert "dateStart1,dateEnd1" in raw and "2026-11-30" in raw
+
+    conflict = raw.replace('"dateStart":"2025-01-01"', '"dateStart":"2024-01-01"', 1)
+    assert classify_page_response(
+        {"status": 200, "url": "https://m-dms.dfmc.com.cn/getTotal", "post_data": conflict, "body": fixture["response_body"]},
+        "q", expected,
+    ) is None
+    other_area = dict(expected)
+    other_area["area_code"] = "001"
+    assert classify_page_response(
+        {"status": 200, "url": "https://m-dms.dfmc.com.cn/getTotal", "post_data": raw, "body": fixture["response_body"]},
+        "q", other_area,
+    ) is None
+    unlabeled = dict(expected)
+    unlabeled["area_code"] = ""
+    assert classify_page_response(
+        {"status": 200, "url": "https://m-dms.dfmc.com.cn/getTotal", "post_data": raw, "body": fixture["response_body"]},
+        "q", unlabeled,
+    ) is None
+    for key, value in (("dirCode", "S1"), ("retRepairType", "保修")):
+        changed = raw.replace(f'"{key}":""', f'"{key}":"{value}"')
+        assert classify_page_response(
+            {"status": 200, "url": "https://m-dms.dfmc.com.cn/getTotal", "post_data": changed, "body": fixture["response_body"]},
+            "q", expected,
+        ) is None
+    chinese = json.dumps(fixture["gui"], ensure_ascii=False)
+    assert classify_page_response(
+        {"status": 200, "url": "https://m-dms.dfmc.com.cn/getTotal", "post_data": chinese, "body": fixture["response_body"]},
+        "q", expected,
+    ) is None
+
+
+def test_real_playwright_download_wait_rejects_late_wrong_period(conn, tmp_path, monkeypatch):
+    """下载等待必须让同步 Playwright 派发响应。不能靠测试代码把响应塞进列表。"""
+    import threading
+    from datetime import date, datetime
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    pw = pytest.importorskip("playwright.sync_api")
+    import scripts.weekly_operation_crawl as weekly_script
+    from reportdb import weekly_crawl as wc
+    from reportdb.weekly_crawl import plan_jobs, run_weekly_crawl
+    from scripts.weekly_operation_crawl import live_fetch
+
+    out = tmp_path / "dl"
+    out.mkdir()
+    blob = xlsx(OP_HEADERS, [
+        op_row("全国", "全国", "全国", "998", "1272", "定期保养", "7620333.56", "0", "0", "7620333.56"),
+        op_row("汇总", "", "", "998", "1272", "", "7620333.56", "0", "0", "7620333.56"),
+    ], "经营报表导出")
+    served = {"n": 0}
+    html = """<!doctype html><meta charset="utf-8">
+<section class="mixButton"><div class="u-btn-left"><button type="button">导出</button></div></section>
+<script>
+document.querySelector("button").addEventListener("click", () => {
+  setTimeout(() => {
+    fetch("/late", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({"statisticalType":"2","reportType":"1","bigAreaId":"009","dateStart":"2024-01-01","dateEnd":"2024-01-02","dateStart1":"2024-01-01","dateEnd1":"2024-01-02","dateStart1,dateEnd1":["2026-11-01","2026-11-30"],"monthStart,monthEnd":[],"dirCode":"","retRepairType":"","month":"","monthEnd":"","monthStart":"","year":"","monthStartEnd":[]})});
+  }, 200);
+});
+</script>"""
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, fmt, *args):
+            return
+        def do_GET(self):
+            body = html.encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        def do_POST(self):
+            length = int(self.headers.get("Content-Length") or 0)
+            self.rfile.read(length)
+            (out / "late-download.xlsx").write_bytes(blob)
+            served["n"] += 1
+            payload = json.dumps({
+                "result": "1", "msg": "查询成功",
+                "rows": {"bigAreaName": "汇总", "repairOrderNum": 998, "vinNum": 1272, "totalAmount": "7,620,333.56"},
+            }).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    seen_urls = []
+    original = wc.classify_page_response
+
+    def spy(event, query_id, expected):
+        seen_urls.append(event.get("url") or "")
+        return original(event, query_id, expected)
+
+    class Form:
+        def __init__(self, page):
+            self.values = {}
+        def set_filters(self, filters):
+            self.values = dict(filters)
+        def read_filters(self):
+            return dict(self.values)
+        def query(self):
+            return None
+        def read_area_code(self):
+            return "009"
+
+    monkeypatch.setattr(weekly_script, "open_operation_page", lambda page: None)
+    monkeypatch.setattr(weekly_script, "PlaywrightForm", Form)
+    monkeypatch.setattr(wc, "classify_page_response", spy)
+    monkeypatch.setattr(wc, "plan_jobs", lambda *args, **kwargs: [plan_jobs(date(2026, 11, 20), [])[0]])
+    binary = os.environ.get("REPORTDB_CHROMIUM") or "/usr/bin/google-chrome"
+    try:
+        with pw.sync_playwright() as p:
+            exe = binary if Path(binary).is_file() else p.chromium.executable_path
+            if not Path(exe).is_file():
+                pytest.skip("没有可用的 Chromium")
+            browser = p.chromium.launch(executable_path=exe, headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
+            page = browser.new_page()
+            page.goto(f"http://127.0.0.1:{server.server_address[1]}/")
+            result = run_weekly_crawl(
+                conn, as_of="2026-11-20", regions=[], fetch=live_fetch(page, out), output_dir=out,
+                resume=False, clock=lambda: datetime(2026, 11, 20, 14, 45),
+            )
+            browser.close()
+    finally:
+        server.shutdown()
+    assert served["n"] >= 1
+    assert any(url.endswith("/late") for url in seen_urls)
+    assert result["complete"] is False
+    assert "汇总" in (result["results"][0].get("error") or "")
+    assert conn.execute("select count(*) from weekly_imports").fetchone()[0] == 0

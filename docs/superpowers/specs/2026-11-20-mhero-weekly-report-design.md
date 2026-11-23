@@ -16,7 +16,7 @@
 
 ## 不在本轮
 
-不合并、不部署、不登录生产、不读 `.env`、不联系门店、不新增或改动每日 08:30 调度、不调用 DMS、不写未授权内部接口。自动采集只留一个会明确失败的入口，并指向 `https://github.com/kaisonlau8/m-hero/blob/main/docs/SHARED_DMS_BROWSER.md` 的浏览器锁与错峰。旧日报、7 张源表、考核剔除逻辑保持原样。
+不合并、不部署、不登录生产、不读 `.env`、不联系门店、不改每日 08:30 调度。周五经营采集是单独脚本，沿用共享浏览器锁和页面点击，不写未授权内部接口。云端不连接 DMS。旧日报、7 张源表、考核剔除逻辑保持原样。约定见 `https://github.com/kaisonlau8/m-hero/blob/main/docs/SHARED_DMS_BROWSER.md`。
 
 ## 周与三个期间
 

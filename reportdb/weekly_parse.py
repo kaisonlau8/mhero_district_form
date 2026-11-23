@@ -1,6 +1,7 @@
 """猛士周报的 Excel 解析与同环比。不读数据库，不访问 DMS。"""
 from __future__ import annotations
 
+import calendar
 import io
 import re
 from dataclasses import dataclass
@@ -101,6 +102,28 @@ def align_progress(base_start: date, base_end: date, elapsed_days: int) -> tuple
     if end > base_end:
         return base_end, True
     return end, False
+
+
+def month_window(as_of: date, month: str) -> dict:
+    """本年某月的原件窗口。已结束月是月初到月末；当月是月初到实际截止日。未来月不生成。"""
+    text = str(month or "")
+    if len(text) != 7 or text[4] != "-" or not text[:4].isdigit() or not text[5:].isdigit():
+        raise WeeklyParseError("月份必须是 YYYY-MM")
+    year, mon = int(text[:4]), int(text[5:])
+    if not 1 <= mon <= 12:
+        raise WeeklyParseError("月份必须是 YYYY-MM")
+    start = date(year, mon, 1)
+    end = date(year, mon, calendar.monthrange(year, mon)[1])
+    if (year, mon) > (as_of.year, as_of.month):
+        raise WeeklyParseError("未来月份不采集，也不记成缺失")
+    closed = (year, mon) < (as_of.year, as_of.month)
+    return {
+        "month": f"{year:04d}-{mon:02d}",
+        "start": start,
+        "end": end if closed else as_of,
+        "closed": closed,
+        "complete_end": end,
+    }
 
 
 def quarter_compare(as_of: date) -> dict:
