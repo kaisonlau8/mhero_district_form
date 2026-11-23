@@ -3,6 +3,10 @@
     python -m reportdb.weekly_import operation --file 经营.xlsx --week 2026-11-16 \\
         --span quarter --period-start 2026-10-01 --period-end 2026-11-20 \\
         --exported-at "2026-11-20 14:25:35"
+
+    python -m reportdb.weekly_import operation --file 全国1月.xlsx --week 2026-11-23 \\
+        --span month --period-start 2026-01-01 --period-end 2026-01-31 \\
+        --as-of 2026-11-23 --exported-at "2026-11-23 09:00:00" --scope 全国
 指标不从这里导入。周报读取该周已有的 reportdb 总表。
 """
 from __future__ import annotations
@@ -23,10 +27,10 @@ def main(argv: list[str] | None = None) -> int:
 
     operation = sub.add_parser("operation", help="服务经营报表：收款 + 日报")
     _common(operation)
-    operation.add_argument("--span", required=True, choices=["quarter", "quarter_base", "year", "year_base"])
+    operation.add_argument("--span", required=True, choices=["quarter", "quarter_base", "year", "year_base", "month"])
     operation.add_argument("--period-start", required=True)
     operation.add_argument("--period-end", required=True)
-    operation.add_argument("--as-of", default="", help="对比期必填：本次更新的累计截止日，须落在 --week 那一周")
+    operation.add_argument("--as-of", default="", help="月度或对比期必填：本次更新的累计截止日，须落在 --week 那一周")
     operation.add_argument("--stat-type", default="收款")
     operation.add_argument("--report-type", default="日报")
     operation.add_argument("--scope", default="")
